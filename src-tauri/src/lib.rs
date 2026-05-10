@@ -26,6 +26,8 @@ pub fn run() {
             commands::fs::trash_path,
             commands::recent::get_recent_folders,
             commands::recent::push_recent_folder,
+            commands::watch::start_watcher,
+            commands::watch::stop_watcher,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react"
 import { ipc } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { debounce } from "../../lib/debounce"
+import { noteSelfWrite } from "../watcher/useExternalChanges"
 
 const SAVE_DELAY_MS = 500
 
@@ -10,6 +11,7 @@ export function useAutoSave() {
 
   const saver = useMemo(() => debounce(async (path: string, frontmatter: Record<string, unknown>, body: string) => {
     try {
+      noteSelfWrite(path)
       await ipc.writeFile(path, { frontmatter, body })
       const cur = useStore.getState().openDoc
       if (cur && cur.path === path) {

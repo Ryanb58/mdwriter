@@ -135,8 +135,13 @@ jobs:
       - name: Build with tauri-action
         uses: tauri-apps/tauri-action@v0
         env:
+          # GitHub doesn't allow empty-string secrets, so the password secret
+          # may not exist. Tauri treats empty/missing as "key has no password."
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+          # Ad-hoc codesign on macOS so future auto-updates don't re-trigger
+          # Gatekeeper. "-" is the ad-hoc identity; no Apple Developer ID needed.
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
         with:
           tagName: ${{ needs.version.outputs.tag }}
           releaseName: 'mdwriter ${{ needs.version.outputs.version }} (${{ needs.version.outputs.tag }})'
@@ -148,28 +153,6 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}
-
-      - name: Ad-hoc codesign macOS bundle
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
-          if [[ -d "$APP_DIR/mdwriter.app" ]]; then
-            codesign --force --deep --sign - "$APP_DIR/mdwriter.app"
-            # Re-tar so the updater payload reflects the ad-hoc signature.
-            VERSION="${{ needs.version.outputs.version }}"
-            ARCH="${{ matrix.arch }}"
-            TAR="$APP_DIR/mdwriter_${VERSION}_${ARCH}.app.tar.gz"
-            (cd "$APP_DIR" && tar czf "$TAR" mdwriter.app)
-            # Re-sign the updater payload with the Tauri minisign key.
-            pnpm tauri signer sign \
-              --private-key-path "${{ runner.temp }}/tauri-signing.key" \
-              --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" \
-              "$TAR" || true
-          fi
-        env:
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload signature artifacts
         uses: actions/upload-artifact@v4

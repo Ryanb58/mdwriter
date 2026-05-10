@@ -18,17 +18,17 @@ The **private** key lives at `~/.tauri/mdwriter.key`. Back it up to a password m
 
 ### 2. GitHub repo secrets
 
-Set these in `Settings → Secrets and variables → Actions`:
+Set in `Settings → Secrets and variables → Actions`:
 
 | Name | Value | Notes |
 |---|---|---|
-| `TAURI_SIGNING_PRIVATE_KEY` | Contents of `~/.tauri/mdwriter.key` | One line, base64 |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The passphrase you set, or empty | Empty string if you used `--password ""` |
+| `TAURI_SIGNING_PRIVATE_KEY` | Contents of `~/.tauri/mdwriter.key` | Required. One line, base64. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The passphrase you set | **Skip this secret entirely if you used `--password ""`.** GitHub won't accept empty-string secrets, and the workflow already treats a missing secret as "no password." |
 
 ```bash
-# Quick check that the secret will be set correctly:
+# Copy the key contents to your clipboard:
 cat ~/.tauri/mdwriter.key | pbcopy
-# Paste into the GitHub secret value
+# Then paste into the GitHub secret value field.
 ```
 
 ### 3. GitHub Pages

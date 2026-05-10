@@ -7,7 +7,7 @@ import { TreeContextMenu } from "./TreeContextMenu"
 import { parent, basename } from "../../lib/paths"
 
 export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(node.name)

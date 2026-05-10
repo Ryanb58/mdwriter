@@ -2,6 +2,7 @@ import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
 import { TreePane } from "./features/tree/TreePane"
+import { VaultPicker } from "./features/vaults/VaultPicker"
 import { EditorPane } from "./features/editor/EditorPane"
 import { StatusBar } from "./features/statusbar/StatusBar"
 import { PropertiesPane } from "./features/properties/PropertiesPane"
@@ -21,8 +22,11 @@ export default function App() {
     <>
       <div className="flex flex-col h-screen bg-bg text-text">
         <div className="flex flex-1 min-h-0">
-          <aside className="w-[240px] flex-none border-r border-border bg-surface">
-            <TreePane />
+          <aside className="w-[240px] flex-none border-r border-border bg-surface flex flex-col">
+            <div className="flex-1 min-h-0">
+              <TreePane />
+            </div>
+            <VaultPicker />
           </aside>
           <main className="flex-1 min-w-0 flex flex-col">
             <EditorPane />

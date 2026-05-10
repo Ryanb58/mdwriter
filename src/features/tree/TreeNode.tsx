@@ -55,6 +55,12 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
         style={{ paddingLeft: 8 + indent }}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }) }}
         onClick={() => isDir ? setExpanded((x) => !x) : useStore.setState({ selectedPath: node.path })}
+        onDoubleClick={(e) => {
+          e.preventDefault()
+          if (renaming) return
+          setDraftName(basename(node.path))
+          setRenaming(true)
+        }}
       >
         {isDir ? (
           expanded

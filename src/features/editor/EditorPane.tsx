@@ -20,6 +20,7 @@ export function EditorPane() {
   const patch = useStore((s) => s.patchOpenDoc)
   const propertiesVisible = useStore((s) => s.propertiesVisible)
   const toggleProperties = useStore((s) => s.toggleProperties)
+  const rootPath = useStore((s) => s.rootPath)
 
   if (!doc) {
     return (
@@ -35,12 +36,14 @@ export function EditorPane() {
     )
   }
 
-  // Build a thin breadcrumb from path segments relative to the workspace root
-  const root = useStore.getState().rootPath ?? ""
+  // Breadcrumb: vault name → ...subdirs → filename
+  const root = rootPath ?? ""
   const rel = doc.path.startsWith(root) ? doc.path.slice(root.length).replace(/^[\\/]+/, "") : doc.path
   const segments = rel.split(/[\\/]/).filter(Boolean)
   const fileName = segments.pop() ?? basename(doc.path)
-  const folderTrail = segments.join(" / ")
+  const vaultName = root ? basename(root) : ""
+  const trailSegments = vaultName ? [vaultName, ...segments] : segments
+  const folderTrail = trailSegments.join(" / ")
 
   return (
     <div className="flex flex-col h-full bg-bg">

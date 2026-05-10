@@ -11,6 +11,8 @@ import { CommandPalette } from "./features/palette/CommandPalette"
 import { SettingsPanel } from "./features/settings/SettingsPanel"
 import { useTheme } from "./features/settings/useTheme"
 import { useExternalChanges } from "./features/watcher/useExternalChanges"
+import { useUpdates } from "./features/updates/useUpdates"
+import { UpdateBanner } from "./features/updates/UpdateBanner"
 import "./App.css"
 
 export default function App() {
@@ -18,6 +20,7 @@ export default function App() {
   useExternalChanges()
   useTheme()
   useTreeShortcuts()
+  const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
   const propertiesVisible = useStore((s) => s.propertiesVisible)
   const aiPanelVisible = useStore((s) => s.aiPanelVisible)
@@ -27,6 +30,7 @@ export default function App() {
       <>
         <EmptyFolderState />
         <SettingsPanel />
+        <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
       </>
     )
   }
@@ -56,6 +60,7 @@ export default function App() {
       </div>
       <CommandPalette />
       <SettingsPanel />
+      <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
     </>
   )
 }

@@ -166,15 +166,34 @@ pub fn trash_path(path: PathBuf) -> Result<()> {
 }
 
 fn write_atomic(path: &Path, contents: &str) -> Result<()> {
-    let parent = path.parent().ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
+    write_bytes_atomic(path, contents.as_bytes())
+}
+
+fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
     let temp = parent.join(format!(".{}.tmp", path.file_name().unwrap().to_string_lossy()));
     {
         let mut f = std::fs::File::create(&temp)?;
-        f.write_all(contents.as_bytes())?;
+        f.write_all(bytes)?;
         f.sync_all()?;
     }
     std::fs::rename(&temp, path)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn write_image(path: PathBuf, bytes: Vec<u8>) -> Result<()> {
+    if path.exists() {
+        return Err(AppError::Io(format!("already exists: {}", path.display())));
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    write_bytes_atomic(&path, &bytes)
 }
 
 #[cfg(test)]
@@ -365,5 +384,41 @@ mod write_tests {
         std::fs::write(&from, "").unwrap();
         std::fs::write(&to, "").unwrap();
         assert!(rename_path(from, to).is_err());
+    }
+
+    #[test]
+    fn write_image_writes_bytes() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("assets").join("foo.png");
+        let bytes = vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3];
+        write_image(p.clone(), bytes.clone()).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), bytes);
+    }
+
+    #[test]
+    fn write_image_creates_missing_parent_dirs() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("a").join("b").join("c").join("x.png");
+        write_image(p.clone(), vec![1, 2, 3]).unwrap();
+        assert!(p.exists());
+    }
+
+    #[test]
+    fn write_image_errors_when_destination_exists() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        std::fs::write(&p, b"old").unwrap();
+        let err = write_image(p, vec![1, 2, 3]).unwrap_err();
+        assert!(matches!(err, AppError::Io(_)));
+    }
+
+    #[test]
+    fn write_image_atomic_cleans_up_temp_on_success() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        write_image(p.clone(), vec![1, 2, 3]).unwrap();
+        let tmp = dir.path().join(".x.png.tmp");
+        assert!(!tmp.exists());
+        assert!(p.exists());
     }
 }

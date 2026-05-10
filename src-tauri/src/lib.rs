@@ -24,6 +24,8 @@ pub fn run() {
             commands::fs::create_dir,
             commands::fs::rename_path,
             commands::fs::trash_path,
+            commands::recent::get_recent_folders,
+            commands::recent::push_recent_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

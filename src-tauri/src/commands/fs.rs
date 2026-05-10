@@ -84,6 +84,39 @@ pub fn write_file(path: PathBuf, doc: ParsedDoc) -> Result<()> {
     write_atomic(&path, &serialized)
 }
 
+#[tauri::command]
+pub fn create_file(path: PathBuf) -> Result<()> {
+    if path.exists() {
+        return Err(AppError::Io(format!("already exists: {}", path.display())));
+    }
+    std::fs::write(&path, "")?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_dir(path: PathBuf) -> Result<()> {
+    if path.exists() {
+        return Err(AppError::Io(format!("already exists: {}", path.display())));
+    }
+    std::fs::create_dir(&path)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn rename_path(from: PathBuf, to: PathBuf) -> Result<()> {
+    if to.exists() {
+        return Err(AppError::Io(format!("destination exists: {}", to.display())));
+    }
+    std::fs::rename(&from, &to)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn trash_path(path: PathBuf) -> Result<()> {
+    trash::delete(&path).map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(())
+}
+
 fn write_atomic(path: &Path, contents: &str) -> Result<()> {
     let parent = path.parent().ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
     let temp = parent.join(format!(".{}.tmp", path.file_name().unwrap().to_string_lossy()));
@@ -190,5 +223,52 @@ mod write_tests {
         assert!(p.exists());
         let temp = dir.path().join(".x.md.tmp");
         assert!(!temp.exists());
+    }
+
+    #[test]
+    fn create_file_writes_empty_doc() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("new.md");
+        create_file(p.clone()).unwrap();
+        assert!(p.exists());
+        let contents = std::fs::read_to_string(&p).unwrap();
+        assert_eq!(contents, "");
+    }
+
+    #[test]
+    fn create_file_errors_when_exists() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("a.md");
+        std::fs::write(&p, "x").unwrap();
+        assert!(create_file(p).is_err());
+    }
+
+    #[test]
+    fn create_dir_makes_folder() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("sub");
+        create_dir(p.clone()).unwrap();
+        assert!(p.is_dir());
+    }
+
+    #[test]
+    fn rename_changes_filename() {
+        let dir = tempdir().unwrap();
+        let from = dir.path().join("a.md");
+        let to = dir.path().join("b.md");
+        std::fs::write(&from, "").unwrap();
+        rename_path(from.clone(), to.clone()).unwrap();
+        assert!(!from.exists());
+        assert!(to.exists());
+    }
+
+    #[test]
+    fn rename_collision_errors() {
+        let dir = tempdir().unwrap();
+        let from = dir.path().join("a.md");
+        let to = dir.path().join("b.md");
+        std::fs::write(&from, "").unwrap();
+        std::fs::write(&to, "").unwrap();
+        assert!(rename_path(from, to).is_err());
     }
 }

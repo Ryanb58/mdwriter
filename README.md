@@ -1,7 +1,22 @@
-# Tauri + React + Typescript
+# mdwriter
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+A fast, lightweight desktop markdown editor. Block editor with a Properties pane for YAML frontmatter, a left file tree with create/rename/delete, fuzzy file palette (Cmd+P), raw markdown toggle (Cmd+E), and external file watching.
 
-## Recommended IDE Setup
+Built with Tauri 2, React, TypeScript, BlockNote, and CodeMirror.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Develop
+
+    pnpm install
+    pnpm tauri dev
+
+## Test
+
+    pnpm test          # frontend unit
+    cargo test --manifest-path src-tauri/Cargo.toml --lib
+    pnpm test:e2e      # smoke
+
+## Build
+
+    pnpm tauri build
+
+See `docs/superpowers/specs/2026-05-09-mdwriter-design.md` for the design and `docs/superpowers/plans/2026-05-09-mdwriter.md` for the implementation plan.

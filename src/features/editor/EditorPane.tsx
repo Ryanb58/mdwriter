@@ -119,38 +119,51 @@ function ModeSegmented({
 }: { mode: "block" | "raw"; onBlock: () => void; onRaw: () => void }) {
   return (
     <div className="inline-flex rounded-md border border-border bg-surface p-0.5" role="tablist">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={mode === "block"}
-        aria-label="Block view"
+      <SegBtn
+        active={mode === "block"}
         onClick={onBlock}
         title="Block view (⌘E)"
-        className={[
-          "flex items-center justify-center w-7 h-6 rounded transition-colors",
-          mode === "block"
-            ? "bg-elevated text-text"
-            : "text-text-muted hover:text-text",
-        ].join(" ")}
+        ariaLabel="Block view"
       >
         <TextAa size={13} weight="bold" />
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={mode === "raw"}
-        aria-label="Raw markdown"
+      </SegBtn>
+      <SegBtn
+        active={mode === "raw"}
         onClick={onRaw}
         title="Raw markdown (⌘E)"
-        className={[
-          "flex items-center justify-center w-7 h-6 rounded transition-colors",
-          mode === "raw"
-            ? "bg-elevated text-text"
-            : "text-text-muted hover:text-text",
-        ].join(" ")}
+        ariaLabel="Raw markdown"
       >
         <Code size={13} weight="bold" />
-      </button>
+      </SegBtn>
     </div>
+  )
+}
+
+function SegBtn({
+  active, onClick, title, ariaLabel, children,
+}: {
+  active: boolean
+  onClick: () => void
+  title: string
+  ariaLabel: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      aria-label={ariaLabel}
+      onClick={onClick}
+      title={title}
+      className={[
+        "flex items-center justify-center w-7 h-6 rounded transition-colors",
+        active
+          ? "bg-accent text-accent-fg"
+          : "text-text-subtle hover:text-text hover:bg-elevated",
+      ].join(" ")}
+    >
+      {children}
+    </button>
   )
 }

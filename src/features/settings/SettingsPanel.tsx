@@ -163,8 +163,8 @@ function ThemeSegmented({ value, onChange }: { value: Theme; onChange: (v: Theme
             className={[
               "flex items-center justify-center w-8 h-7 rounded transition-colors",
               active
-                ? "bg-elevated text-text"
-                : "text-text-muted hover:text-text",
+                ? "bg-accent text-accent-fg"
+                : "text-text-subtle hover:text-text hover:bg-elevated",
             ].join(" ")}
             aria-pressed={active}
             aria-label={o.label}

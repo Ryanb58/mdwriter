@@ -3,6 +3,7 @@ import { EditorState } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
 import { markdown } from "@codemirror/lang-markdown"
+import { useRawImagePaste } from "./useRawImagePaste"
 
 export function RawEditor({
   value,
@@ -44,6 +45,8 @@ export function RawEditor({
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } })
     }
   }, [value])
+
+  useRawImagePaste(viewRef)
 
   return <div ref={hostRef} className="h-full overflow-auto" />
 }

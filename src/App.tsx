@@ -4,6 +4,7 @@ import { useStartupRestore } from "./features/folder/useStartupRestore"
 import { TreePane } from "./features/tree/TreePane"
 import { useTreeShortcuts } from "./features/tree/useTreeShortcuts"
 import { EditorPane } from "./features/editor/EditorPane"
+import { AiPanel } from "./features/ai/AiPanel"
 import { StatusBar } from "./features/statusbar/StatusBar"
 import { PropertiesPane } from "./features/properties/PropertiesPane"
 import { CommandPalette } from "./features/palette/CommandPalette"
@@ -19,6 +20,7 @@ export default function App() {
   useTreeShortcuts()
   const rootPath = useStore((s) => s.rootPath)
   const propertiesVisible = useStore((s) => s.propertiesVisible)
+  const aiPanelVisible = useStore((s) => s.aiPanelVisible)
 
   if (!rootPath) {
     return (
@@ -33,6 +35,11 @@ export default function App() {
     <>
       <div className="flex flex-col h-screen bg-bg text-text">
         <div className="flex flex-1 min-h-0">
+          {aiPanelVisible && (
+            <aside className="w-[340px] flex-none border-r border-border bg-surface">
+              <AiPanel />
+            </aside>
+          )}
           <aside className="w-[240px] flex-none border-r border-border bg-surface">
             <TreePane />
           </aside>

@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
-import type { TreeNode } from "./ipc"
+import type { TreeNode, AgentId, AgentAvailability } from "./ipc"
 
 export type EditorMode = "block" | "raw"
 
@@ -57,7 +57,43 @@ export type AppStore = {
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
+
+  // AI panel
+  aiPanelVisible: boolean
+  toggleAiPanel(): void
+  setAiPanelVisible(v: boolean): void
+  aiAgent: AgentId
+  setAiAgent(id: AgentId): void
+  aiAvailable: AgentAvailability[]
+  setAiAvailable(rows: AgentAvailability[]): void
+  aiMessages: AiMessage[]
+  appendAiMessage(msg: AiMessage): void
+  patchLastAssistantMessage(patch: (m: AssistantMessage) => AssistantMessage): void
+  clearAiMessages(): void
+  aiRunning: boolean
+  setAiRunning(v: boolean): void
 }
+
+export type ToolCall = {
+  id: string
+  name: string
+  input: unknown
+  output: unknown | null
+  isError: boolean
+  finished: boolean
+}
+
+export type AssistantMessage = {
+  role: "assistant"
+  text: string
+  tools: ToolCall[]
+  finished: boolean
+}
+
+export type AiMessage =
+  | { role: "user"; text: string }
+  | AssistantMessage
+  | { role: "system"; text: string }
 
 export const useStore = create<AppStore>()(
   persist(
@@ -73,6 +109,12 @@ export const useStore = create<AppStore>()(
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
 
+      aiPanelVisible: false,
+      aiAgent: "claude-code" as AgentId,
+      aiAvailable: [],
+      aiMessages: [],
+      aiRunning: false,
+
       setRoot: (path) => set({ rootPath: path }),
       setTree: (tree) => set({ tree }),
       setRecent: (list) => set({ recentFolders: list }),
@@ -86,6 +128,22 @@ export const useStore = create<AppStore>()(
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
       setRenamingPath: (path) => set({ renamingPath: path }),
+
+      toggleAiPanel: () => set((s) => ({ aiPanelVisible: !s.aiPanelVisible })),
+      setAiPanelVisible: (v) => set({ aiPanelVisible: v }),
+      setAiAgent: (id) => set({ aiAgent: id }),
+      setAiAvailable: (rows) => set({ aiAvailable: rows }),
+      appendAiMessage: (msg) => set((s) => ({ aiMessages: [...s.aiMessages, msg] })),
+      patchLastAssistantMessage: (patch) =>
+        set((s) => {
+          const idx = s.aiMessages.findLastIndex((m) => m.role === "assistant")
+          if (idx < 0) return {}
+          const next = s.aiMessages.slice()
+          next[idx] = patch(next[idx] as AssistantMessage)
+          return { aiMessages: next }
+        }),
+      clearAiMessages: () => set({ aiMessages: [] }),
+      setAiRunning: (v) => set({ aiRunning: v }),
     }),
     {
       name: "mdwriter:store",
@@ -95,6 +153,8 @@ export const useStore = create<AppStore>()(
       partialize: (s) => ({
         settings: s.settings,
         propertiesVisible: s.propertiesVisible,
+        aiPanelVisible: s.aiPanelVisible,
+        aiAgent: s.aiAgent,
       }),
     },
   ),

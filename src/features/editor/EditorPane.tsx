@@ -6,7 +6,7 @@ import { useEditorMode } from "./useEditorMode"
 import { useAutoRename } from "./useAutoRename"
 import { basename } from "../../lib/paths"
 import { BlockEditor } from "./BlockEditor"
-import { Sidebar, Warning, TextAa, Code } from "@phosphor-icons/react"
+import { Sidebar, Warning, TextAa, Code, Robot } from "@phosphor-icons/react"
 
 // CodeMirror only loads when the user enters raw mode.
 const RawEditor = lazy(() =>
@@ -29,6 +29,8 @@ export function EditorPane() {
   const propertiesVisible = useStore((s) => s.propertiesVisible)
   const toggleProperties = useStore((s) => s.toggleProperties)
   const rootPath = useStore((s) => s.rootPath)
+  const aiPanelVisible = useStore((s) => s.aiPanelVisible)
+  const toggleAiPanel = useStore((s) => s.toggleAiPanel)
 
   if (!doc) {
     return (
@@ -72,6 +74,17 @@ export function EditorPane() {
         <div className="flex items-center gap-3 flex-none">
           <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
           <ModeSegmented mode={mode} onBlock={setBlock} onRaw={setRaw} />
+          <button
+            onClick={toggleAiPanel}
+            className={`p-1 rounded transition-colors ${
+              aiPanelVisible
+                ? "text-text bg-elevated"
+                : "text-text-subtle hover:text-text hover:bg-elevated"
+            }`}
+            title={aiPanelVisible ? "Hide AI panel" : "Show AI panel"}
+          >
+            <Robot size={15} />
+          </button>
           <button
             onClick={toggleProperties}
             className={`p-1 rounded transition-colors ${

@@ -10,13 +10,14 @@ Add an in-app auto-updater that fetches signed release bundles from GitHub Relea
 ### Goals
 
 - Users on a released build get notified when a new version is available; one click installs.
-- All bundles are signed and verified — no MITM risk.
-- macOS bundles are also Apple-notarized so they pass Gatekeeper.
+- The **update payload itself** is signed with a minisign key and verified by the Tauri updater before install — so even though the OS treats the bundle as "from an unidentified developer," users can't be MITM-attacked into installing a tampered build.
 - Releases are produced from a tag via GitHub Actions — no manual upload step.
 - A "Check for Updates" menu item triggers an on-demand check at any time.
 
 ### Non-goals (v1)
 
+- **Apple Developer signing / notarization.** Skipped for v1 — costs $99/year and adds CI complexity. macOS users will see "mdwriter cannot be opened because Apple cannot check it for malicious software" on first launch and must right-click → Open. Auto-updates still work (see §3.2). Wired in as a follow-up when a Developer ID is in hand.
+- **Windows code signing.** Same logic — Windows users will see a SmartScreen warning ("Windows protected your PC") and must click "More info → Run anyway." Add later if a code-signing cert is purchased.
 - Multiple release channels (stable + beta + nightly). v1 ships stable only; a parallel `latest-beta.json` can come later by parameterizing the workflow.
 - In-app rollback. If a release is broken, ship a new one — Tauri's updater can install the same or older version if we point the manifest there.
 - Delta updates. Always download the full bundle.
@@ -41,7 +42,6 @@ Add an in-app auto-updater that fetches signed release bundles from GitHub Relea
 │                                                          │
 │   for each platform:                                     │
 │     pnpm install                                         │
-│     import code-signing cert                             │
 │     `pnpm tauri build` (with TAURI_SIGNING_PRIVATE_KEY)  │
 │       → produces:                                        │
 │         - mdwriter_<v>_<arch>.app.tar.gz                 │
@@ -50,7 +50,7 @@ Add an in-app auto-updater that fetches signed release bundles from GitHub Relea
 │         - mdwriter_<v>_x86_64-setup.exe                  │
 │         - mdwriter_<v>_x86_64.msi                        │
 │         - mdwriter_<v>_amd64.AppImage / .deb             │
-│     notarize (macOS only)                                │
+│     ad-hoc codesign macOS .app (no Apple ID required)    │
 │     upload all artifacts to GitHub Release               │
 │                                                          │
 │   final job:                                             │
@@ -128,27 +128,37 @@ pnpm tauri signer generate -w ~/.tauri/mdwriter.key
 
 Never commit the private key. Losing the private key means you can never ship another update to existing installs that pin this pubkey — back it up to a password manager.
 
-### Apple Developer signing (macOS only)
+### 3.1 OS-level code signing (deferred)
 
-Required to produce a notarized DMG that passes Gatekeeper without scary warnings. Without it, users get a "this app cannot be opened" dialog on first launch.
+**Apple Developer signing / notarization — deferred.** Costs $99/year and adds non-trivial CI plumbing. Without it, macOS users see "mdwriter cannot be opened because Apple cannot check it for malicious software" on first launch. The plan keeps a placeholder so it's a clean drop-in when ready (see §6 follow-up).
 
-- Enroll in Apple Developer Program ($99/year). Skip if you're okay with users right-clicking → Open the first time.
-- Generate a Developer ID Application certificate from developer.apple.com, export as `.p12`.
-- Repo secrets:
-  - `APPLE_CERTIFICATE` — base64-encoded `.p12`
-  - `APPLE_CERTIFICATE_PASSWORD` — the `.p12` passphrase
-  - `APPLE_SIGNING_IDENTITY` — e.g., `Developer ID Application: Your Name (TEAMID)`
-  - `APPLE_ID` — Apple ID email used for notarization
-  - `APPLE_PASSWORD` — an app-specific password for that Apple ID (generated at appleid.apple.com)
-  - `APPLE_TEAM_ID` — 10-character team ID
+**Windows code-signing — deferred.** $250-$500/year for an OV cert. Without it, users see SmartScreen "Windows protected your PC."
 
-### Windows signing (optional, recommended)
+The Tauri minisign signature (the one tied to `pubkey`) is **separate** and ships in v1. It protects update integrity (the auto-updater refuses tampered downloads) regardless of OS-level signing.
 
-Without code signing, Windows users get a SmartScreen warning. To remove it:
-- Buy an EV or OV code-signing certificate from a CA (DigiCert, Sectigo, etc.) — $250-$500/year.
-- Or skip for v1 and document that users may need to click "More info → Run anyway."
+### 3.2 macOS first-launch UX without notarization
 
-Deferred for v1 unless you already have a cert.
+Document this clearly in the README and on the download page so users aren't confused:
+
+> **First launch on macOS:** Right-click the `mdwriter.app` icon and choose **Open**. macOS will warn "the app is from an unidentified developer" — confirm by clicking **Open** in the dialog. After that, future launches work normally.
+>
+> Alternatively, from a terminal:
+> ```sh
+> xattr -d com.apple.quarantine /Applications/mdwriter.app
+> ```
+
+For auto-updates the situation is better: Tauri's updater extracts the new bundle in place over the running app, and macOS does **not** re-quarantine it because the source is the same already-trusted process. So the right-click dance only happens on the very first install. A few caveats:
+
+- We **must** still ad-hoc codesign the bundle in CI (`codesign --force --deep --sign - mdwriter.app`) so macOS treats updates as the same app identity. Without ad-hoc signing, Gatekeeper may treat each update as a new unsigned app and re-quarantine it.
+- The ad-hoc step uses no Apple ID and no certificate — it's a single shell command in the workflow.
+
+**That's why the architecture diagram in §2 says "ad-hoc codesign macOS .app (no Apple ID required)" instead of "import code-signing cert."**
+
+### 3.3 Windows first-launch UX without code signing
+
+> **First launch on Windows:** SmartScreen will say "Windows protected your PC." Click **More info**, then **Run anyway**.
+
+There is no auto-update equivalent of the macOS ad-hoc trick on Windows — `passive` install mode runs the new MSI/EXE, which may itself trigger SmartScreen on each update. Acceptable trade-off until a cert is purchased.
 
 ## 4. Implementation phases
 
@@ -267,11 +277,18 @@ Triggered by tags matching `v20*-*-*` (e.g., `v2026-06-15`) so semantic-versione
 3. Cache `~/.cargo/registry`, `~/.cargo/git`, `src-tauri/target`
 4. `pnpm install --frozen-lockfile`
 5. Compute version from tag: `v2026-06-15` → `2026.6.15`. Update `tauri.conf.json` and `Cargo.toml` `[package].version` in-place
-6. **macOS only:** import Apple cert into a fresh keychain (the same pattern Tolaria uses — base64 decode into a tmp `.p12`, `security create-keychain`, `security import`, `security set-key-partition-list`)
-7. Run `pnpm tauri build` with these env vars:
-   - `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — always
-   - macOS only: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`
+6. Run `pnpm tauri build` with these env vars (only the Tauri minisign secrets are needed in v1):
+   - `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+7. **macOS only — ad-hoc codesign** so the OS treats updates as the same identity (no Apple ID required):
+   ```sh
+   APP="src-tauri/target/$TARGET/release/bundle/macos/mdwriter.app"
+   codesign --force --deep --sign - "$APP"
+   # Re-tar the .app so the signature ends up in the updater payload.
+   ditto -c -k --keepParent "$APP" "$APP.tar.gz"
+   ```
 8. Use `tauri-apps/tauri-action@v0` OR a custom script to upload artifacts to a GitHub Release (draft).
+
+**Note:** because there's no Apple cert, we don't need the keychain-import step Tolaria's workflow has, and we can skip the entire notarization wait. That removes ~10 minutes from the macOS build time and ~6 secrets from the repo configuration.
 
 **Final aggregation job (`publish-manifest`):**
 1. `needs: [build]` for all matrix entries
@@ -282,14 +299,29 @@ Triggered by tags matching `v20*-*-*` (e.g., `v2026-06-15`) so semantic-versione
 
 **Why tag pattern `v20*-*-*`:** keeps the release trigger explicit and avoids cutting from arbitrary tags. Adjust if you prefer semver tags like `v0.2.0`.
 
-### Phase 3 — Apple notarization plumbing (~1-2 hours, macOS only)
+### Phase 3 — Future-proofing for paid signing (no work in v1)
 
-If Apple Developer enrollment is in place:
-- The `pnpm tauri build` command above already handles signing if `APPLE_SIGNING_IDENTITY` is set.
-- For notarization, set the additional env vars (`APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`) and the Tauri build process will submit to the notary service and staple the ticket.
-- Add a `Build & notarize` step that waits for notarization to complete (Tauri's process does, but it can be slow — 5-15 min).
+Designed so OS-level signing drops in without rewriting the workflow when you're ready to pay for it.
 
-If skipped, document that macOS users must right-click → Open the first time.
+**When you eventually buy an Apple Developer ID** (~1-2 hours of follow-up work):
+
+1. Add the six Apple secrets to the repo:
+   - `APPLE_CERTIFICATE` — base64-encoded `.p12`
+   - `APPLE_CERTIFICATE_PASSWORD`
+   - `APPLE_SIGNING_IDENTITY` — `Developer ID Application: Your Name (TEAMID)`
+   - `APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`
+2. Insert a "Import Apple cert" step before the `pnpm tauri build` macOS step (the Tolaria recipe — `security create-keychain`, `security import`, `security set-key-partition-list`).
+3. Add the six secrets to the `pnpm tauri build` step's `env:`. Tauri detects `APPLE_SIGNING_IDENTITY` and runs codesign + notarization automatically; the manual `codesign --sign -` step from Phase 2 step 7 becomes a no-op and can be deleted.
+4. Bump the macOS job timeout — notarization round-trips can take 5-15 min.
+5. Drop the macOS first-launch warning from the README.
+
+**When you eventually buy a Windows code-signing cert** (~1 hour of follow-up):
+
+1. Add `WINDOWS_CERTIFICATE` (base64 .pfx) and `WINDOWS_CERTIFICATE_PASSWORD`.
+2. Configure `bundle.windows.certificateThumbprint` or use SignTool in a post-build step.
+3. Drop the SmartScreen warning from the README.
+
+Until then, both lanes ship unsigned but minisign-verified bundles.
 
 ### Phase 4 — Documentation + release runbook (~30 min)
 
@@ -301,6 +333,7 @@ If skipped, document that macOS users must right-click → Open the first time.
   4. Watch the workflow; if green, the GitHub Release publishes itself and the manifest updates.
   5. Verify by running an old build locally and watching it pick up the update.
 - `docs/UPDATER-KEY-RECOVERY.md` — what to do if the private key is lost (TL;DR: you can't; ship a new app under a new identifier and migrate users manually).
+- `README.md` — add a "First launch" section that explains the macOS right-click → Open dance and the Windows SmartScreen "More info → Run anyway" dance until paid signing is in place.
 
 ### Phase 5 — Test plan
 
@@ -312,12 +345,16 @@ If skipped, document that macOS users must right-click → Open the first time.
 | Bad signature | Manually replace the `.sig` URL in `latest.json` with a different file. Run an old build → updater rejects the download with a signature error. |
 | Network failure | Disconnect Wi-Fi, click Check for Updates → friendly error, app keeps running. |
 | Cancelled mid-download | Use the dev tools network throttle to make the download slow, click Cancel (need to add Cancel to the UI). Verify state returns to "available." |
+| **macOS auto-update keeps app trusted** | Manually `xattr -d com.apple.quarantine` an old install, run it, accept an auto-update, relaunch from `/Applications`. Should open without re-prompting Gatekeeper because the ad-hoc signature persists. |
+| **macOS first launch warning** | Download the bundle from a release on a fresh Mac (or wipe quarantine bit on a test box), double-click → confirm the Gatekeeper dialog appears, then right-click → Open works. |
 
 E2E for the GH Actions side:
 - Manually trigger the workflow on a throwaway branch and tag (`v2026-99-99`) targeting a private repo. Verify all artifacts upload + manifest publishes.
 
 ## 5. Trade-offs
 
+- **No paid OS-level signing.** The minisign signature still protects update integrity, but every fresh download has to clear the OS gatekeeper manually. Acceptable for early users / a side project; revisit when there's a wider audience or an external distribution channel.
+- **Auto-update preserves macOS trust, fresh install does not.** Once a user has done the right-click → Open dance once, every subsequent auto-update lands silently because we ad-hoc sign. So the friction is one-time per install, not per release.
 - **GitHub Pages dependency.** If GitHub Pages is down, no one gets updates. Acceptable for an open-source desktop tool; if uptime becomes critical, point the manifest at a CDN-hosted JSON instead.
 - **Single channel.** v1 ships stable only. Adding beta is straightforward: a parallel `release-beta.yml` writing to `updates/latest-beta.json` and a setting in the app to switch endpoints. Defer until you have a reason for it.
 - **No partial/diff updates.** Each update redownloads the whole bundle (~10-15 MB for mdwriter). For a writing tool with infrequent releases, this is fine.
@@ -328,17 +365,18 @@ E2E for the GH Actions side:
 
 - Phase 0 (plugin + key + config): 30 min
 - Phase 1 (frontend UI): 2-3 hours
-- Phase 2 (release workflow): 3-4 hours
-- Phase 3 (Apple notarization): 1-2 hours (assuming dev enrollment already done; +half a day if not)
+- Phase 2 (release workflow): 2-3 hours (dropped Apple cert + notarization plumbing)
+- Phase 3 (paid signing future-proofing): 0 in v1 (1-2 hours when you eventually add Apple Dev; +1 hour for Windows)
 - Phase 4 (docs): 30 min
 - Phase 5 (testing): 1-2 hours
 
-**Total:** ~1-1.5 focused days for a single-channel macOS+Windows release pipeline. Add 0.5 day if Linux AppImage auto-update is in scope.
+**Total v1:** **~6-9 hours of focused work.** Less than originally estimated because the OS-level signing legwork is deferred. Add 1-2 hours later when the Apple cert lands.
 
 ## 7. Open questions to resolve before starting
 
-1. **Apple Developer Program** — enrolled, or skip notarization for v1?
-2. **Windows code-signing cert** — have one, or accept SmartScreen warnings?
+1. ~~**Apple Developer Program** — enrolled, or skip notarization for v1?~~ **Resolved: deferred.** v1 ships unsigned with ad-hoc codesign for update consistency.
+2. ~~**Windows code-signing cert** — have one, or accept SmartScreen warnings?~~ **Resolved: deferred.** Same path as macOS.
 3. **Tag scheme** — calendar (`vYYYY-MM-DD`, like Tolaria), semver (`v0.2.0`), or both?
 4. **Release cadence** — manual on every push to main, or scheduled / on demand?
 5. **Telemetry** — should the check report anonymous version + OS to a metrics endpoint? Tolaria sends a `app_check_for_updates` event to PostHog. Defer.
+6. **macOS first-launch dialog** — leave the README to explain the right-click dance, or also surface the explanation on a download landing page?

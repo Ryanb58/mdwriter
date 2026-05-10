@@ -1,5 +1,7 @@
+use crate::commands::frontmatter::{parse_doc, serialize_doc, ParsedDoc};
 use crate::errors::{AppError, Result};
 use serde::Serialize;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Debug)]
@@ -70,6 +72,30 @@ fn has_markdown(node: &TreeNode) -> bool {
     }
 }
 
+#[tauri::command]
+pub fn read_file(path: PathBuf) -> Result<ParsedDoc> {
+    let raw = std::fs::read_to_string(&path)?;
+    parse_doc(&raw)
+}
+
+#[tauri::command]
+pub fn write_file(path: PathBuf, doc: ParsedDoc) -> Result<()> {
+    let serialized = serialize_doc(&doc)?;
+    write_atomic(&path, &serialized)
+}
+
+fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+    let parent = path.parent().ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
+    let temp = parent.join(format!(".{}.tmp", path.file_name().unwrap().to_string_lossy()));
+    {
+        let mut f = std::fs::File::create(&temp)?;
+        f.write_all(contents.as_bytes())?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&temp, path)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +161,34 @@ mod tests {
     fn missing_root_returns_not_found() {
         let result = list_tree(PathBuf::from("/definitely/does/not/exist/zzz"));
         assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn write_then_read_round_trip() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("a.md");
+        let doc = ParsedDoc {
+            frontmatter: serde_yaml::from_str("title: Hi").unwrap(),
+            body: "# Body\n".into(),
+        };
+        write_file(p.clone(), doc).unwrap();
+        let back = read_file(p).unwrap();
+        assert_eq!(back.body, "# Body\n");
+    }
+
+    #[test]
+    fn write_atomic_cleans_up_on_success() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.md");
+        write_atomic(&p, "hi").unwrap();
+        assert!(p.exists());
+        let temp = dir.path().join(".x.md.tmp");
+        assert!(!temp.exists());
     }
 }

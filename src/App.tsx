@@ -13,14 +13,25 @@ export default function App() {
   useStartupRestore()
   useExternalChanges()
   const rootPath = useStore((s) => s.rootPath)
+  const propertiesVisible = useStore((s) => s.propertiesVisible)
+
   if (!rootPath) return <EmptyFolderState />
+
   return (
     <>
-      <div className="flex flex-col h-screen">
+      <div className="flex flex-col h-screen bg-bg text-text">
         <div className="flex flex-1 min-h-0">
-          <div className="w-60 border-r"><TreePane /></div>
-          <div className="flex-1"><EditorPane /></div>
-          <div className="w-72 border-l overflow-y-auto"><PropertiesPane /></div>
+          <aside className="w-[240px] flex-none border-r border-border bg-surface">
+            <TreePane />
+          </aside>
+          <main className="flex-1 min-w-0 flex flex-col">
+            <EditorPane />
+          </main>
+          {propertiesVisible && (
+            <aside className="w-[280px] flex-none border-l border-border bg-surface overflow-y-auto">
+              <PropertiesPane />
+            </aside>
+          )}
         </div>
         <StatusBar />
       </div>

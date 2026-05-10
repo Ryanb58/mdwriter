@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { CaretRight, CaretDown, FileText, Folder } from "@phosphor-icons/react"
+import { CaretRight, CaretDown, FileText, Folder, FolderOpen } from "@phosphor-icons/react"
 import type { TreeNode as TN } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { useTreeActions } from "./useTreeActions"
@@ -33,19 +33,39 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
     }},
   ]
 
-  const rowStyle = { paddingLeft: depth * 12 + (isDir ? 4 : 18) }
+  // Visual nesting via per-row guide lines + indent
+  const indent = depth * 12
   const selected = !isDir && selectedPath === node.path
+
+  // Strip extension from display name for files (cleaner)
+  const displayName = !isDir && /\.(md|markdown)$/i.test(node.name)
+    ? node.name.replace(/\.(md|markdown)$/i, "")
+    : node.name
 
   return (
     <div>
       <div
-        className={`flex items-center gap-1 px-1 py-0.5 rounded ${selected ? "bg-blue-600 text-white" : "hover:bg-neutral-800"}`}
-        style={rowStyle}
+        className={[
+          "group relative flex items-center gap-1.5 px-2 py-[3px] rounded-md cursor-pointer select-none",
+          "transition-colors",
+          selected
+            ? "bg-accent-soft text-text"
+            : "hover:bg-elevated text-text-muted hover:text-text",
+        ].join(" ")}
+        style={{ paddingLeft: 8 + indent }}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }) }}
         onClick={() => isDir ? setExpanded((x) => !x) : useStore.setState({ selectedPath: node.path })}
       >
-        {isDir && (expanded ? <CaretDown size={12} /> : <CaretRight size={12} />)}
-        {isDir ? <Folder size={14} /> : <FileText size={14} />}
+        {isDir ? (
+          expanded
+            ? <CaretDown size={11} weight="bold" className="text-text-subtle flex-none" />
+            : <CaretRight size={11} weight="bold" className="text-text-subtle flex-none" />
+        ) : (
+          <span className="w-[11px] flex-none" />
+        )}
+        {isDir
+          ? (expanded ? <FolderOpen size={14} weight="duotone" className="text-text-subtle flex-none" /> : <Folder size={14} weight="duotone" className="text-text-subtle flex-none" />)
+          : <FileText size={13} weight="regular" className="text-text-subtle flex-none" />}
         {renaming ? (
           <input
             autoFocus
@@ -56,10 +76,11 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
               if (e.key === "Enter") commitRename()
               if (e.key === "Escape") setRenaming(false)
             }}
-            className="flex-1 bg-neutral-800 px-1 outline-none rounded"
+            className="flex-1 min-w-0 bg-elevated border border-border-strong rounded px-1 py-px text-[13px]"
+            onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="truncate">{node.name}</span>
+          <span className={`truncate ${selected ? "font-medium" : ""}`}>{displayName}</span>
         )}
       </div>
       {isDir && expanded && (node as Extract<TN, { kind: "dir" }>).children.map((c) => (

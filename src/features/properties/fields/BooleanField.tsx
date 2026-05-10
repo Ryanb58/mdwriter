@@ -4,7 +4,15 @@ export function BooleanField({
   return (
     <button
       onClick={() => onChange(!value)}
-      className={`px-2 py-0.5 rounded text-xs ${value ? "bg-blue-600 text-white" : "bg-neutral-700"}`}
-    >{value ? "true" : "false"}</button>
+      className={[
+        "inline-flex items-center px-2.5 py-1 rounded-md text-[12px] font-medium",
+        "border transition-colors",
+        value
+          ? "bg-accent-soft text-text border-accent-soft"
+          : "bg-elevated text-text-muted border-border hover:text-text",
+      ].join(" ")}
+    >
+      {value ? "true" : "false"}
+    </button>
   )
 }

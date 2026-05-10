@@ -1,116 +1,151 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
+@import "tailwindcss";
 
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
-}
+/* Design tokens — writer-at-night scene, restrained color, tinted neutrals.
+   Single muted-cool accent for selection. */
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
+  --color-bg:        oklch(0.16 0.005 250);
+  --color-surface:   oklch(0.20 0.006 250);
+  --color-elevated:  oklch(0.24 0.007 250);
+  --color-border:    oklch(0.30 0.008 250);
+  --color-border-strong: oklch(0.40 0.010 250);
+  --color-text:      oklch(0.93 0.005 250);
+  --color-text-muted:oklch(0.66 0.008 250);
+  --color-text-subtle:oklch(0.50 0.008 250);
+  --color-accent:    oklch(0.66 0.12 245);
+  --color-accent-soft:oklch(0.36 0.07 245);
+  --color-accent-fg: oklch(0.99 0 0);
+  --color-danger:    oklch(0.65 0.17 25);
+  --color-warning:   oklch(0.78 0.13 80);
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Inter", system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  color-scheme: dark;
+}
+
+@theme {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-elevated: var(--color-elevated);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+  --color-accent: var(--color-accent);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-fg: var(--color-accent-fg);
+  --color-danger: var(--color-danger);
+  --color-warning: var(--color-warning);
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono);
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.55;
+  font-feature-settings: "ss01", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
 }
 
-.container {
+/* Selection */
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-fg);
+}
+
+/* Scrollbars — quiet, slim, only on hover */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*:hover > ::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+  background-clip: padding-box;
+}
+
+/* Buttons reset (override Tauri scaffold defaults) */
+button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  padding: 0;
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
   cursor: pointer;
 }
 
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
+input, textarea {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
   outline: none;
+  padding: 0;
+  margin: 0;
 }
 
-#greet-input {
-  margin-right: 5px;
+/* BlockNote — make it inherit the dark theme cleanly.
+   The Mantine theme provides its own dark, but we tune typography
+   so the editor body feels like the hero. */
+.bn-container {
+  background: transparent !important;
+}
+.bn-editor {
+  font-family: var(--font-ui) !important;
+  font-size: 16px !important;
+  line-height: 1.7 !important;
+  color: var(--color-text) !important;
+  padding: 24px 48px !important;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.bn-editor h1 { font-size: 28px; line-height: 1.25; font-weight: 600; margin: 0.6em 0 0.4em; }
+.bn-editor h2 { font-size: 22px; line-height: 1.3; font-weight: 600; margin: 1em 0 0.4em; }
+.bn-editor h3 { font-size: 18px; line-height: 1.35; font-weight: 600; margin: 1em 0 0.4em; }
+.bn-editor p, .bn-editor li { font-size: 16px; }
+.bn-editor code, .bn-editor pre {
+  font-family: var(--font-mono) !important;
+  font-size: 13.5px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
+/* CodeMirror raw-mode tuning */
+.cm-editor {
+  background: transparent !important;
+  color: var(--color-text) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13.5px !important;
 }
+.cm-editor.cm-focused { outline: none !important; }
+.cm-gutters {
+  background: transparent !important;
+  border-right: 1px solid var(--color-border) !important;
+  color: var(--color-text-subtle) !important;
+}
+.cm-activeLine, .cm-activeLineGutter { background: var(--color-surface) !important; }
+.cm-content { padding: 24px 16px !important; }
+.cm-line { padding: 0 8px; }

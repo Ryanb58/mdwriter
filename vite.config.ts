@@ -30,4 +30,30 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+
+  build: {
+    // Split heavy editor vendors into their own chunk so app code can be cached
+    // independently across updates. BlockNote pulls in CodeMirror for fenced
+    // code blocks, so they live in the same chunk to avoid circular deps.
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (
+            id.includes("@blocknote") ||
+            id.includes("@codemirror") ||
+            id.includes("@lezer") ||
+            id.includes("prosemirror") ||
+            id.includes("yjs")
+          ) {
+            return "editor-vendor";
+          }
+        },
+      },
+    },
+    // editor-vendor lands ~2 MB (BlockNote + CodeMirror + ProseMirror); that's
+    // the floor for a block + raw markdown editor. Raise the limit so the
+    // warning isn't noise on every build.
+    chunkSizeWarningLimit: 2500,
+  },
 }));

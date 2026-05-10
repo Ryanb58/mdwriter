@@ -85,15 +85,23 @@ jobs:
           - os: macos-15
             arch: aarch64
             target: aarch64-apple-darwin
+            bundles: app,dmg,updater
           - os: macos-15
             arch: x86_64
             target: x86_64-apple-darwin
+            bundles: app,dmg,updater
           - os: windows-latest
             arch: x86_64
             target: x86_64-pc-windows-msvc
+            # Skip MSI — MSI's version major is limited to u8 (0-255), and
+            # our YYYY.M.D versioning would always blow that out. NSIS has
+            # no such limit and is the .exe form the updater manifest
+            # already references.
+            bundles: nsis,updater
           - os: ubuntu-latest
             arch: x86_64
             target: x86_64-unknown-linux-gnu
+            bundles: deb,rpm,appimage,updater
     steps:
       - name: Checkout the tagged commit
         uses: actions/checkout@v4
@@ -165,6 +173,8 @@ jobs:
       - name: Build with tauri-action
         uses: tauri-apps/tauri-action@v0
         env:
+          # Required for tauri-action to upload bundles to the GitHub release.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # GitHub doesn't allow empty-string secrets, so the password secret
           # may not exist. Tauri treats empty/missing as "key has no password."
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -184,7 +194,7 @@ jobs:
             **Windows (unsigned):** click "More info → Run anyway" on SmartScreen.
           releaseDraft: true
           prerelease: false
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       - name: Upload signature artifacts
         uses: actions/upload-artifact@v4

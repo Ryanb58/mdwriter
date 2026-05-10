@@ -267,7 +267,7 @@ Add the `@tauri-apps/plugin-process` package for `relaunch`.
 
 **File:** `.github/workflows/release.yml`
 
-Triggered by tags matching `v20*-*-*` (e.g., `v2026-06-15`) so semantic-versioned mistakes don't accidentally cut a release.
+Triggered by tags matching `v20[0-9][0-9]-[0-9][0-9]-[0-9][0-9].*` (e.g., `v2026-05-10.a1b2c3d`) so semantic-version mistakes don't accidentally cut a release. See §8 for the full tag scheme.
 
 **Matrix:** macos-15 (aarch64 + x86_64), windows-latest (x86_64), ubuntu-latest (x86_64).
 
@@ -276,7 +276,7 @@ Triggered by tags matching `v20*-*-*` (e.g., `v2026-06-15`) so semantic-versione
 2. Setup pnpm, Node 22, Rust stable with the matrix target
 3. Cache `~/.cargo/registry`, `~/.cargo/git`, `src-tauri/target`
 4. `pnpm install --frozen-lockfile`
-5. Compute version from tag: `v2026-06-15` → `2026.6.15`. Update `tauri.conf.json` and `Cargo.toml` `[package].version` in-place
+5. Compute version from tag: `v2026-05-10.a1b2c3d` → `2026.5.10` (date portion only; see §8 for the bash one-liner). Update `tauri.conf.json` and `Cargo.toml` `[package].version` in-place
 6. Run `pnpm tauri build` with these env vars (only the Tauri minisign secrets are needed in v1):
    - `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 7. **macOS only — ad-hoc codesign** so the OS treats updates as the same identity (no Apple ID required):
@@ -329,7 +329,7 @@ Until then, both lanes ship unsigned but minisign-verified bundles.
 - `docs/RELEASING.md` — step-by-step manual checklist:
   1. Decide what's going in the release (review commits since last tag).
   2. Write release notes draft (will appear in the `notes` field).
-  3. Tag with `git tag v2026-06-15 && git push origin v2026-06-15`.
+  3. Tag with `git tag "v$(date +%Y-%m-%d).$(git rev-parse --short HEAD)" && git push origin "$(git describe --exact-match HEAD)"`.
   4. Watch the workflow; if green, the GitHub Release publishes itself and the manifest updates.
   5. Verify by running an old build locally and watching it pick up the update.
 - `docs/UPDATER-KEY-RECOVERY.md` — what to do if the private key is lost (TL;DR: you can't; ship a new app under a new identifier and migrate users manually).
@@ -372,11 +372,47 @@ E2E for the GH Actions side:
 
 **Total v1:** **~6-9 hours of focused work.** Less than originally estimated because the OS-level signing legwork is deferred. Add 1-2 hours later when the Apple cert lands.
 
-## 7. Open questions to resolve before starting
+## 7. Open questions
 
-1. ~~**Apple Developer Program** — enrolled, or skip notarization for v1?~~ **Resolved: deferred.** v1 ships unsigned with ad-hoc codesign for update consistency.
-2. ~~**Windows code-signing cert** — have one, or accept SmartScreen warnings?~~ **Resolved: deferred.** Same path as macOS.
-3. **Tag scheme** — calendar (`vYYYY-MM-DD`, like Tolaria), semver (`v0.2.0`), or both?
-4. **Release cadence** — manual on every push to main, or scheduled / on demand?
-5. **Telemetry** — should the check report anonymous version + OS to a metrics endpoint? Tolaria sends a `app_check_for_updates` event to PostHog. Defer.
-6. **macOS first-launch dialog** — leave the README to explain the right-click dance, or also surface the explanation on a download landing page?
+1. ~~**Apple Developer Program**~~ — **Resolved: deferred.** v1 ships unsigned with ad-hoc codesign for update consistency.
+2. ~~**Windows code-signing cert**~~ — **Resolved: deferred.** Same path as macOS.
+3. ~~**Tag scheme**~~ — **Resolved: `vYYYY-MM-DD.<git-short-hash>`**, e.g. `v2026-05-10.a1b2c3d`. The hash makes each tag unique even on same-day re-releases and links the tag back to the exact commit. (See §8 for the version-derivation rule.)
+4. **Release cadence** — undecided. v1 of the workflow is triggered manually by pushing a tag; we'll choose between scheduled cadence vs ad-hoc when there's actual usage data. Workflow design doesn't depend on this.
+5. ~~**Telemetry**~~ — **Resolved: no.** No update-check telemetry in v1. The plain Tauri updater fetch already shows up in GitHub Pages access logs if we ever need rough usage signal.
+6. ~~**macOS first-launch dialog UX**~~ — **Resolved: README only.** Skip the separate download landing page; cover both the macOS right-click → Open dance and the Windows SmartScreen "More info → Run anyway" dance in the project README's "First launch" section.
+
+## 8. Tag scheme details
+
+**Tag format:** `vYYYY-MM-DD.<short-sha>` where `<short-sha>` is `git rev-parse --short HEAD` (7 chars by default).
+
+Examples:
+- `v2026-05-10.a1b2c3d`
+- `v2026-06-15.f9e8d7c`
+
+**Workflow trigger:**
+```yaml
+on:
+  push:
+    tags:
+      - 'v20[0-9][0-9]-[0-9][0-9]-[0-9][0-9].*'
+```
+
+**Version derived from the tag (used in `tauri.conf.json` and `Cargo.toml`):** the date portion only, formatted as `YYYY.M.D` (no leading zeros — semver doesn't allow them).
+
+Examples:
+- Tag `v2026-05-10.a1b2c3d` → version `2026.5.10`
+- Tag `v2026-06-15.f9e8d7c` → version `2026.6.15`
+
+**Why drop the short hash from the version:** Tauri's auto-updater compares versions with semver. Build metadata (`2026.5.10+a1b2c3d`) is ignored by the comparator, and pre-release suffixes (`2026.5.10-a1b2c3d`) sort *below* the unsuffixed version. Keeping the version pure-semver-calendar avoids both pitfalls. The hash lives in the tag, the GitHub release name, and the release notes for traceability — the version doesn't need it.
+
+**Same-day re-release caveat:** if you need to ship twice in one day, the second tag's hash differs but the derived version is identical, so existing installs won't see a new update. Two safe options: (a) wait until tomorrow's date, or (b) cherry-pick the fix and re-tag with the same `vYYYY-MM-DD.X` but a different hash, then manually bump the manifest to `2026.5.10` again — only works because the Tauri updater also caches by hash, so a bumped `latest.json` re-fetches. Document this in `RELEASING.md`.
+
+**Version-derivation step in CI (Bash):**
+```bash
+TAG="${GITHUB_REF_NAME}"           # e.g. v2026-05-10.a1b2c3d
+DATE_PART="${TAG#v}"               # 2026-05-10.a1b2c3d
+DATE_PART="${DATE_PART%%.*}"       # 2026-05-10
+IFS='-' read -r Y M D <<< "$DATE_PART"
+VERSION="$((10#$Y)).$((10#$M)).$((10#$D))"
+echo "version=$VERSION"            # 2026.5.10
+```

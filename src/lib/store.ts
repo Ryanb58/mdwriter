@@ -16,6 +16,8 @@ export type OpenDoc = {
 
 export type Theme = "light" | "dark" | "system"
 
+export type ImagesLocation = "vault-assets" | "sibling-assets" | "same-folder"
+
 export type Settings = {
   theme: Theme
   autoRenameFromH1: boolean
@@ -23,6 +25,8 @@ export type Settings = {
   showPdfs: boolean
   showImages: boolean
   showUnsupported: boolean
+  imagesLocation: ImagesLocation
+  imageFilenameTemplate: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,6 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showPdfs: false,
   showImages: false,
   showUnsupported: false,
+  imagesLocation: "vault-assets",
+  imageFilenameTemplate: "{date}-{time}-{rand}",
 }
 
 export type AppStore = {

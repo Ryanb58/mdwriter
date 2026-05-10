@@ -277,17 +277,23 @@ jobs:
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           PUBDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+          # Search by artifact name (which encodes the platform) rather than
+          # by .sig filename. macOS .sig files are named mdwriter.app.tar.gz.sig
+          # with no arch or version in the name — only the artifact directory
+          # tells us which arch they belong to.
           read_sig() {
-            local pattern="$1"
+            local artifact_dir="$1" pattern="$2"
             local file
-            file=$(find sigs -type f -name "$pattern" | head -1 || true)
+            file=$(find "sigs/$artifact_dir" -type f -name "$pattern" 2>/dev/null | head -1 || true)
             if [[ -z "$file" ]]; then echo ""; return; fi
             cat "$file"
           }
 
-          MAC_ARM_SIG=$(read_sig "*aarch64*.app.tar.gz.sig")
-          MAC_X64_SIG=$(read_sig "*x86_64*.app.tar.gz.sig")
-          WIN_SIG=$(read_sig "*x64-setup.exe.sig")
+          ls -laR sigs || true   # debug: log what we got
+
+          MAC_ARM_SIG=$(read_sig "sigs-macos-15-aarch64"      "*.app.tar.gz.sig")
+          MAC_X64_SIG=$(read_sig "sigs-macos-15-x86_64"       "*.app.tar.gz.sig")
+          WIN_SIG=$(read_sig     "sigs-windows-latest-x86_64" "*-setup.exe.sig")
 
           mkdir -p out
           {

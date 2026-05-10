@@ -11,15 +11,19 @@ export function useStartupRestore() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const recent = await ipc.getRecentFolders()
-      if (cancelled) return
-      setRecent(recent)
-      const candidate = recent[0]
-      if (!candidate) return
       try {
-        await openFolder(candidate, { setRoot, setTree, setRecent })
+        const recent = await ipc.getRecentFolders()
+        if (cancelled) return
+        setRecent(recent)
+        const candidate = recent[0]
+        if (!candidate) return
+        try {
+          await openFolder(candidate, { setRoot, setTree, setRecent })
+        } catch {
+          // folder gone — stay on empty state
+        }
       } catch {
-        // folder gone — stay on empty state
+        // Tauri not available (browser dev) — stay on empty state
       }
     })()
     return () => { cancelled = true }

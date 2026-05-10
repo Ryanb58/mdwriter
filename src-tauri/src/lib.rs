@@ -20,6 +20,10 @@ pub fn run() {
             commands::fs::list_tree,
             commands::fs::read_file,
             commands::fs::write_file,
+            commands::fs::create_file,
+            commands::fs::create_dir,
+            commands::fs::rename_path,
+            commands::fs::trash_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

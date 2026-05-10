@@ -39,37 +39,27 @@ The updater endpoint is `https://ryanb58.github.io/mdwriter/updates/latest.json`
 
 ## Cutting a release
 
-```bash
-# 1. Make sure your working tree is clean and you're on main.
-git status
+The workflow is **manually triggered** from the Actions tab.
 
-# 2. Build the tag from today's date and the current commit.
-TAG="v$(date +%Y-%m-%d).$(git rev-parse --short HEAD)"
-echo "$TAG"   # e.g. v2026-05-10.a1b2c3d
+1. Open `Actions → Release → Run workflow`.
+2. Pick the branch you want to ship (usually `main`).
+3. Optional: paste markdown release notes into the input field. Leave blank to fill them in later by editing the GitHub Release.
+4. Click `Run workflow`.
 
-# 3. Push it.
-git tag "$TAG"
-git push origin "$TAG"
-```
+That's it. The workflow:
 
-That's it. The `release.yml` workflow:
+1. Computes today's date and the short SHA of the chosen commit, builds the tag `vYYYY-MM-DD.<short-sha>`, and pushes it (e.g. `v2026-05-10.a1b2c3d`). Bails if the tag already exists.
+2. Stamps `2026.5.10` into `tauri.conf.json`, `Cargo.toml`, and `package.json`.
+3. Builds bundles in parallel for macOS arm64, macOS x86_64, Windows x64, and Linux x64. macOS bundles are ad-hoc codesigned during the build (`APPLE_SIGNING_IDENTITY=-`).
+4. Uploads every artifact to a draft GitHub Release.
+5. **Only after every platform succeeds:** promotes the draft to a published release, then publishes `latest.json` to `gh-pages/updates/`. This is what makes running mdwriter installs see the new version on their next check.
+6. **If anything fails:** deletes the tag and the draft release so you can re-run from scratch.
 
-1. Computes `2026.5.10` from the date portion of the tag.
-2. Stamps that version into `tauri.conf.json`, `Cargo.toml`, and `package.json`.
-3. Builds bundles in parallel for macOS arm64, macOS x86_64, Windows x64, and Linux x64.
-4. Ad-hoc codesigns each macOS `.app` so future auto-updates don't re-trigger Gatekeeper.
-5. Uploads every artifact to a draft GitHub release.
-6. Generates `latest.json` from the collected `.sig` files.
-7. Publishes `latest.json` to `gh-pages/updates/`.
-8. Flips the draft release to published.
-
-Watch the workflow at `Actions → Release`. It takes 10-20 minutes.
+Watch it at `Actions → Release`. ~10-20 minutes.
 
 ## Tag format
 
-`vYYYY-MM-DD.<git-short-sha>`, e.g. `v2026-05-10.a1b2c3d`.
-
-The trigger glob is `v20[0-9][0-9]-[0-9][0-9]-[0-9][0-9].*` — anything outside this shape won't kick the workflow.
+`vYYYY-MM-DD.<git-short-sha>`, e.g. `v2026-05-10.a1b2c3d`. Created automatically by the workflow.
 
 The version baked into the bundle is `YYYY.M.D` (no leading zeros — semver doesn't allow them). The hash lives only in the tag and the release name for traceability.
 

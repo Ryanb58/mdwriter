@@ -1,10 +1,12 @@
 import { useStore } from "../../lib/store"
 import { useOpenFile } from "./useOpenFile"
+import { useAutoSave } from "./useAutoSave"
 import { basename } from "../../lib/paths"
 import { BlockEditor } from "./BlockEditor"
 
 export function EditorPane() {
   useOpenFile()
+  useAutoSave()
   const doc = useStore((s) => s.openDoc)
   const patch = useStore((s) => s.patchOpenDoc)
 

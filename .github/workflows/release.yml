@@ -15,6 +15,13 @@ env:
   # on 2026-06-02 anyway.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
+# Workflow-level permissions ceiling. If the repo's default workflow
+# permissions are "Read-only," this declaration cannot raise above that —
+# the repo setting must be "Read and write permissions" for tag pushes
+# and release creation to work.
+permissions:
+  contents: write
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -76,6 +83,30 @@ jobs:
           gh api -X POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
             -f "ref=refs/tags/${TAG}" \
             -f "sha=${GITHUB_SHA}"
+
+      - name: Create draft GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.compute.outputs.tag }}
+          VERSION: ${{ steps.compute.outputs.version }}
+          NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+          # Create the draft release ONCE here so the four parallel build
+          # jobs just attach artifacts to it instead of racing to create it.
+          BODY=$(cat <<EOF
+          ${NOTES}
+
+          ---
+
+          **macOS (unsigned):** right-click the app and choose Open the first time.
+          **Windows (unsigned):** click "More info → Run anyway" on SmartScreen.
+          EOF
+          )
+          gh release create "$TAG" \
+            --draft \
+            --title "mdwriter ${VERSION} (${TAG})" \
+            --notes "$BODY"
 
   # ──────────────────────────────────────────────────────────────
   # Job 2: Build per-platform bundles in parallel and upload them

@@ -365,6 +365,7 @@ Existing test suites (`pnpm test`, `cargo test --manifest-path src-tauri/Cargo.t
 
 ## 10. Open items / future work
 
+- **User-visible error reporting.** mdwriter has no toast system yet. v1 reports errors via `console.error` only — unsupported-MIME pastes, write failures, and saturated collision retries do nothing visible. Building a minimal toast helper is a broader UX-feedback task; tracked here so the v1 limitation isn't surprising. The §8 "Toast: …" entries should be read as the eventual behavior once a toast helper exists.
 - **Asset-protocol scope.** v1 uses `scope: ["**"]` so the editor can render images from any vault path. This is permissive. A future change can update the scope dynamically when the vault root changes (Tauri 2 supports runtime scope mutation via the FS plugin scope APIs).
 - **Cleanup of orphaned images.** No detection in v1. A future "Vault → Find unused images" command could scan the vault.
 - **HEIC support.** Defer — requires decoding to PNG/JPEG, adds binary size. Toast "unsupported" today.

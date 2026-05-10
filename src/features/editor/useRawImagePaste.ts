@@ -1,12 +1,16 @@
 import { useEffect } from "react"
 import type { EditorView } from "@codemirror/view"
 import { useStore } from "../../lib/store"
-import { saveImage, mimeToExt } from "../../lib/imagePaste"
+import { saveImage, mimeToExt, guessMimeFromName } from "../../lib/imagePaste"
+
+function isImageFile(f: File): boolean {
+  return Boolean(mimeToExt(f.type) || guessMimeFromName(f.name))
+}
 
 function firstImageFromFiles(files: FileList | null): File | null {
   if (!files) return null
   for (const f of Array.from(files)) {
-    if (mimeToExt(f.type)) return f
+    if (isImageFile(f)) return f
   }
   return null
 }
@@ -16,7 +20,7 @@ function firstImageFromItems(items: DataTransferItemList | null): File | null {
   for (const item of Array.from(items)) {
     if (item.kind === "file") {
       const f = item.getAsFile()
-      if (f && mimeToExt(f.type)) return f
+      if (f && isImageFile(f)) return f
     }
   }
   return null
@@ -28,7 +32,7 @@ async function insertImage(view: EditorView, file: File): Promise<void> {
   const bytes = new Uint8Array(await file.arrayBuffer())
   const result = await saveImage({
     bytes,
-    mime: file.type || "application/octet-stream",
+    mime: file.type || guessMimeFromName(file.name) || "application/octet-stream",
     vaultRoot: rootPath,
     docPath: openDoc.path,
     location: settings.imagesLocation,

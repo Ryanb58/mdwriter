@@ -7,6 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 import { invoke } from "@tauri-apps/api/core"
 import {
   mimeToExt,
+  guessMimeFromName,
   resolveImageDir,
   generateFilename,
   relativeFromDocDir,
@@ -32,6 +33,21 @@ describe("mimeToExt", () => {
 
   it("is case-insensitive", () => {
     expect(mimeToExt("IMAGE/PNG")).toBe("png")
+  })
+})
+
+describe("guessMimeFromName", () => {
+  it("maps common image extensions", () => {
+    expect(guessMimeFromName("foo.png")).toBe("image/png")
+    expect(guessMimeFromName("FOO.JPG")).toBe("image/jpeg")
+    expect(guessMimeFromName("foo.jpeg")).toBe("image/jpeg")
+    expect(guessMimeFromName("path/to/img.webp")).toBe("image/webp")
+  })
+
+  it("returns null for unknown or missing extensions", () => {
+    expect(guessMimeFromName("foo")).toBeNull()
+    expect(guessMimeFromName("foo.heic")).toBeNull()
+    expect(guessMimeFromName("")).toBeNull()
   })
 })
 
@@ -184,12 +200,11 @@ describe("saveImage", () => {
     })
   })
 
-  it("retries with a new name on collision", async () => {
+  it("appends -1, -2, … on collision", async () => {
     let n = 0
     vi.mocked(invoke).mockImplementation(async () => {
-      if (n++ === 0) throw { kind: "Io", message: "already exists: /Vault/assets/a.png" }
+      if (n++ === 0) throw { kind: "Io", message: "already exists: /Vault/assets/a3f1.png" }
     })
-    const rand = vi.fn().mockReturnValueOnce("aaaa").mockReturnValueOnce("bbbb")
     const result = await saveImage({
       bytes: new Uint8Array([0]),
       mime: "image/png",
@@ -198,9 +213,9 @@ describe("saveImage", () => {
       location: "vault-assets",
       template: "{rand}",
       now: new Date("2026-05-10T14:30:52"),
-      rand,
+      rand: () => "a3f1",
     })
-    expect(result.relativePath).toBe("assets/bbbb.png")
+    expect(result.relativePath).toBe("assets/a3f1-1.png")
     expect(invoke).toHaveBeenCalledTimes(2)
   })
 

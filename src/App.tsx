@@ -35,11 +35,6 @@ export default function App() {
     <>
       <div className="flex flex-col h-screen bg-bg text-text">
         <div className="flex flex-1 min-h-0">
-          {aiPanelVisible && (
-            <aside className="w-[340px] flex-none border-r border-border bg-surface">
-              <AiPanel />
-            </aside>
-          )}
           <aside className="w-[240px] flex-none border-r border-border bg-surface">
             <TreePane />
           </aside>
@@ -49,6 +44,11 @@ export default function App() {
           {propertiesVisible && (
             <aside className="w-[280px] flex-none border-l border-border bg-surface overflow-y-auto">
               <PropertiesPane />
+            </aside>
+          )}
+          {aiPanelVisible && (
+            <aside className="w-[360px] flex-none border-l border-border bg-surface">
+              <AiPanel />
             </aside>
           )}
         </div>

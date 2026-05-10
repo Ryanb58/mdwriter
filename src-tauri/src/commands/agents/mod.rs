@@ -83,10 +83,12 @@ pub enum AiStreamEvent {
     },
 }
 
-/// Where the running subprocess lives, so we can kill it.
+/// Where the running subprocess lives, so we can kill it. Behind an Arc so the
+/// reader thread (which calls .wait()) and the cancel command (which calls
+/// .kill()) can both reach the same Child.
 #[derive(Default)]
 pub struct AgentSession {
-    pub process: Mutex<Option<tauri_plugin_shell::process::CommandChild>>,
+    pub process: Mutex<Option<std::sync::Arc<Mutex<std::process::Child>>>>,
 }
 
 /// Trait that each adapter implements.
@@ -198,8 +200,10 @@ pub async fn start_ai_session(
     prompt: String,
     vault_path: PathBuf,
 ) -> Result<()> {
-    use tauri_plugin_shell::process::CommandEvent;
-    use tauri_plugin_shell::ShellExt;
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command as StdCommand, Stdio};
+    use std::sync::Arc;
+    use std::thread;
 
     let adapter = agent_for(agent).ok_or_else(|| {
         AppError::Io(format!("Agent '{}' is not yet implemented.", agent.label()))
@@ -211,67 +215,89 @@ pub async fn start_ai_session(
 
     // Stop any session already running.
     let prev = app.state::<AgentSession>().process.lock().unwrap().take();
-    if let Some(child) = prev {
-        let _ = child.kill();
+    if let Some(child_arc) = prev {
+        let _ = child_arc.lock().unwrap().kill();
     }
 
     let cmd = adapter.build_command(&binary, &vault_path, &prompt);
 
-    let mut shell_cmd = app.shell().command(cmd.binary.to_string_lossy().to_string());
-    shell_cmd = shell_cmd.args(&cmd.args).current_dir(&vault_path);
+    // stdin → /dev/null so the agent doesn't block waiting for input. Some
+    // CLIs (Claude Code) print a slow-stdin warning otherwise.
+    let mut std_cmd = StdCommand::new(&cmd.binary);
+    std_cmd
+        .args(&cmd.args)
+        .current_dir(&vault_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     for (k, v) in &cmd.env {
-        shell_cmd = shell_cmd.env(k, v);
+        std_cmd.env(k, v);
     }
 
-    let (mut rx, child) = shell_cmd
+    let mut child = std_cmd
         .spawn()
         .map_err(|e| AppError::Io(format!("Failed to spawn {}: {}", agent.label(), e)))?;
+    let stdout = child.stdout.take()
+        .ok_or_else(|| AppError::Io("subprocess missing stdout".into()))?;
+    let stderr = child.stderr.take()
+        .ok_or_else(|| AppError::Io("subprocess missing stderr".into()))?;
 
-    *app.state::<AgentSession>().process.lock().unwrap() = Some(child);
+    let child_arc = Arc::new(Mutex::new(child));
+    *app.state::<AgentSession>().process.lock().unwrap() = Some(child_arc.clone());
 
-    let app_emit = app.clone();
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            match event {
-                CommandEvent::Stdout(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    for line in text.split('\n') {
-                        let line = line.trim_end_matches('\r');
-                        if line.is_empty() { continue; }
-                        for ev in adapter.parse_line(line) {
-                            let _ = app_emit.emit("ai-stream", ev);
-                        }
-                    }
-                }
-                CommandEvent::Stderr(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes).to_string();
-                    if !text.trim().is_empty() {
-                        let _ = app_emit.emit(
-                            "ai-stream",
-                            AiStreamEvent::Error { message: text },
-                        );
-                    }
-                }
-                CommandEvent::Terminated(payload) => {
-                    let _ = app_emit.emit(
-                        "ai-stream",
-                        AiStreamEvent::Done {
-                            usage: payload.code.map(|c| serde_json::json!({ "exit_code": c })),
-                        },
-                    );
-                    break;
-                }
-                CommandEvent::Error(e) => {
-                    let _ = app_emit.emit(
-                        "ai-stream",
-                        AiStreamEvent::Error { message: e },
-                    );
-                    break;
-                }
-                _ => {}
+    // stdout reader: parse each line and emit normalized events.
+    let app_stdout = app.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            if line.trim().is_empty() { continue; }
+            for ev in adapter.parse_line(&line) {
+                let _ = app_stdout.emit("ai-stream", ev);
             }
         }
-        *app_emit.state::<AgentSession>().process.lock().unwrap() = None;
+    });
+
+    // stderr reader: surface noteworthy stderr as error events. Filter the
+    // common slow-stdin warning since we already redirected stdin to null.
+    let app_stderr = app.clone();
+    thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            let Ok(line) = line else { break };
+            let trimmed = line.trim();
+            if trimmed.is_empty() { continue; }
+            if trimmed.starts_with("Warning:") { continue; }
+            let _ = app_stderr.emit(
+                "ai-stream",
+                AiStreamEvent::Error { message: line },
+            );
+        }
+    });
+
+    // Waiter: poll try_wait so we don't hold the child mutex across a blocking
+    // wait — otherwise stop_ai_session can't kill while we're waiting.
+    let app_wait = app.clone();
+    let child_for_wait = child_arc.clone();
+    thread::spawn(move || {
+        let exit_code: Option<i32> = loop {
+            {
+                let mut guard = child_for_wait.lock().unwrap();
+                match guard.try_wait() {
+                    Ok(Some(status)) => break status.code(),
+                    Ok(None) => {} // still running
+                    Err(_) => break None,
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        let _ = app_wait.emit(
+            "ai-stream",
+            AiStreamEvent::Done {
+                usage: exit_code.map(|c| serde_json::json!({ "exit_code": c })),
+            },
+        );
+        *app_wait.state::<AgentSession>().process.lock().unwrap() = None;
     });
 
     Ok(())
@@ -280,8 +306,8 @@ pub async fn start_ai_session(
 #[tauri::command]
 pub fn stop_ai_session(app: AppHandle) -> Result<()> {
     let prev = app.state::<AgentSession>().process.lock().unwrap().take();
-    if let Some(child) = prev {
-        let _ = child.kill();
+    if let Some(child_arc) = prev {
+        let _ = child_arc.lock().unwrap().kill();
     }
     Ok(())
 }

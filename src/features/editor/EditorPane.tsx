@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react"
 import { useStore } from "../../lib/store"
 import { useOpenFile } from "./useOpenFile"
 import { useAutoSave } from "./useAutoSave"
@@ -5,8 +6,12 @@ import { useEditorMode } from "./useEditorMode"
 import { useAutoRename } from "./useAutoRename"
 import { basename } from "../../lib/paths"
 import { BlockEditor } from "./BlockEditor"
-import { RawEditor } from "./RawEditor"
 import { Sidebar, Warning, TextAa, Code } from "@phosphor-icons/react"
+
+// CodeMirror only loads when the user enters raw mode.
+const RawEditor = lazy(() =>
+  import("./RawEditor").then((m) => ({ default: m.RawEditor })),
+)
 
 function wordCount(s: string): number {
   return s.split(/\s+/).filter(Boolean).length
@@ -97,10 +102,12 @@ export function EditorPane() {
             onChangeMarkdown={(md) => patch({ rawMarkdown: md, dirty: true })}
           />
         ) : (
-          <RawEditor
-            value={doc.rawMarkdown}
-            onChange={(next) => patch({ rawMarkdown: next, dirty: true })}
-          />
+          <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>
+            <RawEditor
+              value={doc.rawMarkdown}
+              onChange={(next) => patch({ rawMarkdown: next, dirty: true })}
+            />
+          </Suspense>
         )}
       </div>
     </div>

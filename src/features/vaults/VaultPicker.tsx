@@ -20,22 +20,17 @@ export function VaultPicker() {
   const [draftName, setDraftName] = useState("")
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  // Other recents = excludes current vault, capped
   const otherRecents = recents.filter((p) => p !== rootPath).slice(0, MAX_RECENTS)
 
   useEffect(() => {
     if (!open_) return
     const onClick = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setCreating(false)
-        setDraftName("")
+        setOpen(false); setCreating(false); setDraftName("")
       }
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false); setCreating(false); setDraftName("")
-      }
+      if (e.key === "Escape") { setOpen(false); setCreating(false); setDraftName("") }
     }
     document.addEventListener("mousedown", onClick)
     document.addEventListener("keydown", onKey)
@@ -49,9 +44,7 @@ export function VaultPicker() {
     setOpen(false)
     try {
       await openFolder(path, { setRoot, setTree, setRecent })
-    } catch (e) {
-      console.error("failed to open", path, e)
-    }
+    } catch (e) { console.error("failed to open", path, e) }
   }
 
   async function openLocalFolder() {
@@ -64,7 +57,6 @@ export function VaultPicker() {
   async function commitCreate() {
     const name = draftName.trim()
     if (!name) { setCreating(false); setDraftName(""); return }
-    // Pick the parent location
     const parent = await open({ directory: true, multiple: false, title: `Pick a location for "${name}"` })
     if (!parent || typeof parent !== "string") {
       setCreating(false); setDraftName("")
@@ -73,13 +65,10 @@ export function VaultPicker() {
     const path = joinPath(parent, name)
     try {
       await ipc.createDir(path)
-      setOpen(false)
-      setCreating(false)
-      setDraftName("")
+      setOpen(false); setCreating(false); setDraftName("")
       await openFolder(path, { setRoot, setTree, setRecent })
     } catch (e) {
       console.error("failed to create vault", e)
-      // Surface a tiny inline error — leaving the dropdown open
       alert(`Couldn't create "${name}" at ${parent}: ${String(e)}`)
     }
   }
@@ -87,30 +76,27 @@ export function VaultPicker() {
   const currentName = rootPath ? basename(rootPath) : "—"
 
   return (
-    <div ref={wrapRef} className="relative border-t border-border">
+    <div ref={wrapRef} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
         className={[
-          "w-full flex items-center gap-2 px-3 py-2.5 text-[13px] transition-colors",
-          open_ ? "bg-elevated text-text" : "text-text hover:bg-elevated",
+          "flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] transition-colors",
+          open_ ? "bg-elevated text-text" : "text-text-muted hover:text-text hover:bg-elevated",
         ].join(" ")}
+        title={rootPath ?? ""}
       >
-        <Folder size={14} weight="duotone" className="text-text-subtle flex-none" />
-        <div className="flex-1 min-w-0 text-left">
-          <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle leading-none mb-0.5">Vault</div>
-          <div className="truncate font-medium">{currentName}</div>
-        </div>
-        <CaretUpDown size={12} className="text-text-subtle flex-none" />
+        <Folder size={11} weight="duotone" className="text-text-subtle flex-none" />
+        <span className="font-medium truncate max-w-[180px]">{currentName}</span>
+        <CaretUpDown size={10} className="text-text-subtle flex-none" />
       </button>
 
       {open_ && (
         <div
-          className="absolute left-2 right-2 bottom-[calc(100%+6px)] rounded-lg bg-elevated border border-border-strong overflow-hidden text-[13px]"
+          className="absolute left-0 bottom-[calc(100%+6px)] w-[300px] rounded-lg bg-elevated border border-border-strong overflow-hidden text-[13px]"
           style={{ boxShadow: "0 12px 32px -8px oklch(0 0 0 / 0.55), 0 2px 4px oklch(0 0 0 / 0.3)" }}
         >
           {!creating && (
             <>
-              {/* Current vault — pinned at top */}
               {rootPath && (
                 <div className="px-2 pt-2 pb-1">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle px-2 mb-1">Open</div>
@@ -124,7 +110,6 @@ export function VaultPicker() {
                 </div>
               )}
 
-              {/* Recents */}
               {otherRecents.length > 0 && (
                 <div className="px-2 pt-1 pb-1">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle px-2 mb-1">Recent</div>
@@ -147,10 +132,8 @@ export function VaultPicker() {
                 </div>
               )}
 
-              {/* Divider */}
               <div className="border-t border-border" />
 
-              {/* Actions */}
               <div className="p-1.5">
                 <button
                   onClick={() => setCreating(true)}

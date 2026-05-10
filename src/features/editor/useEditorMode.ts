@@ -6,18 +6,6 @@ export function useEditorMode() {
   const mode = useStore((s) => s.editorMode)
   const setMode = useStore((s) => s.setEditorMode)
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const meta = e.metaKey || e.ctrlKey
-      if (meta && e.key.toLowerCase() === "e") {
-        e.preventDefault()
-        toggle()
-      }
-    }
-    document.addEventListener("keydown", onKey)
-    return () => document.removeEventListener("keydown", onKey)
-  })
-
   async function toggle() {
     const doc = useStore.getState().openDoc
     if (!doc) return
@@ -41,6 +29,20 @@ export function useEditorMode() {
       }
     }
   }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const meta = e.metaKey || e.ctrlKey
+      if (meta && e.key.toLowerCase() === "e") {
+        e.preventDefault()
+        toggle()
+      }
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  })
+
+  return { mode, toggle }
 }
 
 function parseRaw(raw: string): { frontmatter: Record<string, unknown>; body: string } {

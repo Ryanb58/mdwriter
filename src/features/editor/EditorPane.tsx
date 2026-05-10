@@ -5,7 +5,7 @@ import { useEditorMode } from "./useEditorMode"
 import { basename } from "../../lib/paths"
 import { BlockEditor } from "./BlockEditor"
 import { RawEditor } from "./RawEditor"
-import { Sidebar, Warning } from "@phosphor-icons/react"
+import { Sidebar, Warning, Code } from "@phosphor-icons/react"
 
 function wordCount(s: string): number {
   return s.split(/\s+/).filter(Boolean).length
@@ -14,7 +14,7 @@ function wordCount(s: string): number {
 export function EditorPane() {
   useOpenFile()
   useAutoSave()
-  useEditorMode()
+  const { toggle: toggleMode } = useEditorMode()
   const doc = useStore((s) => s.openDoc)
   const mode = useStore((s) => s.editorMode)
   const patch = useStore((s) => s.patchOpenDoc)
@@ -55,13 +55,25 @@ export function EditorPane() {
           <span className="text-[14px] font-medium text-text truncate">{fileName}</span>
         </div>
         <div className="flex items-center gap-3 flex-none">
-          <span className="text-[11px] uppercase tracking-[0.14em] text-text-subtle">
-            {mode === "raw" ? "raw" : "block"}
-          </span>
           <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
           <button
+            onClick={toggleMode}
+            className={`p-1 rounded transition-colors ${
+              mode === "raw"
+                ? "text-text bg-elevated"
+                : "text-text-subtle hover:text-text hover:bg-elevated"
+            }`}
+            title={mode === "raw" ? "Switch to block view (⌘E)" : "Switch to raw markdown (⌘E)"}
+          >
+            <Code size={15} weight={mode === "raw" ? "bold" : "regular"} />
+          </button>
+          <button
             onClick={toggleProperties}
-            className={`text-text-subtle hover:text-text transition-colors ${propertiesVisible ? "text-text" : ""}`}
+            className={`p-1 rounded transition-colors ${
+              propertiesVisible
+                ? "text-text bg-elevated"
+                : "text-text-subtle hover:text-text hover:bg-elevated"
+            }`}
             title={propertiesVisible ? "Hide properties" : "Show properties"}
           >
             <Sidebar size={15} />

@@ -44,6 +44,7 @@ export type AppStore = {
   propertiesVisible: boolean
   settingsOpen: boolean
   settings: Settings
+  renamingPath: string | null
 
   setRoot(path: string | null): void
   setTree(tree: TreeNode | null): void
@@ -55,6 +56,7 @@ export type AppStore = {
   toggleProperties(): void
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
+  setRenamingPath(path: string | null): void
 }
 
 export const useStore = create<AppStore>()(
@@ -69,6 +71,7 @@ export const useStore = create<AppStore>()(
       propertiesVisible: true,
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
+      renamingPath: null,
 
       setRoot: (path) => set({ rootPath: path }),
       setTree: (tree) => set({ tree }),
@@ -82,6 +85,7 @@ export const useStore = create<AppStore>()(
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
+      setRenamingPath: (path) => set({ renamingPath: path }),
     }),
     {
       name: "mdwriter:store",

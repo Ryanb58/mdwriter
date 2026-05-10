@@ -1,9 +1,12 @@
-import { useState } from "react"
-import { CaretRight, CaretDown, FileText, Folder, FolderOpen } from "@phosphor-icons/react"
+import { useEffect, useState } from "react"
+import {
+  CaretRight, CaretDown, FileText, Folder, FolderOpen,
+  FilePlus, FolderPlus, PencilSimple, TrashSimple,
+} from "@phosphor-icons/react"
 import type { TreeNode as TN } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { useTreeActions } from "./useTreeActions"
-import { TreeContextMenu } from "./TreeContextMenu"
+import { TreeContextMenu, type ContextActionGroup } from "./TreeContextMenu"
 import { parent, basename } from "../../lib/paths"
 
 export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) {
@@ -12,7 +15,18 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(node.name)
   const selectedPath = useStore((s) => s.selectedPath)
+  const renamingPath = useStore((s) => s.renamingPath)
   const actions = useTreeActions()
+
+  // Global F2 — when this row is the selected file, the keyboard handler in
+  // useTreeShortcuts sets `renamingPath` to its path; we react to that here.
+  useEffect(() => {
+    if (renamingPath === node.path && !renaming) {
+      setDraftName(basename(node.path))
+      setRenaming(true)
+      useStore.getState().setRenamingPath(null)
+    }
+  }, [renamingPath, node.path, renaming])
 
   function commitRename() {
     if (draftName && draftName !== node.name) actions.rename(node.path, draftName).catch(console.error)
@@ -22,15 +36,40 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
   const isDir = node.kind === "dir"
   const parentDir = isDir ? node.path : parent(node.path)
 
-  const menuActions = [
-    ...(isDir ? [
-      { label: "New file", onClick: () => actions.newFile(parentDir) },
-      { label: "New folder", onClick: () => actions.newFolder(parentDir) },
-    ] : []),
-    { label: "Rename", onClick: () => { setDraftName(basename(node.path)); setRenaming(true) } },
-    { label: "Delete", onClick: () => {
-      if (confirm(`Move "${node.name}" to trash?`)) actions.trash(node.path).catch(console.error)
-    }},
+  const menuGroups: ContextActionGroup[] = [
+    ...(isDir
+      ? [[
+          {
+            label: "New file",
+            onClick: () => actions.newFile(parentDir),
+            icon: <FilePlus size={14} />,
+          },
+          {
+            label: "New folder",
+            onClick: () => actions.newFolder(parentDir),
+            icon: <FolderPlus size={14} />,
+          },
+        ]]
+      : []),
+    [
+      {
+        label: "Rename",
+        onClick: () => { setDraftName(basename(node.path)); setRenaming(true) },
+        icon: <PencilSimple size={14} />,
+        shortcut: "F2",
+      },
+    ],
+    [
+      {
+        label: "Move to Trash",
+        onClick: () => {
+          if (confirm(`Move "${node.name}" to trash?`)) actions.trash(node.path).catch(console.error)
+        },
+        icon: <TrashSimple size={14} />,
+        shortcut: "⌫",
+        danger: true,
+      },
+    ],
   ]
 
   // Visual nesting via per-row guide lines + indent
@@ -92,7 +131,7 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
       {isDir && expanded && (node as Extract<TN, { kind: "dir" }>).children.map((c) => (
         <TreeNodeView key={c.path} node={c} depth={depth + 1} />
       ))}
-      {menu && <TreeContextMenu x={menu.x} y={menu.y} actions={menuActions} onClose={() => setMenu(null)} />}
+      {menu && <TreeContextMenu x={menu.x} y={menu.y} groups={menuGroups} onClose={() => setMenu(null)} />}
     </div>
   )
 }

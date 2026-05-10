@@ -2,6 +2,8 @@ import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
 import { TreePane } from "./features/tree/TreePane"
+import { EditorPane } from "./features/editor/EditorPane"
+import { StatusBar } from "./features/statusbar/StatusBar"
 import "./App.css"
 
 export default function App() {
@@ -9,10 +11,13 @@ export default function App() {
   const rootPath = useStore((s) => s.rootPath)
   if (!rootPath) return <EmptyFolderState />
   return (
-    <div className="flex h-screen">
-      <div className="w-60 border-r"><TreePane /></div>
-      <div className="flex-1">editor</div>
-      <div className="w-72 border-l">properties</div>
+    <div className="flex flex-col h-screen">
+      <div className="flex flex-1 min-h-0">
+        <div className="w-60 border-r"><TreePane /></div>
+        <div className="flex-1"><EditorPane /></div>
+        <div className="w-72 border-l">properties</div>
+      </div>
+      <StatusBar />
     </div>
   )
 }

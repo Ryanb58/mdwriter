@@ -1,7 +1,7 @@
 import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { ipc } from "../../lib/ipc"
-import { useStore } from "../../lib/store"
+import { useStore, treeOptionsFromSettings } from "../../lib/store"
 
 type VaultEvent = { paths: string[] }
 
@@ -24,9 +24,10 @@ export function useExternalChanges() {
       })
       if (paths.length === 0) return
 
-      // Refresh tree
+      // Refresh tree (using current settings)
       try {
-        const tree = await ipc.listTree(root)
+        const opts = treeOptionsFromSettings(useStore.getState().settings)
+        const tree = await ipc.listTree(root, opts)
         useStore.setState({ tree })
       } catch (_err) { /* root went away */ }
 

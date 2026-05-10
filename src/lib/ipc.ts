@@ -9,8 +9,16 @@ export type ParsedDoc = {
   body: string
 }
 
+export type TreeOptions = {
+  includePdfs?: boolean
+  includeImages?: boolean
+  includeUnsupported?: boolean
+  hideGitignored?: boolean
+}
+
 export const ipc = {
-  listTree: (root: string) => invoke<TreeNode>("list_tree", { root }),
+  listTree: (root: string, options?: TreeOptions) =>
+    invoke<TreeNode>("list_tree", { root, options: options ?? null }),
   readFile: (path: string) => invoke<ParsedDoc>("read_file", { path }),
   writeFile: (path: string, doc: ParsedDoc) => invoke<void>("write_file", { path, doc }),
   createFile: (path: string) => invoke<void>("create_file", { path }),

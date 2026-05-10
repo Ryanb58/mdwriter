@@ -3,6 +3,7 @@ import type { BlockNoteEditor, PartialBlock } from "@blocknote/core"
 import { useCreateBlockNote } from "@blocknote/react"
 import { BlockNoteView } from "@blocknote/mantine"
 import "@blocknote/mantine/style.css"
+import { useResolvedTheme } from "../settings/useTheme"
 
 export function BlockEditor({
   initialMarkdown,
@@ -16,6 +17,7 @@ export function BlockEditor({
   const editor = useCreateBlockNote()
   const initializedKey = useRef<string | null>(null)
   const lastEmitted = useRef<string>("")
+  const theme = useResolvedTheme()
 
   useEffect(() => {
     if (initializedKey.current === docKey) return
@@ -31,7 +33,7 @@ export function BlockEditor({
     <div className="h-full overflow-y-auto">
       <BlockNoteView
         editor={editor as BlockNoteEditor}
-        theme="dark"
+        theme={theme}
         onChange={async () => {
           const md = await editor.blocksToMarkdownLossy(editor.document)
           if (md !== lastEmitted.current) {

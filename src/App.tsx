@@ -6,16 +6,26 @@ import { EditorPane } from "./features/editor/EditorPane"
 import { StatusBar } from "./features/statusbar/StatusBar"
 import { PropertiesPane } from "./features/properties/PropertiesPane"
 import { CommandPalette } from "./features/palette/CommandPalette"
+import { SettingsPanel } from "./features/settings/SettingsPanel"
+import { useTheme } from "./features/settings/useTheme"
 import { useExternalChanges } from "./features/watcher/useExternalChanges"
 import "./App.css"
 
 export default function App() {
   useStartupRestore()
   useExternalChanges()
+  useTheme()
   const rootPath = useStore((s) => s.rootPath)
   const propertiesVisible = useStore((s) => s.propertiesVisible)
 
-  if (!rootPath) return <EmptyFolderState />
+  if (!rootPath) {
+    return (
+      <>
+        <EmptyFolderState />
+        <SettingsPanel />
+      </>
+    )
+  }
 
   return (
     <>
@@ -36,6 +46,7 @@ export default function App() {
         <StatusBar />
       </div>
       <CommandPalette />
+      <SettingsPanel />
     </>
   )
 }

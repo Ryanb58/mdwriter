@@ -1,30 +1,88 @@
 @import "tailwindcss";
 
-/* Design tokens — writer-at-night scene, restrained color, tinted neutrals.
-   Single muted-cool accent for selection. */
-:root {
-  --color-bg:        oklch(0.16 0.005 250);
-  --color-surface:   oklch(0.20 0.006 250);
-  --color-elevated:  oklch(0.24 0.007 250);
-  --color-border:    oklch(0.30 0.008 250);
-  --color-border-strong: oklch(0.40 0.010 250);
-  --color-text:      oklch(0.93 0.005 250);
-  --color-text-muted:oklch(0.66 0.008 250);
-  --color-text-subtle:oklch(0.50 0.008 250);
-  --color-accent:    oklch(0.66 0.12 245);
-  --color-accent-soft:oklch(0.36 0.07 245);
-  --color-accent-fg: oklch(0.99 0 0);
-  --color-danger:    oklch(0.65 0.17 25);
-  --color-warning:   oklch(0.78 0.13 80);
+/* Design tokens. Two palettes — restrained, tinted neutrals, single muted-cool
+   accent for selection. The active palette is selected by the .light or .dark
+   class on <html> (set by useTheme). System theme is approximated via the
+   prefers-color-scheme fallback below. */
 
+:root {
   --font-ui: -apple-system, BlinkMacSystemFont, "Inter", system-ui, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
-
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
+}
 
+/* Dark — writer-at-night scene */
+html.dark, html[data-theme="dark"] {
+  --color-bg:           oklch(0.16 0.005 250);
+  --color-surface:      oklch(0.20 0.006 250);
+  --color-elevated:     oklch(0.24 0.007 250);
+  --color-border:       oklch(0.30 0.008 250);
+  --color-border-strong:oklch(0.40 0.010 250);
+  --color-text:         oklch(0.93 0.005 250);
+  --color-text-muted:   oklch(0.66 0.008 250);
+  --color-text-subtle:  oklch(0.50 0.008 250);
+  --color-accent:       oklch(0.66 0.12 245);
+  --color-accent-soft:  oklch(0.36 0.07 245);
+  --color-accent-fg:    oklch(0.99 0 0);
+  --color-danger:       oklch(0.65 0.17 25);
+  --color-warning:      oklch(0.78 0.13 80);
   color-scheme: dark;
+}
+
+/* Light — daytime writing surface, paper-warm tinted neutrals */
+html.light, html[data-theme="light"] {
+  --color-bg:           oklch(0.985 0.003 80);
+  --color-surface:      oklch(0.96 0.004 80);
+  --color-elevated:     oklch(0.99 0.003 80);
+  --color-border:       oklch(0.88 0.005 80);
+  --color-border-strong:oklch(0.78 0.008 80);
+  --color-text:         oklch(0.22 0.008 250);
+  --color-text-muted:   oklch(0.45 0.008 250);
+  --color-text-subtle:  oklch(0.60 0.006 250);
+  --color-accent:       oklch(0.55 0.13 245);
+  --color-accent-soft:  oklch(0.91 0.04 245);
+  --color-accent-fg:    oklch(0.99 0 0);
+  --color-danger:       oklch(0.55 0.18 25);
+  --color-warning:      oklch(0.62 0.14 75);
+  color-scheme: light;
+}
+
+/* System fallback — applies if no .light/.dark class is set */
+:root:not(.light):not(.dark) {
+  --color-bg:           oklch(0.985 0.003 80);
+  --color-surface:      oklch(0.96 0.004 80);
+  --color-elevated:     oklch(0.99 0.003 80);
+  --color-border:       oklch(0.88 0.005 80);
+  --color-border-strong:oklch(0.78 0.008 80);
+  --color-text:         oklch(0.22 0.008 250);
+  --color-text-muted:   oklch(0.45 0.008 250);
+  --color-text-subtle:  oklch(0.60 0.006 250);
+  --color-accent:       oklch(0.55 0.13 245);
+  --color-accent-soft:  oklch(0.91 0.04 245);
+  --color-accent-fg:    oklch(0.99 0 0);
+  --color-danger:       oklch(0.55 0.18 25);
+  --color-warning:      oklch(0.62 0.14 75);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --color-bg:           oklch(0.16 0.005 250);
+    --color-surface:      oklch(0.20 0.006 250);
+    --color-elevated:     oklch(0.24 0.007 250);
+    --color-border:       oklch(0.30 0.008 250);
+    --color-border-strong:oklch(0.40 0.010 250);
+    --color-text:         oklch(0.93 0.005 250);
+    --color-text-muted:   oklch(0.66 0.008 250);
+    --color-text-subtle:  oklch(0.50 0.008 250);
+    --color-accent:       oklch(0.66 0.12 245);
+    --color-accent-soft:  oklch(0.36 0.07 245);
+    --color-accent-fg:    oklch(0.99 0 0);
+    --color-danger:       oklch(0.65 0.17 25);
+    --color-warning:      oklch(0.78 0.13 80);
+    color-scheme: dark;
+  }
 }
 
 @theme {

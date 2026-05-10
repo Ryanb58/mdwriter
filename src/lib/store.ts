@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { persist, createJSONStorage } from "zustand/middleware"
 import type { TreeNode } from "./ipc"
 
 export type EditorMode = "block" | "raw"
@@ -13,6 +14,26 @@ export type OpenDoc = {
   parseError: string | null
 }
 
+export type Theme = "light" | "dark" | "system"
+
+export type Settings = {
+  theme: Theme
+  autoRenameFromH1: boolean
+  hideGitignored: boolean
+  showPdfs: boolean
+  showImages: boolean
+  showUnsupported: boolean
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  theme: "system",
+  autoRenameFromH1: true,
+  hideGitignored: false,
+  showPdfs: false,
+  showImages: false,
+  showUnsupported: false,
+}
+
 export type AppStore = {
   rootPath: string | null
   tree: TreeNode | null
@@ -21,6 +42,8 @@ export type AppStore = {
   openDoc: OpenDoc | null
   editorMode: EditorMode
   propertiesVisible: boolean
+  settingsOpen: boolean
+  settings: Settings
 
   setRoot(path: string | null): void
   setTree(tree: TreeNode | null): void
@@ -30,23 +53,54 @@ export type AppStore = {
   patchOpenDoc(patch: Partial<OpenDoc>): void
   setEditorMode(mode: EditorMode): void
   toggleProperties(): void
+  setSettingsOpen(open: boolean): void
+  setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
 }
 
-export const useStore = create<AppStore>((set) => ({
-  rootPath: null,
-  tree: null,
-  recentFolders: [],
-  selectedPath: null,
-  openDoc: null,
-  editorMode: "block",
-  propertiesVisible: true,
+export const useStore = create<AppStore>()(
+  persist(
+    (set) => ({
+      rootPath: null,
+      tree: null,
+      recentFolders: [],
+      selectedPath: null,
+      openDoc: null,
+      editorMode: "block",
+      propertiesVisible: true,
+      settingsOpen: false,
+      settings: DEFAULT_SETTINGS,
 
-  setRoot: (path) => set({ rootPath: path }),
-  setTree: (tree) => set({ tree }),
-  setRecent: (list) => set({ recentFolders: list }),
-  setSelected: (path) => set({ selectedPath: path }),
-  setOpenDoc: (doc) => set({ openDoc: doc, editorMode: "block" }),
-  patchOpenDoc: (patch) => set((s) => s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {}),
-  setEditorMode: (mode) => set({ editorMode: mode }),
-  toggleProperties: () => set((s) => ({ propertiesVisible: !s.propertiesVisible })),
-}))
+      setRoot: (path) => set({ rootPath: path }),
+      setTree: (tree) => set({ tree }),
+      setRecent: (list) => set({ recentFolders: list }),
+      setSelected: (path) => set({ selectedPath: path }),
+      setOpenDoc: (doc) => set({ openDoc: doc, editorMode: "block" }),
+      patchOpenDoc: (patch) =>
+        set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
+      setEditorMode: (mode) => set({ editorMode: mode }),
+      toggleProperties: () => set((s) => ({ propertiesVisible: !s.propertiesVisible })),
+      setSettingsOpen: (open) => set({ settingsOpen: open }),
+      setSetting: (key, value) =>
+        set((s) => ({ settings: { ...s.settings, [key]: value } })),
+    }),
+    {
+      name: "mdwriter:store",
+      storage: createJSONStorage(() => localStorage),
+      // Only persist installation-local UI state — the vault, tree, and open
+      // document are session-scoped and reload from disk on launch.
+      partialize: (s) => ({
+        settings: s.settings,
+        propertiesVisible: s.propertiesVisible,
+      }),
+    },
+  ),
+)
+
+export function treeOptionsFromSettings(s: Settings) {
+  return {
+    includePdfs: s.showPdfs,
+    includeImages: s.showImages,
+    includeUnsupported: s.showUnsupported,
+    hideGitignored: s.hideGitignored,
+  }
+}

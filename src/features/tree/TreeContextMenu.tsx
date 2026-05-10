@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 
-type Action = { label: string; onClick: () => void }
+type Action = { label: string; onClick: () => void; danger?: boolean }
 
 export function TreeContextMenu({ x, y, actions, onClose }: {
   x: number; y: number; actions: Action[]; onClose: () => void
@@ -18,14 +18,22 @@ export function TreeContextMenu({ x, y, actions, onClose }: {
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-40 rounded-md bg-neutral-900 border border-neutral-700 py-1 shadow-lg text-sm"
-      style={{ top: y, left: x }}
+      className="fixed z-50 min-w-44 rounded-md bg-elevated border border-border-strong py-1 text-[13px]"
+      style={{
+        top: y,
+        left: x,
+        boxShadow: "0 8px 24px -8px oklch(0 0 0 / 0.55), 0 2px 4px oklch(0 0 0 / 0.3)",
+      }}
     >
-      {actions.map((a) => (
+      {actions.map((a, i) => (
         <button
           key={a.label}
           onClick={() => { a.onClick(); onClose() }}
-          className="w-full text-left px-3 py-1 hover:bg-neutral-700"
+          className={[
+            "w-full text-left px-3 py-1.5 transition-colors",
+            a.danger ? "text-danger hover:bg-danger/10" : "text-text hover:bg-surface",
+            i === 0 ? "" : "",
+          ].join(" ")}
         >
           {a.label}
         </button>

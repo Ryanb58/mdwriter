@@ -7,7 +7,7 @@ export function DateField({
       type="date"
       value={dateOnly}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-transparent border-b border-neutral-700 focus:border-blue-500 outline-none px-1 py-0.5 text-sm"
+      className="w-full text-[13px] font-mono rounded px-1.5 py-1 hover:bg-elevated focus:bg-elevated focus:ring-1 focus:ring-accent-soft transition-colors [color-scheme:dark]"
     />
   )
 }

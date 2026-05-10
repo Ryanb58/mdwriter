@@ -28,15 +28,18 @@ export function BlockEditor({
   }, [docKey, initialMarkdown, editor])
 
   return (
-    <BlockNoteView
-      editor={editor as BlockNoteEditor}
-      onChange={async () => {
-        const md = await editor.blocksToMarkdownLossy(editor.document)
-        if (md !== lastEmitted.current) {
-          lastEmitted.current = md
-          onChangeMarkdown(md)
-        }
-      }}
-    />
+    <div className="h-full overflow-y-auto">
+      <BlockNoteView
+        editor={editor as BlockNoteEditor}
+        theme="dark"
+        onChange={async () => {
+          const md = await editor.blocksToMarkdownLossy(editor.document)
+          if (md !== lastEmitted.current) {
+            lastEmitted.current = md
+            onChangeMarkdown(md)
+          }
+        }}
+      />
+    </div>
   )
 }

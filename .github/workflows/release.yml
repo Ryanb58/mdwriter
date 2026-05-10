@@ -10,6 +10,10 @@ on:
 
 env:
   NODE_OPTIONS: --max-old-space-size=4096
+  # Opt in to Node 24 for JS actions (actions/checkout@v4 etc.) so the
+  # Node-20 deprecation warning goes away. The default flips to Node 24
+  # on 2026-06-02 anyway.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 concurrency:
   group: release-${{ github.ref }}
@@ -60,13 +64,18 @@ jobs:
             echo "- Source SHA: \`$SHORT_SHA\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Push tag
+      - name: Create tag via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.compute.outputs.tag }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.compute.outputs.tag }}"
-          git push origin "${{ steps.compute.outputs.tag }}"
+          # Use the refs API instead of `git push`. Avoids the auth quirks
+          # of the credential helper when pushing to protected branches /
+          # tag patterns; the token's contents:write permission is enough.
+          gh api -X POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/${TAG}" \
+            -f "sha=${GITHUB_SHA}"
 
   # ──────────────────────────────────────────────────────────────
   # Job 2: Build per-platform bundles in parallel and upload them
@@ -317,17 +326,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Delete tag locally and remotely
+      - name: Delete tag via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ needs.tag.outputs.tag }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git push --delete origin "$TAG" || true
+          gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" || true
           {
             echo "### Release failed; tag rolled back"
             echo ""
-            echo "Tag \`$TAG\` was deleted because a downstream job failed. Investigate the failed job, then re-run this workflow."
+            echo "Tag \`${TAG}\` was deleted because a downstream job failed. Investigate the failed job, then re-run this workflow."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Delete the (likely-empty) draft release

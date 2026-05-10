@@ -123,33 +123,33 @@ function ModeSegmented({
         type="button"
         role="tab"
         aria-selected={mode === "block"}
+        aria-label="Block view"
         onClick={onBlock}
+        title="Block view (⌘E)"
         className={[
-          "flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors",
+          "flex items-center justify-center w-7 h-6 rounded transition-colors",
           mode === "block"
             ? "bg-elevated text-text"
             : "text-text-muted hover:text-text",
         ].join(" ")}
-        title="Block view (⌘E)"
       >
-        <TextAa size={12} weight="bold" />
-        Block
+        <TextAa size={13} weight="bold" />
       </button>
       <button
         type="button"
         role="tab"
         aria-selected={mode === "raw"}
+        aria-label="Raw markdown"
         onClick={onRaw}
+        title="Raw markdown (⌘E)"
         className={[
-          "flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors",
+          "flex items-center justify-center w-7 h-6 rounded transition-colors",
           mode === "raw"
             ? "bg-elevated text-text"
             : "text-text-muted hover:text-text",
         ].join(" ")}
-        title="Raw markdown (⌘E)"
       >
-        <Code size={12} weight="bold" />
-        Raw
+        <Code size={13} weight="bold" />
       </button>
     </div>
   )

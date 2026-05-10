@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { listen, emit } from "@tauri-apps/api/event"
 import { getVersion } from "@tauri-apps/api/app"
 import { X, Sun, Moon, Monitor, ArrowClockwise } from "@phosphor-icons/react"
-import { useStore, type Theme } from "../../lib/store"
+import { useStore, type Theme, type ImagesLocation } from "../../lib/store"
 import { Toggle } from "./Toggle"
 import { refreshTree } from "../tree/useTreeActions"
 
@@ -127,6 +127,41 @@ export function SettingsPanel() {
               description="Show other non-markdown files without an in-app preview."
             />
           </Section>
+          <Section title="Images">
+            <div className="flex items-start gap-4 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-text">Storage location</div>
+                <div className="text-[12px] text-text-subtle mt-0.5 leading-relaxed">
+                  Where pasted or dropped images are saved inside the vault.
+                </div>
+              </div>
+              <ImagesLocationSegmented
+                value={settings.imagesLocation}
+                onChange={(v) => setSetting("imagesLocation", v)}
+              />
+            </div>
+            <Divider />
+            <div className="flex flex-col gap-2 py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-text">Filename template</div>
+                <div className="text-[12px] text-text-subtle mt-0.5 leading-relaxed">
+                  Tokens:{" "}
+                  <code className="font-mono">{"{date}"}</code>{" "}
+                  <code className="font-mono">{"{time}"}</code>{" "}
+                  <code className="font-mono">{"{rand}"}</code>{" "}
+                  <code className="font-mono">{"{note}"}</code>.
+                  Extension is added automatically from the image type.
+                </div>
+              </div>
+              <input
+                type="text"
+                value={settings.imageFilenameTemplate}
+                onChange={(e) => setSetting("imageFilenameTemplate", e.target.value)}
+                placeholder="{date}-{time}-{rand}"
+                className="w-full px-2 py-1 rounded border border-border bg-surface text-[13px] font-mono text-text"
+              />
+            </div>
+          </Section>
           <Section title="About">
             <div className="flex items-center justify-between py-3">
               <div className="flex-1 min-w-0">
@@ -166,6 +201,39 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Divider() {
   return <div className="border-t border-border" />
+}
+
+function ImagesLocationSegmented({
+  value, onChange,
+}: { value: ImagesLocation; onChange: (v: ImagesLocation) => void }) {
+  const opts: Array<{ value: ImagesLocation; label: string }> = [
+    { value: "vault-assets", label: "Vault assets" },
+    { value: "sibling-assets", label: "Sibling folder" },
+    { value: "same-folder", label: "Same folder" },
+  ]
+  return (
+    <div className="inline-flex rounded-md border border-border bg-surface p-0.5 mt-0.5">
+      {opts.map((o) => {
+        const active = o.value === value
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            className={[
+              "px-2.5 h-7 rounded text-[12px] transition-colors",
+              active
+                ? "bg-accent text-accent-fg"
+                : "text-text-subtle hover:text-text hover:bg-elevated",
+            ].join(" ")}
+            aria-pressed={active}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 function ThemeSegmented({ value, onChange }: { value: Theme; onChange: (v: Theme) => void }) {

@@ -11,6 +11,17 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/bmp": "bmp",
 }
 
+const EXT_TO_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  avif: "image/avif",
+  bmp: "image/bmp",
+}
+
 const DEFAULT_TEMPLATE = "{date}-{time}-{rand}"
 
 // Characters illegal in filenames on at least one major OS: path
@@ -22,6 +33,13 @@ const MAX_ATTEMPTS = 4
 
 export function mimeToExt(mime: string): string | null {
   return MIME_TO_EXT[mime.toLowerCase()] ?? null
+}
+
+export function guessMimeFromName(name: string): string | null {
+  const dot = name.lastIndexOf(".")
+  if (dot < 0) return null
+  const ext = name.slice(dot + 1).toLowerCase()
+  return EXT_TO_MIME[ext] ?? null
 }
 
 function detectSep(p: string): "/" | "\\" {
@@ -151,19 +169,27 @@ function isAlreadyExistsError(e: unknown): boolean {
   return typeof msg === "string" && msg.startsWith("already exists:")
 }
 
+function withSuffix(filename: string, suffix: string): string {
+  if (!suffix) return filename
+  const dot = filename.lastIndexOf(".")
+  if (dot <= 0) return `${filename}${suffix}`
+  return `${filename.slice(0, dot)}${suffix}${filename.slice(dot)}`
+}
+
 export async function saveImage(input: SaveImageInput): Promise<SaveImageResult> {
   if (!mimeToExt(input.mime)) {
     throw new Error(`unsupported image MIME: ${input.mime}`)
   }
   const dir = resolveImageDir(input.vaultRoot, input.docPath, input.location)
+  const baseFilename = generateFilename(input.mime, input.template, {
+    docPath: input.docPath,
+    now: input.now,
+    rand: input.rand,
+  })
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const filename = generateFilename(input.mime, input.template, {
-      docPath: input.docPath,
-      now: input.now,
-      rand: input.rand,
-    })
-    const absolutePath = joinPath(dir, filename)
+    const suffix = attempt === 0 ? "" : `-${attempt}`
+    const absolutePath = joinPath(dir, withSuffix(baseFilename, suffix))
     try {
       await ipc.writeImage(absolutePath, input.bytes)
       return {

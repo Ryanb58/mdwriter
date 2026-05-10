@@ -6,7 +6,7 @@ import "@blocknote/mantine/style.css"
 import { convertFileSrc } from "@tauri-apps/api/core"
 import { useResolvedTheme } from "../settings/useTheme"
 import { useStore } from "../../lib/store"
-import { saveImage } from "../../lib/imagePaste"
+import { saveImage, guessMimeFromName } from "../../lib/imagePaste"
 
 function parentDir(p: string): string {
   const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
@@ -65,7 +65,7 @@ export function BlockEditor({
           const docPath = docPathRef.current
           if (!root || !docPath) throw new Error("No vault or doc context")
           const bytes = new Uint8Array(await file.arrayBuffer())
-          const mime = file.type || "application/octet-stream"
+          const mime = file.type || guessMimeFromName(file.name) || "application/octet-stream"
           const result = await saveImage({
             bytes,
             mime,

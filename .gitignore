@@ -1,6 +1,27 @@
-.superpowers/
-node_modules/
-dist/
-target/
+
+!.vscode/extensions.json
 .DS_Store
+.idea
+.superpowers/
+.vscode/*
+*.local
 *.log
+*.njsproj
+*.ntvs*
+*.sln
+*.suo
+*.sw?
+# Editor directories and files
+# Logs
+dist
+dist-ssr
+dist/
+lerna-debug.log*
+logs
+node_modules
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+target/
+yarn-debug.log*
+yarn-error.log*

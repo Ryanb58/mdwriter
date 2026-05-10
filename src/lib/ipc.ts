@@ -16,6 +16,23 @@ export type TreeOptions = {
   hideGitignored?: boolean
 }
 
+export type AgentId = "claude-code" | "codex" | "open-code" | "pi" | "gemini"
+
+export type AgentAvailability = {
+  id: AgentId
+  label: string
+  available: boolean
+  binaryPath: string | null
+  implemented: boolean
+}
+
+export type AiStreamEvent =
+  | { kind: "text"; text: string }
+  | { kind: "tool-start"; id: string; name: string; input: unknown }
+  | { kind: "tool-result"; id: string; isError: boolean; output: unknown }
+  | { kind: "error"; message: string }
+  | { kind: "done"; usage: unknown | null }
+
 export const ipc = {
   listTree: (root: string, options?: TreeOptions) =>
     invoke<TreeNode>("list_tree", { root, options: options ?? null }),
@@ -29,4 +46,23 @@ export const ipc = {
   stopWatcher: () => invoke<void>("stop_watcher"),
   getRecentFolders: () => invoke<string[]>("get_recent_folders"),
   pushRecentFolder: (folder: string) => invoke<void>("push_recent_folder", { folder }),
+  detectAgents: () =>
+    invoke<Array<{
+      id: AgentId
+      label: string
+      available: boolean
+      binary_path: string | null
+      implemented: boolean
+    }>>("detect_agents").then((rows) =>
+      rows.map((r) => ({
+        id: r.id,
+        label: r.label,
+        available: r.available,
+        binaryPath: r.binary_path,
+        implemented: r.implemented,
+      } satisfies AgentAvailability))
+    ),
+  startAiSession: (agent: AgentId, prompt: string, vaultPath: string) =>
+    invoke<void>("start_ai_session", { agent, prompt, vaultPath }),
+  stopAiSession: () => invoke<void>("stop_ai_session"),
 }

@@ -11,7 +11,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(state::AppState::default())
+        .manage(commands::agents::AgentSession::default())
         .setup(|app| {
             let settings_item = MenuItemBuilder::new("Settings…")
                 .id("settings")
@@ -74,6 +76,9 @@ pub fn run() {
             commands::recent::push_recent_folder,
             commands::watch::start_watcher,
             commands::watch::stop_watcher,
+            commands::agents::detect_agents,
+            commands::agents::start_ai_session,
+            commands::agents::stop_ai_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

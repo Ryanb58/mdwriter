@@ -1,7 +1,7 @@
 import { useStore } from "../../lib/store"
 import { TreeNodeView } from "./TreeNode"
 import { useTreeActions } from "./useTreeActions"
-import { Plus } from "@phosphor-icons/react"
+import { FilePlus, FolderPlus } from "@phosphor-icons/react"
 
 export function TreePane() {
   const tree = useStore((s) => s.tree)
@@ -9,23 +9,25 @@ export function TreePane() {
   const actions = useTreeActions()
   if (!tree) return null
 
-  const folderName = rootPath?.split(/[\\/]/).filter(Boolean).pop() ?? ""
-
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-        <div className="text-[11px] uppercase tracking-[0.14em] text-text-subtle truncate" title={rootPath ?? ""}>
-          {folderName}
-        </div>
+      <div className="flex items-center justify-end gap-1 px-2 py-1.5">
         <button
           onClick={() => rootPath && actions.newFile(rootPath)}
-          className="text-text-subtle hover:text-text transition-colors"
-          title="New file"
+          className="p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
+          title="New file at root"
         >
-          <Plus size={14} weight="bold" />
+          <FilePlus size={13} />
+        </button>
+        <button
+          onClick={() => rootPath && actions.newFolder(rootPath)}
+          className="p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
+          title="New folder at root"
+        >
+          <FolderPlus size={13} />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto py-1.5 px-1 text-[13px]">
+      <div className="flex-1 overflow-y-auto pb-1.5 px-1 text-[13px]">
         {tree.kind === "dir" && tree.children.map((c) => (
           <TreeNodeView key={c.path} node={c} />
         ))}

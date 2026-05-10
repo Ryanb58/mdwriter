@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { listen } from "@tauri-apps/api/event"
 import { X, Sun, Moon, Monitor } from "@phosphor-icons/react"
 import { useStore, type Theme } from "../../lib/store"
 import { Toggle } from "./Toggle"
@@ -10,7 +11,8 @@ export function SettingsPanel() {
   const settings = useStore((s) => s.settings)
   const setSetting = useStore((s) => s.setSetting)
 
-  // Cmd+,/Ctrl+, to open
+  // Cmd+,/Ctrl+, to open (in-window shortcut). The native macOS menu also
+  // bridges Settings… → "menu:settings" event, listened to below.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey
@@ -24,6 +26,12 @@ export function SettingsPanel() {
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
+  }, [setOpen])
+
+  // Native menu bridge — opens Settings when the user clicks the menu item.
+  useEffect(() => {
+    const unlistenP = listen("menu:settings", () => setOpen(true))
+    return () => { unlistenP.then((u) => u()) }
   }, [setOpen])
 
   function handle<K extends keyof typeof settings>(key: K, value: (typeof settings)[K]) {
@@ -139,9 +147,9 @@ function Divider() {
 
 function ThemeSegmented({ value, onChange }: { value: Theme; onChange: (v: Theme) => void }) {
   const opts: Array<{ value: Theme; label: string; icon: React.ReactNode }> = [
-    { value: "light", label: "Light", icon: <Sun size={12} weight="bold" /> },
-    { value: "dark", label: "Dark", icon: <Moon size={12} weight="bold" /> },
-    { value: "system", label: "System", icon: <Monitor size={12} weight="bold" /> },
+    { value: "light", label: "Light", icon: <Sun size={13} weight="bold" /> },
+    { value: "dark", label: "Dark", icon: <Moon size={13} weight="bold" /> },
+    { value: "system", label: "System", icon: <Monitor size={13} weight="bold" /> },
   ]
   return (
     <div className="inline-flex rounded-md border border-border bg-surface p-0.5 mt-0.5">
@@ -153,15 +161,16 @@ function ThemeSegmented({ value, onChange }: { value: Theme; onChange: (v: Theme
             type="button"
             onClick={() => onChange(o.value)}
             className={[
-              "flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition-colors",
+              "flex items-center justify-center w-8 h-7 rounded transition-colors",
               active
                 ? "bg-elevated text-text"
                 : "text-text-muted hover:text-text",
             ].join(" ")}
             aria-pressed={active}
+            aria-label={o.label}
+            title={o.label}
           >
             {o.icon}
-            {o.label}
           </button>
         )
       })}

@@ -1,0 +1,11 @@
+{
+  "version": "2026.5.10",
+  "notes": "See https://github.com/Ryanb58/mdwriter/releases/tag/v2026-05-10.e8f28be for the full changelog.",
+  "pub_date": "2026-05-10T23:45:55Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlFCeGVJbU91c3NhMWZyTGtaellTT1pVM25KeWIwWGlrSTRtd1ZCN3EyNHBzUmY4UE9KeGlIa1VxR1QrVU5LYUczVVYzaFhpOW5QaTR6VjFxUFJlK2dNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NDU2NzE3CWZpbGU6bWR3cml0ZXJfMjAyNi41LjEwX3g2NC1zZXR1cC5leGUKVE5Remxqd2VOcnFySGhnUjVRaVJYRjFydjNlWFh0UlMxM2JaakxXUG1SSmVGNGd5Rys0Y3JiRG9QcTB6ODdJUzFyeHB1aDJFTnJ2OEowUkhFUXloREE9PQo=\n",
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-10.e8f28be/mdwriter_2026.5.10_x64-setup.exe"
+    }
+  }
+}

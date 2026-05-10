@@ -1,11 +1,12 @@
 import { ipc } from "../../lib/ipc"
-import { useStore } from "../../lib/store"
+import { useStore, treeOptionsFromSettings } from "../../lib/store"
 import { joinPath, parent } from "../../lib/paths"
 
-async function refreshTree() {
+export async function refreshTree() {
   const root = useStore.getState().rootPath
   if (!root) return
-  const tree = await ipc.listTree(root)
+  const opts = treeOptionsFromSettings(useStore.getState().settings)
+  const tree = await ipc.listTree(root, opts)
   useStore.setState({ tree })
 }
 

@@ -2,10 +2,11 @@ import { useStore } from "../../lib/store"
 import { useOpenFile } from "./useOpenFile"
 import { useAutoSave } from "./useAutoSave"
 import { useEditorMode } from "./useEditorMode"
+import { useAutoRename } from "./useAutoRename"
 import { basename } from "../../lib/paths"
 import { BlockEditor } from "./BlockEditor"
 import { RawEditor } from "./RawEditor"
-import { Sidebar, Warning, Code } from "@phosphor-icons/react"
+import { Sidebar, Warning, TextAa, Code } from "@phosphor-icons/react"
 
 function wordCount(s: string): number {
   return s.split(/\s+/).filter(Boolean).length
@@ -14,9 +15,11 @@ function wordCount(s: string): number {
 export function EditorPane() {
   useOpenFile()
   useAutoSave()
+  useAutoRename()
   const { toggle: toggleMode } = useEditorMode()
   const doc = useStore((s) => s.openDoc)
   const mode = useStore((s) => s.editorMode)
+  const setMode = useStore((s) => s.setEditorMode)
   const patch = useStore((s) => s.patchOpenDoc)
   const propertiesVisible = useStore((s) => s.propertiesVisible)
   const toggleProperties = useStore((s) => s.toggleProperties)
@@ -45,6 +48,13 @@ export function EditorPane() {
   const trailSegments = vaultName ? [vaultName, ...segments] : segments
   const folderTrail = trailSegments.join(" / ")
 
+  // Switch to a target mode without toggling. The toggleMode hook handles the
+  // necessary frontmatter ↔ rawMarkdown conversion.
+  function setBlock() { if (mode !== "block") toggleMode() }
+  function setRaw() { if (mode !== "raw") toggleMode() }
+  // Bind setMode for type checker — used only via toggleMode currently.
+  void setMode
+
   return (
     <div className="flex flex-col h-full bg-bg">
       <div className="flex items-center justify-between border-b border-border px-5 py-2.5">
@@ -56,17 +66,7 @@ export function EditorPane() {
         </div>
         <div className="flex items-center gap-3 flex-none">
           <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
-          <button
-            onClick={toggleMode}
-            className={`p-1 rounded transition-colors ${
-              mode === "raw"
-                ? "text-text bg-elevated"
-                : "text-text-subtle hover:text-text hover:bg-elevated"
-            }`}
-            title={mode === "raw" ? "Switch to block view (⌘E)" : "Switch to raw markdown (⌘E)"}
-          >
-            <Code size={15} weight={mode === "raw" ? "bold" : "regular"} />
-          </button>
+          <ModeSegmented mode={mode} onBlock={setBlock} onRaw={setRaw} />
           <button
             onClick={toggleProperties}
             className={`p-1 rounded transition-colors ${
@@ -107,3 +107,43 @@ export function EditorPane() {
   )
 }
 
+function ModeSegmented({
+  mode, onBlock, onRaw,
+}: { mode: "block" | "raw"; onBlock: () => void; onRaw: () => void }) {
+  return (
+    <div className="inline-flex rounded-md border border-border bg-surface p-0.5" role="tablist">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === "block"}
+        onClick={onBlock}
+        className={[
+          "flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors",
+          mode === "block"
+            ? "bg-elevated text-text"
+            : "text-text-muted hover:text-text",
+        ].join(" ")}
+        title="Block view (⌘E)"
+      >
+        <TextAa size={12} weight="bold" />
+        Block
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === "raw"}
+        onClick={onRaw}
+        className={[
+          "flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors",
+          mode === "raw"
+            ? "bg-elevated text-text"
+            : "text-text-muted hover:text-text",
+        ].join(" ")}
+        title="Raw markdown (⌘E)"
+      >
+        <Code size={12} weight="bold" />
+        Raw
+      </button>
+    </div>
+  )
+}

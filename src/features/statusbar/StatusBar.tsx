@@ -1,5 +1,5 @@
 import { useStore } from "../../lib/store"
-import { CircleNotch, Check } from "@phosphor-icons/react"
+import { CircleNotch, Check, Gear } from "@phosphor-icons/react"
 import { VaultPicker } from "../vaults/VaultPicker"
 
 function formatTime(ts: number | null): string {
@@ -10,13 +10,14 @@ function formatTime(ts: number | null): string {
 
 export function StatusBar() {
   const doc = useStore((s) => s.openDoc)
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
 
   return (
     <footer className="flex items-center justify-between border-t border-border bg-surface px-2 py-1 text-[11px] text-text-subtle">
       <div className="flex items-center gap-2 min-w-0">
         <VaultPicker />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         {doc && doc.dirty && (
           <span className="flex items-center gap-1 text-warning">
             <CircleNotch size={10} className="animate-spin" />
@@ -29,6 +30,14 @@ export function StatusBar() {
             <span>Saved {formatTime(doc.savedAt)}</span>
           </span>
         )}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
+          title="Settings (⌘,)"
+          aria-label="Settings"
+        >
+          <Gear size={12} />
+        </button>
       </div>
     </footer>
   )

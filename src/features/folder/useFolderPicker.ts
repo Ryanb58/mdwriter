@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog"
 import { ipc } from "../../lib/ipc"
-import { useStore } from "../../lib/store"
+import { useStore, treeOptionsFromSettings } from "../../lib/store"
 
 export function useFolderPicker() {
   const setRoot = useStore((s) => s.setRoot)
@@ -28,7 +28,8 @@ export async function openFolder(
   useStore.setState({ selectedPath: null, openDoc: null })
 
   await ipc.stopWatcher().catch(() => {})
-  const tree = await ipc.listTree(path)
+  const opts = treeOptionsFromSettings(useStore.getState().settings)
+  const tree = await ipc.listTree(path, opts)
   await ipc.startWatcher(path)
   await ipc.pushRecentFolder(path)
   const recent = await ipc.getRecentFolders()

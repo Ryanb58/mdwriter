@@ -1,6 +1,7 @@
 use crate::commands::frontmatter::{parse_doc, serialize_doc, ParsedDoc};
 use crate::errors::{AppError, Result};
-use serde::Serialize;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -11,13 +12,38 @@ pub enum TreeNode {
     File { name: String, path: PathBuf },
 }
 
-#[tauri::command]
-pub fn list_tree(root: PathBuf) -> Result<TreeNode> {
-    let canonical = root.canonicalize().map_err(|_| AppError::NotFound(root.display().to_string()))?;
-    build_tree(&canonical)
+#[derive(Deserialize, Debug, Default, Clone, Copy)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TreeOptions {
+    pub include_pdfs: bool,
+    pub include_images: bool,
+    pub include_unsupported: bool,
+    pub hide_gitignored: bool,
 }
 
-fn build_tree(path: &Path) -> Result<TreeNode> {
+const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"];
+const PDF_EXTS: &[&str] = &["pdf"];
+
+#[tauri::command]
+pub fn list_tree(root: PathBuf, options: Option<TreeOptions>) -> Result<TreeNode> {
+    let canonical = root.canonicalize().map_err(|_| AppError::NotFound(root.display().to_string()))?;
+    let opts = options.unwrap_or_default();
+    let gi = if opts.hide_gitignored { build_gitignore(&canonical) } else { None };
+    build_tree(&canonical, &canonical, &opts, gi.as_ref())
+}
+
+fn build_gitignore(root: &Path) -> Option<Gitignore> {
+    let mut builder = GitignoreBuilder::new(root);
+    let _ = builder.add(root.join(".gitignore"));
+    builder.build().ok()
+}
+
+fn build_tree(
+    path: &Path,
+    root: &Path,
+    opts: &TreeOptions,
+    gi: Option<&Gitignore>,
+) -> Result<TreeNode> {
     let name = path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string());
@@ -33,12 +59,17 @@ fn build_tree(path: &Path) -> Result<TreeNode> {
         let entry_name = entry.file_name().to_string_lossy().into_owned();
         if entry_name.starts_with('.') { continue; }
 
-        if entry_path.is_dir() {
-            let subtree = build_tree(&entry_path)?;
-            if has_markdown(&subtree) {
+        let is_dir = entry_path.is_dir();
+        if let Some(g) = gi {
+            if g.matched(&entry_path, is_dir).is_ignore() { continue; }
+        }
+
+        if is_dir {
+            let subtree = build_tree(&entry_path, root, opts, gi)?;
+            if has_visible_file(&subtree) {
                 children.push(subtree);
             }
-        } else if is_markdown_file(&entry_path) {
+        } else if is_visible_file(&entry_path, opts) {
             children.push(TreeNode::File {
                 name: entry_name,
                 path: entry_path,
@@ -58,17 +89,34 @@ fn sort_key(node: &TreeNode) -> (u8, String) {
     }
 }
 
-fn is_markdown_file(p: &Path) -> bool {
-    matches!(
-        p.extension().and_then(|e| e.to_str()),
-        Some("md") | Some("markdown")
-    )
+fn ext_lower(p: &Path) -> Option<String> {
+    p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase())
 }
 
-fn has_markdown(node: &TreeNode) -> bool {
+fn is_markdown_file(p: &Path) -> bool {
+    matches!(ext_lower(p).as_deref(), Some("md") | Some("markdown"))
+}
+
+fn is_pdf_file(p: &Path) -> bool {
+    ext_lower(p).as_deref().map(|e| PDF_EXTS.contains(&e)).unwrap_or(false)
+}
+
+fn is_image_file(p: &Path) -> bool {
+    ext_lower(p).as_deref().map(|e| IMAGE_EXTS.contains(&e)).unwrap_or(false)
+}
+
+fn is_visible_file(p: &Path, opts: &TreeOptions) -> bool {
+    if is_markdown_file(p) { return true; }
+    if opts.include_pdfs && is_pdf_file(p) { return true; }
+    if opts.include_images && is_image_file(p) { return true; }
+    if opts.include_unsupported && !is_markdown_file(p) && !is_pdf_file(p) && !is_image_file(p) { return true; }
+    false
+}
+
+fn has_visible_file(node: &TreeNode) -> bool {
     match node {
         TreeNode::File { .. } => true,
-        TreeNode::Dir { children, .. } => children.iter().any(has_markdown),
+        TreeNode::Dir { children, .. } => children.iter().any(has_visible_file),
     }
 }
 
@@ -140,7 +188,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("a.md"), "").unwrap();
         fs::write(dir.path().join("b.txt"), "").unwrap();
-        let tree = list_tree(dir.path().to_path_buf()).unwrap();
+        let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
         match tree {
             TreeNode::Dir { children, .. } => {
                 assert_eq!(children.len(), 1);
@@ -159,7 +207,7 @@ mod tests {
         fs::write(dir.path().join("a.md"), "").unwrap();
         fs::create_dir(dir.path().join(".hidden")).unwrap();
         fs::write(dir.path().join(".hidden/x.md"), "").unwrap();
-        let tree = list_tree(dir.path().to_path_buf()).unwrap();
+        let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
         match tree {
             TreeNode::Dir { children, .. } => assert_eq!(children.len(), 1),
             _ => panic!(),
@@ -171,7 +219,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join("empty")).unwrap();
         fs::write(dir.path().join("a.md"), "").unwrap();
-        let tree = list_tree(dir.path().to_path_buf()).unwrap();
+        let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
         match tree {
             TreeNode::Dir { children, .. } => assert_eq!(children.len(), 1),
             _ => panic!(),
@@ -183,7 +231,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join("notes")).unwrap();
         fs::write(dir.path().join("notes/a.md"), "").unwrap();
-        let tree = list_tree(dir.path().to_path_buf()).unwrap();
+        let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
         let TreeNode::Dir { children, .. } = tree else { panic!() };
         assert_eq!(children.len(), 1);
         let TreeNode::Dir { children: subc, .. } = &children[0] else { panic!() };
@@ -192,8 +240,55 @@ mod tests {
 
     #[test]
     fn missing_root_returns_not_found() {
-        let result = list_tree(PathBuf::from("/definitely/does/not/exist/zzz"));
+        let result = list_tree(PathBuf::from("/definitely/does/not/exist/zzz"), None);
         assert!(matches!(result, Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn include_pdfs_brings_pdfs_into_tree() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.md"), "").unwrap();
+        fs::write(dir.path().join("b.pdf"), "").unwrap();
+        let opts = TreeOptions { include_pdfs: true, ..Default::default() };
+        let tree = list_tree(dir.path().to_path_buf(), Some(opts)).unwrap();
+        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        assert_eq!(children.len(), 2);
+    }
+
+    #[test]
+    fn include_images_brings_images_into_tree() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.md"), "").unwrap();
+        fs::write(dir.path().join("pic.png"), "").unwrap();
+        let opts = TreeOptions { include_images: true, ..Default::default() };
+        let tree = list_tree(dir.path().to_path_buf(), Some(opts)).unwrap();
+        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        assert_eq!(children.len(), 2);
+    }
+
+    #[test]
+    fn include_unsupported_brings_other_files() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.md"), "").unwrap();
+        fs::write(dir.path().join("notes.txt"), "").unwrap();
+        let opts = TreeOptions { include_unsupported: true, ..Default::default() };
+        let tree = list_tree(dir.path().to_path_buf(), Some(opts)).unwrap();
+        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        assert_eq!(children.len(), 2);
+    }
+
+    #[test]
+    fn hide_gitignored_excludes_matching_paths() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("keep.md"), "").unwrap();
+        fs::write(dir.path().join("draft.md"), "").unwrap();
+        fs::write(dir.path().join(".gitignore"), "draft.md\n").unwrap();
+        let opts = TreeOptions { hide_gitignored: true, ..Default::default() };
+        let tree = list_tree(dir.path().to_path_buf(), Some(opts)).unwrap();
+        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        assert_eq!(children.len(), 1);
+        let TreeNode::File { name, .. } = &children[0] else { panic!() };
+        assert_eq!(name, "keep.md");
     }
 }
 

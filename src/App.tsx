@@ -4,6 +4,7 @@ import { useStartupRestore } from "./features/folder/useStartupRestore"
 import { TreePane } from "./features/tree/TreePane"
 import { EditorPane } from "./features/editor/EditorPane"
 import { StatusBar } from "./features/statusbar/StatusBar"
+import { PropertiesPane } from "./features/properties/PropertiesPane"
 import "./App.css"
 
 export default function App() {
@@ -15,7 +16,7 @@ export default function App() {
       <div className="flex flex-1 min-h-0">
         <div className="w-60 border-r"><TreePane /></div>
         <div className="flex-1"><EditorPane /></div>
-        <div className="w-72 border-l">properties</div>
+        <div className="w-72 border-l overflow-y-auto"><PropertiesPane /></div>
       </div>
       <StatusBar />
     </div>

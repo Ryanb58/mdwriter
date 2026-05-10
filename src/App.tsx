@@ -2,6 +2,7 @@ import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
 import { TreePane } from "./features/tree/TreePane"
+import { useTreeShortcuts } from "./features/tree/useTreeShortcuts"
 import { EditorPane } from "./features/editor/EditorPane"
 import { StatusBar } from "./features/statusbar/StatusBar"
 import { PropertiesPane } from "./features/properties/PropertiesPane"
@@ -15,6 +16,7 @@ export default function App() {
   useStartupRestore()
   useExternalChanges()
   useTheme()
+  useTreeShortcuts()
   const rootPath = useStore((s) => s.rootPath)
   const propertiesVisible = useStore((s) => s.propertiesVisible)
 

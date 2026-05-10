@@ -85,6 +85,7 @@ pub fn run() {
             commands::fs::create_dir,
             commands::fs::rename_path,
             commands::fs::trash_path,
+            commands::fs::write_image,
             commands::recent::get_recent_folders,
             commands::recent::push_recent_folder,
             commands::watch::start_watcher,

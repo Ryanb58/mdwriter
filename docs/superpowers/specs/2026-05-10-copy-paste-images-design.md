@@ -31,8 +31,10 @@ Adds support for getting images into a note without leaving the editor: paste a 
 | `vault-assets` resolves to | `<vault>/assets/` |
 | `sibling-assets` resolves to | `<note-dir>/<note-stem>.assets/` |
 | `same-folder` resolves to | `<note-dir>/` |
-| Filename | `YYYY-MM-DD-HHMMSS-<4hex>.<ext>` (local time). Example: `2026-05-10-143052-a3f1.png`. |
-| Collisions | Append `-1`, `-2`, … (in practice the random hex makes this near-impossible). |
+| Filename | Configurable template; default `{date}-{time}-{rand}` → `2026-05-10-143052-a3f1.png`. Extension is appended automatically from MIME. |
+| Filename tokens | `{date}` (YYYY-MM-DD, local), `{time}` (HHMMSS, local), `{rand}` (4 hex chars), `{note}` (current note stem, slugified). Unknown tokens are left literally. |
+| Filename validation | Path separators (`/`, `\`) and characters illegal on any major OS (`<>:"\|?*`, NUL, control) are stripped. Empty result → fall back to default template + warning toast. |
+| Collisions | Append `-1`, `-2`, … (with the default template the random hex makes this near-impossible; with a custom template it's the safety net). |
 | Bitmap format | Save native clipboard bytes. No conversion. |
 | Finder file paste/drop | Always copied into the configured location. Source file untouched. |
 | URL paste | Block mode: BlockNote inserts a remote image block. Raw mode: pasted as plain text (user wraps with `![]()` themselves). No fetch in either case. |
@@ -141,7 +143,11 @@ export async function saveImage(input: SaveImageInput): Promise<SaveImageResult>
 export function resolveImageDir(
   vaultRoot: string, docPath: string, location: ImagesLocation,
 ): string
-export function generateFilename(mime: string, now?: Date, rand?: () => string): string
+export function generateFilename(
+  mime: string,
+  template: string,                // e.g. "{date}-{time}-{rand}"
+  ctx: { docPath: string; now?: Date; rand?: () => string },
+): string
 export function relativeFromDocDir(docPath: string, absolutePath: string): string
 export function mimeToExt(mime: string): string | null   // null = unknown / refuse
 ```
@@ -184,11 +190,19 @@ Behavior:
 ```ts
 export type Settings = {
   // existing fields…
-  imagesLocation: ImagesLocation     // default "vault-assets"
+  imagesLocation: ImagesLocation         // default "vault-assets"
+  imageFilenameTemplate: string          // default "{date}-{time}-{rand}"
 }
 ```
 
-Default `"vault-assets"` in `DEFAULT_SETTINGS`. Persisted in the existing localStorage `partialize` — no new persistence machinery.
+Defaults in `DEFAULT_SETTINGS`. Persisted in the existing localStorage `partialize` — no new persistence machinery.
+
+### Settings UI
+
+`SettingsPanel.tsx` gains two controls under a new **"Images"** section:
+
+- **Storage location** — segmented control with three options (Vault assets, Sibling folder, Same folder as note).
+- **Filename template** — text input. Helper text lists the available tokens (`{date}`, `{time}`, `{rand}`, `{note}`) and notes that the extension is appended automatically. Invalid templates revert to default on save with a toast.
 
 ## 6. Behavior
 
@@ -318,8 +332,13 @@ user ⌘V on CodeMirror
   - `sibling-assets` for vault root + nested note paths.
   - `same-folder` for vault root + nested note paths.
 - `generateFilename`:
-  - Returns the expected `YYYY-MM-DD-HHMMSS-<4hex>.<ext>` shape.
+  - Default template → `YYYY-MM-DD-HHMMSS-<4hex>.<ext>` shape.
   - Stable with injected `now` and `rand`.
+  - All four tokens resolve correctly; literal text passes through.
+  - Unknown tokens (e.g. `{xyz}`) are left literal.
+  - `{note}` derives a slug from the doc filename stem (lowercase, non-alphanumerics → `-`, collapse repeats, trim).
+  - Illegal filename chars in template literals or token expansions are stripped.
+  - Empty result after sanitization falls back to the default template.
   - Unknown MIME → throws / returns null.
 - `relativeFromDocDir`:
   - Note at vault root, image in `assets/` → `assets/file.png`.

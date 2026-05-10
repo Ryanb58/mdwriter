@@ -42,6 +42,8 @@ export const ipc = {
   createDir: (path: string) => invoke<void>("create_dir", { path }),
   renamePath: (from: string, to: string) => invoke<void>("rename_path", { from, to }),
   trashPath: (path: string) => invoke<void>("trash_path", { path }),
+  writeImage: (path: string, bytes: Uint8Array) =>
+    invoke<void>("write_image", { path, bytes: Array.from(bytes) }),
   startWatcher: (root: string) => invoke<void>("start_watcher", { root }),
   stopWatcher: () => invoke<void>("stop_watcher"),
   getRecentFolders: () => invoke<string[]>("get_recent_folders"),

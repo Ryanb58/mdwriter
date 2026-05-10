@@ -1,6 +1,7 @@
-import { useEffect } from "react"
-import { listen } from "@tauri-apps/api/event"
-import { X, Sun, Moon, Monitor } from "@phosphor-icons/react"
+import { useEffect, useState } from "react"
+import { listen, emit } from "@tauri-apps/api/event"
+import { getVersion } from "@tauri-apps/api/app"
+import { X, Sun, Moon, Monitor, ArrowClockwise } from "@phosphor-icons/react"
 import { useStore, type Theme } from "../../lib/store"
 import { Toggle } from "./Toggle"
 import { refreshTree } from "../tree/useTreeActions"
@@ -10,6 +11,11 @@ export function SettingsPanel() {
   const setOpen = useStore((s) => s.setSettingsOpen)
   const settings = useStore((s) => s.settings)
   const setSetting = useStore((s) => s.setSetting)
+  const [appVersion, setAppVersion] = useState<string>("")
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {})
+  }, [])
 
   // Cmd+,/Ctrl+, to open (in-window shortcut). The native macOS menu also
   // bridges Settings… → "menu:settings" event, listened to below.
@@ -120,6 +126,23 @@ export function SettingsPanel() {
               label="Show Unsupported Files"
               description="Show other non-markdown files without an in-app preview."
             />
+          </Section>
+          <Section title="About">
+            <div className="flex items-center justify-between py-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-text">mdwriter</div>
+                <div className="text-[12px] text-text-subtle mt-0.5 font-mono">
+                  {appVersion ? `v${appVersion}` : "—"}
+                </div>
+              </div>
+              <button
+                onClick={() => emit("menu:check-updates").catch(() => {})}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-surface text-[12px] text-text hover:bg-elevated transition-colors"
+              >
+                <ArrowClockwise size={12} weight="bold" />
+                Check for Updates
+              </button>
+            </div>
           </Section>
         </div>
 

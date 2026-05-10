@@ -1,0 +1,262 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v20[0-9][0-9]-[0-9][0-9]-[0-9][0-9].*'
+
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # Phase 1: Compute the version once.
+  # Tag form: vYYYY-MM-DD.<short-sha> → version YYYY.M.D (no leading zeros).
+  # ──────────────────────────────────────────────────────────────
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      tag: ${{ steps.compute.outputs.tag }}
+    steps:
+      - name: Compute version from tag
+        id: compute
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v[0-9]{4}-[0-9]{2}-[0-9]{2}\..+$ ]]; then
+            echo "::error::Tag must match vYYYY-MM-DD.<short-sha>, got '$TAG'"
+            exit 1
+          fi
+          DATE_PART="${TAG#v}"
+          DATE_PART="${DATE_PART%%.*}"
+          IFS='-' read -r Y M D <<< "$DATE_PART"
+          VERSION="$((10#$Y)).$((10#$M)).$((10#$D))"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "### mdwriter $VERSION (\`$TAG\`)" >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────────────────────
+  # Phase 2: Build per-platform bundles in parallel and upload them
+  # to a draft GitHub release.
+  # ──────────────────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.os }} ${{ matrix.arch }})
+    needs: version
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: aarch64
+            target: aarch64-apple-darwin
+          - os: macos-15
+            arch: x86_64
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+          - os: ubuntu-latest
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+
+      - name: Linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Stamp version into manifests
+        shell: bash
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          # tauri.conf.json
+          node -e "const fs=require('fs');const p='src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p));j.version='${VERSION}';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
+          # Cargo.toml
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            sed -i '' "s/^version = \".*\"/version = \"${VERSION}\"/" src-tauri/Cargo.toml
+          else
+            sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" src-tauri/Cargo.toml
+          fi
+          # package.json
+          node -e "const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p));j.version='${VERSION}';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
+
+      - name: Build with tauri-action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ needs.version.outputs.tag }}
+          releaseName: 'mdwriter ${{ needs.version.outputs.version }} (${{ needs.version.outputs.tag }})'
+          releaseBody: |
+            See the release notes below or the commit log for details.
+
+            **macOS (unsigned):** right-click the app and choose Open the first time.
+            **Windows (unsigned):** click "More info → Run anyway" on SmartScreen.
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+      - name: Ad-hoc codesign macOS bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          if [[ -d "$APP_DIR/mdwriter.app" ]]; then
+            codesign --force --deep --sign - "$APP_DIR/mdwriter.app"
+            # Re-tar so the updater payload reflects the ad-hoc signature.
+            VERSION="${{ needs.version.outputs.version }}"
+            ARCH="${{ matrix.arch }}"
+            TAR="$APP_DIR/mdwriter_${VERSION}_${ARCH}.app.tar.gz"
+            (cd "$APP_DIR" && tar czf "$TAR" mdwriter.app)
+            # Re-sign the updater payload with the Tauri minisign key.
+            pnpm tauri signer sign \
+              --private-key-path "${{ runner.temp }}/tauri-signing.key" \
+              --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" \
+              "$TAR" || true
+          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload signature artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigs-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
+          if-no-files-found: warn
+
+  # ──────────────────────────────────────────────────────────────
+  # Phase 3: Generate latest.json from the .sig files and publish it
+  # to the gh-pages branch under /updates/. Also flips the GitHub
+  # release from draft → published.
+  # ──────────────────────────────────────────────────────────────
+  publish-manifest:
+    name: Publish update manifest
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all signature artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: sigs
+
+      - name: Generate latest.json
+        id: manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.version.outputs.version }}"
+          TAG="${{ needs.version.outputs.tag }}"
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          PUBDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          read_sig() {
+            local pattern="$1"
+            local file
+            file=$(find sigs -type f -name "$pattern" | head -1 || true)
+            if [[ -z "$file" ]]; then echo ""; return; fi
+            cat "$file"
+          }
+
+          MAC_ARM_SIG=$(read_sig "*aarch64*.app.tar.gz.sig")
+          MAC_X64_SIG=$(read_sig "*x86_64*.app.tar.gz.sig")
+          WIN_SIG=$(read_sig "*x64-setup.exe.sig")
+
+          mkdir -p out
+          {
+            echo '{'
+            echo "  \"version\": \"${VERSION}\","
+            echo "  \"notes\": \"See https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG} for the full changelog.\","
+            echo "  \"pub_date\": \"${PUBDATE}\","
+            echo '  "platforms": {'
+            FIRST=1
+            emit() {
+              local key="$1" sig="$2" url="$3"
+              if [[ -z "$sig" ]]; then return; fi
+              if [[ $FIRST -eq 0 ]]; then echo ','; fi
+              FIRST=0
+              printf '    "%s": {\n      "signature": %s,\n      "url": "%s"\n    }' "$key" "$(jq -Rs <<< "$sig")" "$url"
+            }
+            emit "darwin-aarch64" "$MAC_ARM_SIG" "${BASE}/mdwriter_${VERSION}_aarch64.app.tar.gz"
+            emit "darwin-x86_64"  "$MAC_X64_SIG" "${BASE}/mdwriter_${VERSION}_x86_64.app.tar.gz"
+            emit "windows-x86_64" "$WIN_SIG"     "${BASE}/mdwriter_${VERSION}_x64-setup.exe"
+            echo
+            echo '  }'
+            echo '}'
+          } > out/latest.json
+          cat out/latest.json
+          echo "manifest_path=out/latest.json" >> "$GITHUB_OUTPUT"
+
+      - name: Publish manifest to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: out
+          destination_dir: updates
+          keep_files: true
+          commit_message: 'Publish mdwriter ${{ needs.version.outputs.version }} manifest'
+
+      - name: Promote draft release to published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ needs.version.outputs.tag }}" --draft=false

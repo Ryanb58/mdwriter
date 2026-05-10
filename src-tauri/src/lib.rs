@@ -12,6 +12,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state::AppState::default())
         .manage(commands::agents::AgentSession::default())
         .setup(|app| {
@@ -20,9 +22,14 @@ pub fn run() {
                 .accelerator("CmdOrCtrl+,")
                 .build(app)?;
 
+            let check_updates_item = MenuItemBuilder::new("Check for Updates…")
+                .id("check-updates")
+                .build(app)?;
+
             let app_menu = SubmenuBuilder::new(app, "mdwriter")
                 .item(&PredefinedMenuItem::about(app, None, None)?)
                 .separator()
+                .item(&check_updates_item)
                 .item(&settings_item)
                 .separator()
                 .item(&PredefinedMenuItem::services(app, None)?)
@@ -57,8 +64,14 @@ pub fn run() {
             app.set_menu(menu)?;
 
             app.on_menu_event(move |app_handle, event| {
-                if event.id() == "settings" {
-                    let _ = app_handle.emit("menu:settings", ());
+                match event.id().as_ref() {
+                    "settings" => {
+                        let _ = app_handle.emit("menu:settings", ());
+                    }
+                    "check-updates" => {
+                        let _ = app_handle.emit("menu:check-updates", ());
+                    }
+                    _ => {}
                 }
             });
 

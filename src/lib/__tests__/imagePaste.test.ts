@@ -11,6 +11,7 @@ import {
   resolveImageDir,
   generateFilename,
   relativeFromDocDir,
+  encodeMarkdownUrl,
   saveImage,
 } from "../imagePaste"
 
@@ -163,6 +164,25 @@ describe("relativeFromDocDir", () => {
   it("emits POSIX separators even on Windows paths", () => {
     expect(relativeFromDocDir("C:\\Vault\\note.md", "C:\\Vault\\assets\\x.png"))
       .toBe("assets/x.png")
+  })
+})
+
+describe("encodeMarkdownUrl", () => {
+  it("encodes spaces, parens, brackets, angle brackets", () => {
+    expect(encodeMarkdownUrl("a b")).toBe("a%20b")
+    expect(encodeMarkdownUrl("(x)")).toBe("%28x%29")
+    expect(encodeMarkdownUrl("[a]")).toBe("%5Ba%5D")
+    expect(encodeMarkdownUrl("<a>")).toBe("%3Ca%3E")
+  })
+
+  it("leaves path separators and safe chars alone", () => {
+    expect(encodeMarkdownUrl("assets/foo-bar.png")).toBe("assets/foo-bar.png")
+    expect(encodeMarkdownUrl("a/b/c.png")).toBe("a/b/c.png")
+  })
+
+  it("encodes only the troublesome chars in a mixed path", () => {
+    expect(encodeMarkdownUrl("assets/my note (1).png"))
+      .toBe("assets/my%20note%20%281%29.png")
   })
 })
 

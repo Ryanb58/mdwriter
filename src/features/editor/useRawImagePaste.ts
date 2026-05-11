@@ -6,6 +6,7 @@ import {
   mimeToExt,
   guessMimeFromName,
   readClipboardImageAsPng,
+  encodeMarkdownUrl,
 } from "../../lib/imagePaste"
 
 function isImageFile(f: File): boolean {
@@ -46,7 +47,7 @@ async function insertImageBytes(
     location: settings.imagesLocation,
     template: settings.imageFilenameTemplate,
   })
-  const insert = `![](${result.relativePath})`
+  const insert = `![](${encodeMarkdownUrl(result.relativePath)})`
   const { from, to } = view.state.selection.main
   view.dispatch({
     changes: { from, to, insert },
@@ -98,6 +99,15 @@ export function useRawImagePaste(
       }
     }
 
+    function onDragOver(e: DragEvent) {
+      // The drop event only fires if dragover's default is canceled,
+      // and without this the WebView navigates to the dropped file.
+      if (!e.dataTransfer) return
+      if (!Array.from(e.dataTransfer.types).includes("Files")) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = "copy"
+    }
+
     function onDrop(e: DragEvent) {
       const file = firstImageFromFiles(e.dataTransfer?.files ?? null)
       if (!file) return
@@ -108,9 +118,11 @@ export function useRawImagePaste(
     }
 
     host.addEventListener("paste", onPaste)
+    host.addEventListener("dragover", onDragOver)
     host.addEventListener("drop", onDrop)
     return () => {
       host.removeEventListener("paste", onPaste)
+      host.removeEventListener("dragover", onDragOver)
       host.removeEventListener("drop", onDrop)
     }
   }, [viewRef])

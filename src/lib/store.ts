@@ -163,13 +163,18 @@ export const useStore = create<AppStore>()(
         aiAgent: s.aiAgent,
       }),
       merge: (persisted, current) => {
-        const next = { ...current, ...(persisted as Partial<AppStore>) }
-        // Drop ImagesLocation values that no longer exist in the union.
-        const valid: ImagesLocation[] = ["vault-assets", "same-folder"]
-        if (!valid.includes(next.settings.imagesLocation)) {
-          next.settings = { ...next.settings, imagesLocation: DEFAULT_SETTINGS.imagesLocation }
+        const p = (persisted ?? {}) as Partial<AppStore>
+        // Re-merge settings against DEFAULT_SETTINGS so any field added in a
+        // later release picks up its default for users who persisted earlier.
+        const settings = { ...DEFAULT_SETTINGS, ...(p.settings ?? {}) }
+        const validLocations: ImagesLocation[] = ["vault-assets", "same-folder"]
+        if (!validLocations.includes(settings.imagesLocation)) {
+          settings.imagesLocation = DEFAULT_SETTINGS.imagesLocation
         }
-        return next
+        if (typeof settings.imageFilenameTemplate !== "string") {
+          settings.imageFilenameTemplate = DEFAULT_SETTINGS.imageFilenameTemplate
+        }
+        return { ...current, ...p, settings }
       },
     },
   ),

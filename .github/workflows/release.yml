@@ -236,10 +236,12 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
-      # Tauri uploads macOS bundles as mdwriter_VERSION_aarch64.* and
-      # mdwriter_VERSION_x86_64.*. Rename them to the friendlier
-      # macOS_Silicon / macOS_Intel labels Tolaria uses. Linux and Windows
-      # default names are already user-friendly (amd64, x64-setup).
+      # Tauri's bundle naming on macOS is uneven:
+      #   .app.tar.gz / .sig  →  mdwriter_${SUFFIX}.app.tar.gz      (no version!)
+      #   .dmg                →  mdwriter_${VERSION}_${SUFFIX}.dmg  (with version)
+      # And the suffix is `aarch64` for arm64 but `x64` (not `x86_64`) for Intel.
+      # Rename everything to the friendlier macOS_Silicon / macOS_Intel labels
+      # WITH version, so multiple releases coexist cleanly on the download host.
       - name: Rename macOS release assets
         if: runner.os == 'macOS'
         env:
@@ -250,18 +252,22 @@ jobs:
         run: |
           set -euo pipefail
           case "$ARCH" in
-            aarch64) FRIENDLY="macOS_Silicon" ;;
-            x86_64)  FRIENDLY="macOS_Intel" ;;
-            *)       FRIENDLY="$ARCH" ;;
+            aarch64) SUFFIX="aarch64"; FRIENDLY="macOS_Silicon" ;;
+            x86_64)  SUFFIX="x64";     FRIENDLY="macOS_Intel"   ;;
+            *)       SUFFIX="$ARCH";   FRIENDLY="$ARCH"          ;;
           esac
 
+          # (old name, new name) pairs.
+          declare -a PAIRS=(
+            "mdwriter_${SUFFIX}.app.tar.gz"           "mdwriter_${VERSION}_${FRIENDLY}.app.tar.gz"
+            "mdwriter_${SUFFIX}.app.tar.gz.sig"       "mdwriter_${VERSION}_${FRIENDLY}.app.tar.gz.sig"
+            "mdwriter_${VERSION}_${SUFFIX}.dmg"       "mdwriter_${VERSION}_${FRIENDLY}.dmg"
+          )
+
           MISSING=0
-          for OLD in \
-            "mdwriter_${VERSION}_${ARCH}.app.tar.gz" \
-            "mdwriter_${VERSION}_${ARCH}.app.tar.gz.sig" \
-            "mdwriter_${VERSION}_${ARCH}.dmg"
-          do
-            NEW="${OLD/${VERSION}_${ARCH}/${VERSION}_${FRIENDLY}}"
+          for ((i=0; i<${#PAIRS[@]}; i+=2)); do
+            OLD="${PAIRS[i]}"
+            NEW="${PAIRS[i+1]}"
             ASSET_ID=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
               --jq ".assets[] | select(.name == \"${OLD}\") | .id" 2>/dev/null || echo "")
             if [[ -n "$ASSET_ID" ]]; then
@@ -315,7 +321,12 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.tag.outputs.version }}"
           TAG="${{ needs.tag.outputs.tag }}"
-          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          # Downloads are mirrored to taylorbrazelton.com/mdwriter/ rather than
+          # served from the GitHub release directly. The release-asset filenames
+          # (after the rename step above) match exactly, so the mirror just
+          # needs to host the same names. The updater manifest itself is still
+          # published to gh-pages — only the binaries move.
+          BASE="https://taylorbrazelton.com/mdwriter"
           PUBDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           # Search by artifact name (which encodes the platform) rather than

@@ -1,3 +1,4 @@
+import { X } from "@phosphor-icons/react"
 import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
@@ -24,8 +25,8 @@ export default function App() {
   usePasteDiagnostic()
   const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
-  const propertiesVisible = useStore((s) => s.propertiesVisible)
-  const aiPanelVisible = useStore((s) => s.aiPanelVisible)
+  const rightPane = useStore((s) => s.rightPane)
+  const setRightPane = useStore((s) => s.setRightPane)
 
   if (!rootPath) {
     return (
@@ -47,14 +48,33 @@ export default function App() {
           <main className="flex-1 min-w-0 flex flex-col">
             <EditorPane />
           </main>
-          {propertiesVisible && (
-            <aside className="w-[280px] flex-none border-l border-border bg-surface overflow-y-auto">
-              <PropertiesPane />
-            </aside>
-          )}
-          {aiPanelVisible && (
-            <aside className="w-[360px] flex-none border-l border-border bg-surface">
-              <AiPanel />
+          {rightPane && (
+            <aside className="w-[340px] flex-none border-l border-border bg-surface flex flex-col min-h-0">
+              <div className="flex items-center border-b border-border h-9 px-1 flex-none">
+                <RightPaneTabBtn active={rightPane === "properties"} onClick={() => setRightPane("properties")}>
+                  Properties
+                </RightPaneTabBtn>
+                <RightPaneTabBtn active={rightPane === "ai"} onClick={() => setRightPane("ai")}>
+                  Assistant
+                </RightPaneTabBtn>
+                <button
+                  onClick={() => setRightPane(null)}
+                  className="ml-auto mr-1 p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
+                  title="Close panel"
+                  aria-label="Close panel"
+                >
+                  <X size={12} weight="bold" />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                {rightPane === "properties" ? (
+                  <div className="h-full overflow-y-auto">
+                    <PropertiesPane />
+                  </div>
+                ) : (
+                  <AiPanel />
+                )}
+              </div>
             </aside>
           )}
         </div>
@@ -66,3 +86,29 @@ export default function App() {
     </>
   )
 }
+
+function RightPaneTabBtn({
+  active, onClick, children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={[
+        "h-7 px-2.5 text-[12px] rounded transition-colors",
+        active
+          ? "text-text bg-elevated"
+          : "text-text-subtle hover:text-text hover:bg-elevated/60",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  )
+}
+

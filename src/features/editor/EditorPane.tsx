@@ -26,11 +26,11 @@ export function EditorPane() {
   const mode = useStore((s) => s.editorMode)
   const setMode = useStore((s) => s.setEditorMode)
   const patch = useStore((s) => s.patchOpenDoc)
-  const propertiesVisible = useStore((s) => s.propertiesVisible)
-  const toggleProperties = useStore((s) => s.toggleProperties)
+  const rightPane = useStore((s) => s.rightPane)
+  const toggleRightPane = useStore((s) => s.toggleRightPane)
+  const propertiesActive = rightPane === "properties"
+  const aiActive = rightPane === "ai"
   const rootPath = useStore((s) => s.rootPath)
-  const aiPanelVisible = useStore((s) => s.aiPanelVisible)
-  const toggleAiPanel = useStore((s) => s.toggleAiPanel)
 
   if (!doc) {
     return (
@@ -75,24 +75,24 @@ export function EditorPane() {
           <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
           <ModeSegmented mode={mode} onBlock={setBlock} onRaw={setRaw} />
           <button
-            onClick={toggleAiPanel}
+            onClick={() => toggleRightPane("ai")}
             className={`p-1 rounded transition-colors ${
-              aiPanelVisible
+              aiActive
                 ? "text-text bg-elevated"
                 : "text-text-subtle hover:text-text hover:bg-elevated"
             }`}
-            title={aiPanelVisible ? "Hide AI panel" : "Show AI panel"}
+            title={aiActive ? "Hide assistant" : "Show assistant"}
           >
             <Robot size={15} />
           </button>
           <button
-            onClick={toggleProperties}
+            onClick={() => toggleRightPane("properties")}
             className={`p-1 rounded transition-colors ${
-              propertiesVisible
+              propertiesActive
                 ? "text-text bg-elevated"
                 : "text-text-subtle hover:text-text hover:bg-elevated"
             }`}
-            title={propertiesVisible ? "Hide properties" : "Show properties"}
+            title={propertiesActive ? "Hide properties" : "Show properties"}
           >
             <Sidebar size={15} />
           </button>

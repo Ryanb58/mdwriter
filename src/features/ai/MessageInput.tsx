@@ -5,7 +5,7 @@ import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { sendPrompt, cancelSession } from "./useAiSession"
 import {
   applyWikilinkSelection,
-  detectWikilinkTrigger,
+  detectMentionTrigger,
   type WikilinkTrigger,
 } from "./wikilinkDetect"
 import { WikilinkPopover, useWikilinkResults } from "./WikilinkPopover"
@@ -31,9 +31,10 @@ export function MessageInput() {
     setActiveIdx(0)
   }, [trigger?.query])
 
-  // Recompute the trigger from the current caret position.
+  // Recompute the trigger from the current caret position. `[[` and `@` both
+  // open the picker; the chosen note is inserted as `[[name]]` either way.
   function syncTrigger(value: string, caret: number) {
-    setTrigger(detectWikilinkTrigger(value, caret))
+    setTrigger(detectMentionTrigger(value, caret))
   }
 
   function onChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -122,7 +123,7 @@ export function MessageInput() {
           onKeyDown={onKeyDown}
           onBlur={() => setTrigger(null)}
           rows={1}
-          placeholder="Ask the agent…  type [[ to reference a note"
+          placeholder="Ask the agent…  type @ or [[ to reference a note"
           className="w-full resize-none bg-transparent text-[13px] leading-relaxed px-2.5 py-2 pr-10 placeholder:text-text-subtle"
           style={{ maxHeight: 220 }}
         />
@@ -159,7 +160,7 @@ export function MessageInput() {
         </div>
       </div>
       <div className="mt-1 px-1 text-[10px] text-text-subtle">
-        <kbd className="font-mono">Enter</kbd> to send · <kbd className="font-mono">Shift+Enter</kbd> for newline · <kbd className="font-mono">[[</kbd> to reference
+        <kbd className="font-mono">Enter</kbd> to send · <kbd className="font-mono">Shift+Enter</kbd> for newline · <kbd className="font-mono">@</kbd> or <kbd className="font-mono">[[</kbd> to reference
       </div>
     </div>
   )

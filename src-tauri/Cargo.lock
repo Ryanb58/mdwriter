@@ -2221,6 +2221,7 @@ dependencies = [
 name = "mdwriter"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "dirs",
  "gray_matter",
  "ignore",

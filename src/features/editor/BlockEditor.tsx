@@ -61,20 +61,29 @@ export function BlockEditor({
     useMemo(
       () => ({
         uploadFile: async (file: File): Promise<string> => {
-          const root = vaultRootRef.current
-          const docPath = docPathRef.current
-          if (!root || !docPath) throw new Error("No vault or doc context")
-          const bytes = new Uint8Array(await file.arrayBuffer())
-          const mime = file.type || guessMimeFromName(file.name) || "application/octet-stream"
-          const result = await saveImage({
-            bytes,
-            mime,
-            vaultRoot: root,
-            docPath,
-            location: locationRef.current,
-            template: templateRef.current,
-          })
-          return result.relativePath
+          try {
+            const root = vaultRootRef.current
+            const docPath = docPathRef.current
+            if (!root || !docPath) throw new Error("No vault or doc context")
+            const bytes = new Uint8Array(await file.arrayBuffer())
+            const mime =
+              file.type || guessMimeFromName(file.name) || "application/octet-stream"
+            const result = await saveImage({
+              bytes,
+              mime,
+              vaultRoot: root,
+              docPath,
+              location: locationRef.current,
+              template: templateRef.current,
+            })
+            return result.relativePath
+          } catch (err) {
+            // Visible in devtools. BlockNote's loading block remains
+            // until something else clears it; without this log a paste
+            // failure looks identical to a paste in flight.
+            console.error("[image paste] uploadFile failed:", err)
+            throw err
+          }
         },
         resolveFileUrl: async (stored: string): Promise<string> => {
           if (/^https?:\/\//i.test(stored)) return stored

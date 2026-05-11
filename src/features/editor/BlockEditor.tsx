@@ -4,6 +4,7 @@ import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react"
 import { BlockNoteView } from "@blocknote/mantine"
 import "@blocknote/mantine/style.css"
 import { convertFileSrc } from "@tauri-apps/api/core"
+import { readText } from "@tauri-apps/plugin-clipboard-manager"
 import { useResolvedTheme } from "../settings/useTheme"
 import { useStore } from "../../lib/store"
 import {
@@ -12,6 +13,7 @@ import {
   readClipboardImageAsPng,
   resolveAgainstDocDir,
 } from "../../lib/imagePaste"
+import { plainPasteToBlocks } from "../../lib/plainPaste"
 import { editorSchema, setWikilinkNotes } from "./wikilinkInline"
 import {
   hydrateWikilinkBlocks,
@@ -131,6 +133,38 @@ export function BlockEditor({
     }
     document.addEventListener("paste", onPaste, true)
     return () => document.removeEventListener("paste", onPaste, true)
+  }, [editor])
+
+  // Cmd/Ctrl+Shift+V → paste without formatting. WKWebView doesn't fire a
+  // native paste event for this shortcut, so we read the clipboard text
+  // ourselves and bypass BlockNote's markdown/HTML detection by inserting
+  // the text directly via the editor API.
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    async function onKeyDown(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod || !e.shiftKey) return
+      if (e.key !== "v" && e.key !== "V") return
+      e.preventDefault()
+      e.stopPropagation()
+      try {
+        const text = await readText()
+        if (!text) return
+        const { firstLine, tailBlocks } = plainPasteToBlocks(text)
+        const cursor = editor.getTextCursorPosition()
+        if (firstLine) editor.insertInlineContent(firstLine)
+        if (tailBlocks.length > 0) {
+          const inserted = editor.insertBlocks(tailBlocks, cursor.block, "after")
+          const last = inserted[inserted.length - 1]
+          if (last) editor.setTextCursorPosition(last, "end")
+        }
+      } catch (err) {
+        console.error("[plain paste] failed:", err)
+      }
+    }
+    host.addEventListener("keydown", onKeyDown, true)
+    return () => host.removeEventListener("keydown", onKeyDown, true)
   }, [editor])
 
   useLinkActivation(hostRef)

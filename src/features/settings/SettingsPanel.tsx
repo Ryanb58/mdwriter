@@ -206,7 +206,6 @@ function ImagesLocationSegmented({
 }: { value: ImagesLocation; onChange: (v: ImagesLocation) => void }) {
   const opts: Array<{ value: ImagesLocation; label: string }> = [
     { value: "vault-assets", label: "Vault assets" },
-    { value: "sibling-assets", label: "Sibling folder" },
     { value: "same-folder", label: "Same folder" },
   ]
   return (

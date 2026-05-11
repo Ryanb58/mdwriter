@@ -16,7 +16,7 @@ export type OpenDoc = {
 
 export type Theme = "light" | "dark" | "system"
 
-export type ImagesLocation = "vault-assets" | "sibling-assets" | "same-folder"
+export type ImagesLocation = "vault-assets" | "same-folder"
 
 export type Settings = {
   theme: Theme

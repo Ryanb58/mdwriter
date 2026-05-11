@@ -59,13 +59,6 @@ describe("resolveImageDir", () => {
       .toBe("/Vault/assets")
   })
 
-  it("sibling-assets returns <note-dir>/<stem>.assets", () => {
-    expect(resolveImageDir("/Vault", "/Vault/note.md", "sibling-assets"))
-      .toBe("/Vault/note.assets")
-    expect(resolveImageDir("/Vault", "/Vault/sub/post.md", "sibling-assets"))
-      .toBe("/Vault/sub/post.assets")
-  })
-
   it("same-folder returns the note's directory", () => {
     expect(resolveImageDir("/Vault", "/Vault/note.md", "same-folder"))
       .toBe("/Vault")

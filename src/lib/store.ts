@@ -16,6 +16,8 @@ export type OpenDoc = {
 
 export type Theme = "light" | "dark" | "system"
 
+export type RightPaneTab = "properties" | "ai"
+
 export type ImagesLocation = "vault-assets" | "same-folder"
 
 export type Settings = {
@@ -47,7 +49,7 @@ export type AppStore = {
   selectedPath: string | null
   openDoc: OpenDoc | null
   editorMode: EditorMode
-  propertiesVisible: boolean
+  rightPane: RightPaneTab | null
   settingsOpen: boolean
   settings: Settings
   renamingPath: string | null
@@ -59,15 +61,13 @@ export type AppStore = {
   setOpenDoc(doc: OpenDoc | null): void
   patchOpenDoc(patch: Partial<OpenDoc>): void
   setEditorMode(mode: EditorMode): void
-  toggleProperties(): void
+  setRightPane(tab: RightPaneTab | null): void
+  toggleRightPane(tab: RightPaneTab): void
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
 
-  // AI panel
-  aiPanelVisible: boolean
-  toggleAiPanel(): void
-  setAiPanelVisible(v: boolean): void
+  // AI session
   aiAgent: AgentId
   setAiAgent(id: AgentId): void
   aiAvailable: AgentAvailability[]
@@ -110,12 +110,11 @@ export const useStore = create<AppStore>()(
       selectedPath: null,
       openDoc: null,
       editorMode: "block",
-      propertiesVisible: true,
+      rightPane: "properties",
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
 
-      aiPanelVisible: false,
       aiAgent: "claude-code" as AgentId,
       aiAvailable: [],
       aiMessages: [],
@@ -129,14 +128,14 @@ export const useStore = create<AppStore>()(
       patchOpenDoc: (patch) =>
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
       setEditorMode: (mode) => set({ editorMode: mode }),
-      toggleProperties: () => set((s) => ({ propertiesVisible: !s.propertiesVisible })),
+      setRightPane: (tab) => set({ rightPane: tab }),
+      toggleRightPane: (tab) =>
+        set((s) => ({ rightPane: s.rightPane === tab ? null : tab })),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
       setRenamingPath: (path) => set({ renamingPath: path }),
 
-      toggleAiPanel: () => set((s) => ({ aiPanelVisible: !s.aiPanelVisible })),
-      setAiPanelVisible: (v) => set({ aiPanelVisible: v }),
       setAiAgent: (id) => set({ aiAgent: id }),
       setAiAvailable: (rows) => set({ aiAvailable: rows }),
       appendAiMessage: (msg) => set((s) => ({ aiMessages: [...s.aiMessages, msg] })),
@@ -158,12 +157,14 @@ export const useStore = create<AppStore>()(
       // document are session-scoped and reload from disk on launch.
       partialize: (s) => ({
         settings: s.settings,
-        propertiesVisible: s.propertiesVisible,
-        aiPanelVisible: s.aiPanelVisible,
+        rightPane: s.rightPane,
         aiAgent: s.aiAgent,
       }),
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<AppStore>
+        const p = (persisted ?? {}) as Partial<AppStore> & {
+          propertiesVisible?: boolean
+          aiPanelVisible?: boolean
+        }
         // Re-merge settings against DEFAULT_SETTINGS so any field added in a
         // later release picks up its default for users who persisted earlier.
         const settings = { ...DEFAULT_SETTINGS, ...(p.settings ?? {}) }
@@ -174,7 +175,16 @@ export const useStore = create<AppStore>()(
         if (typeof settings.imageFilenameTemplate !== "string") {
           settings.imageFilenameTemplate = DEFAULT_SETTINGS.imageFilenameTemplate
         }
-        return { ...current, ...p, settings }
+        // Migrate legacy split flags to the unified right-pane tab.
+        let rightPane: RightPaneTab | null | undefined = p.rightPane
+        if (rightPane === undefined) {
+          if (p.aiPanelVisible) rightPane = "ai"
+          else if (p.propertiesVisible) rightPane = "properties"
+          else if (p.propertiesVisible === false && p.aiPanelVisible === false) rightPane = null
+        }
+        const { propertiesVisible: _pv, aiPanelVisible: _av, ...rest } = p
+        void _pv; void _av
+        return { ...current, ...rest, settings, ...(rightPane !== undefined ? { rightPane } : {}) }
       },
     },
   ),

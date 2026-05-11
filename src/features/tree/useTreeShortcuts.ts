@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import { useStore } from "../../lib/store"
 import { useTreeActions } from "./useTreeActions"
 import { basename } from "../../lib/paths"
+import { collapseSelectionToAnchor } from "./selection"
 
 /**
  * Global keyboard shortcuts for the file tree:
@@ -31,10 +32,20 @@ export function useTreeShortcuts() {
     }
 
     function onKey(e: KeyboardEvent) {
+      if (isEditableTarget(e.target)) return
+
+      // Esc collapses multi-selection back to a single-row selection.
+      // Handle before the early-return on no-selection so it always works.
+      if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        if (collapseSelectionToAnchor()) {
+          e.preventDefault()
+          return
+        }
+      }
+
       const sel = useStore.getState().selectedPath
       if (!sel) return
-      if (isEditableTarget(e.target)) return
-      // Avoid clobbering Cmd-/Ctrl- combos.
+      // Avoid clobbering Cmd-/Ctrl- combos for the remaining shortcuts.
       if (e.metaKey || e.ctrlKey || e.altKey) return
 
       if (e.key === "F2") {

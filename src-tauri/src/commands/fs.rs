@@ -246,6 +246,18 @@ pub fn write_image_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     write_bytes_atomic_no_clobber(path, bytes)
 }
 
+// Generic atomic no-clobber byte write driven from the frontend.
+// Used by the Finder-drop importer to copy markdown or image bytes
+// into the vault without risking an accidental overwrite.
+#[tauri::command]
+pub fn import_file(path: PathBuf, bytes_b64: String) -> Result<()> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(bytes_b64.as_bytes())
+        .map_err(|e| AppError::Io(format!("invalid base64: {e}")))?;
+    write_image_bytes(&path, &bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,6 +532,29 @@ mod write_tests {
         assert!(!wrote);
         let contents = std::fs::read_to_string(&target).unwrap();
         assert_eq!(contents, "user-customized content");
+    }
+
+    #[test]
+    fn import_file_writes_bytes() {
+        use base64::Engine as _;
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("dropped.md");
+        let bytes = b"# Hello from Finder\n";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+        import_file(p.clone(), b64).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), bytes);
+    }
+
+    #[test]
+    fn import_file_no_clobber() {
+        use base64::Engine as _;
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("dropped.md");
+        std::fs::write(&p, b"existing").unwrap();
+        let b64 = base64::engine::general_purpose::STANDARD.encode(b"new");
+        let err = import_file(p.clone(), b64).unwrap_err();
+        assert!(matches!(err, AppError::Io(ref msg) if msg.starts_with("already exists:")));
+        assert_eq!(std::fs::read(&p).unwrap(), b"existing");
     }
 
     #[test]

@@ -2,6 +2,7 @@ import { useStore } from "../../lib/store"
 import { TreeNodeView } from "./TreeNode"
 import { useTreeActions } from "./useTreeActions"
 import { useRootDnd } from "./useTreeDnd"
+import { useDragScroll } from "./useDragScroll"
 import { FilePlus, FolderPlus } from "@phosphor-icons/react"
 
 export function TreePane() {
@@ -9,6 +10,7 @@ export function TreePane() {
   const rootPath = useStore((s) => s.rootPath)
   const actions = useTreeActions()
   const rootDnd = useRootDnd()
+  const dragScroll = useDragScroll()
   if (!tree) return null
 
   return (
@@ -30,10 +32,13 @@ export function TreePane() {
         </button>
       </div>
       <div
+        ref={dragScroll.ref}
         className={[
           "flex-1 overflow-y-auto pb-1.5 px-1 text-[13px]",
           rootDnd.isDropTarget ? "outline outline-1 outline-accent -outline-offset-1 rounded-sm" : "",
         ].join(" ")}
+        // Capture-phase so per-row stopPropagation doesn't suppress autoscroll.
+        onDragOverCapture={dragScroll.onDragOver}
         onDragOver={rootDnd.onDragOver}
         onDragLeave={rootDnd.onDragLeave}
         onDrop={rootDnd.onDrop}

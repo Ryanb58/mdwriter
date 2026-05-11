@@ -12,6 +12,15 @@ export type ImportClassification = {
   skipped: Array<{ name: string; reason: string }>
 }
 
+// Tauri serializes command errors as `{ kind, message }` — String(err)
+// would yield `"[object Object]"`, hiding the collision case. The Rust
+// `import_file` command surfaces collisions as `already exists: <path>`.
+function isAlreadyExistsError(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false
+  const msg = (e as { message?: unknown }).message
+  return typeof msg === "string" && msg.startsWith("already exists:")
+}
+
 function extOf(name: string): string {
   const dot = name.lastIndexOf(".")
   return dot < 0 ? "" : name.slice(dot + 1).toLowerCase()
@@ -63,7 +72,8 @@ async function tryImportWithSuffix(
       noteSelfWrite(candidate)
       await ipc.importFile(candidate, bytes)
       return candidate
-    } catch {
+    } catch (err) {
+      if (!isAlreadyExistsError(err)) throw err
       // Try the next suffix.
     }
   }
@@ -127,8 +137,7 @@ export async function importDroppedFiles(
       imported++
       continue
     } catch (err) {
-      const msg = String(err)
-      if (!msg.includes("already exists")) {
+      if (!isAlreadyExistsError(err)) {
         console.error("import failed", file.name, err)
         skipCount++
         continue
@@ -158,9 +167,14 @@ export async function importDroppedFiles(
       skipCount++
       continue
     }
-    const renamed = await tryImportWithSuffix(bytes, targetDir, suggestRenameName(file.name))
-    if (renamed) imported++
-    else skipCount++
+    try {
+      const renamed = await tryImportWithSuffix(bytes, targetDir, suggestRenameName(file.name))
+      if (renamed) imported++
+      else skipCount++
+    } catch (err) {
+      console.error("import-with-suffix failed", file.name, err)
+      skipCount++
+    }
   }
 
   await refreshTree()

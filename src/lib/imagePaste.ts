@@ -1,3 +1,4 @@
+import { readImage } from "@tauri-apps/plugin-clipboard-manager"
 import { ipc } from "./ipc"
 import type { ImagesLocation } from "./store"
 
@@ -202,3 +203,31 @@ export async function saveImage(input: SaveImageInput): Promise<SaveImageResult>
   }
   throw new Error("Couldn't pick a unique filename — try again")
 }
+
+// WKWebView on macOS refuses to expose pasted image data via the JS
+// ClipboardEvent (items/files are empty even when types contains
+// "Files"). Read it natively through the clipboard-manager plugin
+// instead, then encode RGBA → PNG via canvas so the rest of the
+// pipeline (saveImage / BlockNote) gets a normal PNG Blob.
+export async function readClipboardImageAsPng(): Promise<Uint8Array | null> {
+  const image = await readImage()
+  const rgba = await image.rgba()
+  const size = await image.size()
+  if (!size.width || !size.height) return null
+
+  const canvas = document.createElement("canvas")
+  canvas.width = size.width
+  canvas.height = size.height
+  const ctx = canvas.getContext("2d")
+  if (!ctx) return null
+  const imageData = ctx.createImageData(size.width, size.height)
+  imageData.data.set(new Uint8ClampedArray(rgba))
+  ctx.putImageData(imageData, 0, 0)
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob((b) => resolve(b), "image/png"),
+  )
+  if (!blob) return null
+  return new Uint8Array(await blob.arrayBuffer())
+}
+

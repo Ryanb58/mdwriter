@@ -6,7 +6,7 @@ import "@blocknote/mantine/style.css"
 import { convertFileSrc } from "@tauri-apps/api/core"
 import { useResolvedTheme } from "../settings/useTheme"
 import { useStore } from "../../lib/store"
-import { saveImage, guessMimeFromName } from "../../lib/imagePaste"
+import { saveImage, guessMimeFromName, readClipboardImageAsPng } from "../../lib/imagePaste"
 
 function parentDir(p: string): string {
   const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
@@ -105,6 +105,45 @@ export function BlockEditor({
       lastEmitted.current = initialMarkdown
     })()
   }, [docKey, initialMarkdown, editor])
+
+  // WKWebView surfaces clipboard image data with `types: ["Files"]`
+  // but empty `items` and `files`, so BlockNote's paste plugin never
+  // fires uploadFile. Catch this case here and bypass BlockNote.
+  useEffect(() => {
+    async function onPaste(e: ClipboardEvent) {
+      const cd = e.clipboardData
+      if (!cd) return
+      // If BlockNote can already see a file, leave it alone.
+      if (cd.items.length > 0 || cd.files.length > 0) return
+      if (!Array.from(cd.types).includes("Files")) return
+      const root = vaultRootRef.current
+      const docPath = docPathRef.current
+      if (!root || !docPath) return
+      e.preventDefault()
+      try {
+        const bytes = await readClipboardImageAsPng()
+        if (!bytes) return
+        const result = await saveImage({
+          bytes,
+          mime: "image/png",
+          vaultRoot: root,
+          docPath,
+          location: locationRef.current,
+          template: templateRef.current,
+        })
+        const cursor = editor.getTextCursorPosition()
+        editor.insertBlocks(
+          [{ type: "image", props: { url: result.relativePath } }],
+          cursor.block,
+          "after",
+        )
+      } catch (err) {
+        console.error("[image paste] clipboard fallback failed:", err)
+      }
+    }
+    document.addEventListener("paste", onPaste, true)
+    return () => document.removeEventListener("paste", onPaste, true)
+  }, [editor])
 
   return (
     <div className="h-full overflow-y-auto">

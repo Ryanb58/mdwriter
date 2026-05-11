@@ -236,6 +236,47 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
+      # Tauri uploads macOS bundles as mdwriter_VERSION_aarch64.* and
+      # mdwriter_VERSION_x86_64.*. Rename them to the friendlier
+      # macOS_Silicon / macOS_Intel labels Tolaria uses. Linux and Windows
+      # default names are already user-friendly (amd64, x64-setup).
+      - name: Rename macOS release assets
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.tag.outputs.tag }}
+          VERSION: ${{ needs.tag.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          case "$ARCH" in
+            aarch64) FRIENDLY="macOS_Silicon" ;;
+            x86_64)  FRIENDLY="macOS_Intel" ;;
+            *)       FRIENDLY="$ARCH" ;;
+          esac
+
+          MISSING=0
+          for OLD in \
+            "mdwriter_${VERSION}_${ARCH}.app.tar.gz" \
+            "mdwriter_${VERSION}_${ARCH}.app.tar.gz.sig" \
+            "mdwriter_${VERSION}_${ARCH}.dmg"
+          do
+            NEW="${OLD/${VERSION}_${ARCH}/${VERSION}_${FRIENDLY}}"
+            ASSET_ID=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+              --jq ".assets[] | select(.name == \"${OLD}\") | .id" 2>/dev/null || echo "")
+            if [[ -n "$ASSET_ID" ]]; then
+              gh api -X PATCH "/repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}" \
+                -f "name=${NEW}" >/dev/null
+              echo "Renamed: $OLD -> $NEW"
+            else
+              echo "::error::Expected asset '$OLD' not found on release ${TAG}"
+              MISSING=1
+            fi
+          done
+          if [[ $MISSING -ne 0 ]]; then
+            exit 1
+          fi
+
       - name: Upload signature artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -310,8 +351,8 @@ jobs:
               FIRST=0
               printf '    "%s": {\n      "signature": %s,\n      "url": "%s"\n    }' "$key" "$(jq -Rs <<< "$sig")" "$url"
             }
-            emit "darwin-aarch64" "$MAC_ARM_SIG" "${BASE}/mdwriter_${VERSION}_aarch64.app.tar.gz"
-            emit "darwin-x86_64"  "$MAC_X64_SIG" "${BASE}/mdwriter_${VERSION}_x86_64.app.tar.gz"
+            emit "darwin-aarch64" "$MAC_ARM_SIG" "${BASE}/mdwriter_${VERSION}_macOS_Silicon.app.tar.gz"
+            emit "darwin-x86_64"  "$MAC_X64_SIG" "${BASE}/mdwriter_${VERSION}_macOS_Intel.app.tar.gz"
             emit "windows-x86_64" "$WIN_SIG"     "${BASE}/mdwriter_${VERSION}_x64-setup.exe"
             echo
             echo '  }'

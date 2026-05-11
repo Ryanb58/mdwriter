@@ -1,6 +1,7 @@
 import { useStore } from "../../lib/store"
 import { CircleNotch, Check, Gear } from "@phosphor-icons/react"
 import { VaultPicker } from "../vaults/VaultPicker"
+import { AgentPicker } from "../ai/AgentPicker"
 
 function formatTime(ts: number | null): string {
   if (!ts) return ""
@@ -30,6 +31,7 @@ export function StatusBar() {
             <span>Saved {formatTime(doc.savedAt)}</span>
           </span>
         )}
+        <AgentPicker placement="above" variant="compact" />
         <button
           onClick={() => setSettingsOpen(true)}
           className="p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"

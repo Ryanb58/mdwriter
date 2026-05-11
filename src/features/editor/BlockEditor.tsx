@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react"
-import type { BlockNoteEditor, PartialBlock } from "@blocknote/core"
-import { useCreateBlockNote } from "@blocknote/react"
+import type { PartialBlock } from "@blocknote/core"
+import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react"
 import { BlockNoteView } from "@blocknote/mantine"
 import "@blocknote/mantine/style.css"
 import { convertFileSrc } from "@tauri-apps/api/core"
@@ -12,6 +12,15 @@ import {
   readClipboardImageAsPng,
   resolveAgainstDocDir,
 } from "../../lib/imagePaste"
+import { editorSchema, setWikilinkNotes } from "./wikilinkInline"
+import {
+  hydrateWikilinkBlocks,
+  preprocessWikilinks,
+  postprocessWikilinks,
+} from "./wikilinkRoundtrip"
+import { useLinkActivation } from "./useLinkActivation"
+import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
+import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
 
 export function BlockEditor({
   initialMarkdown,
@@ -25,10 +34,20 @@ export function BlockEditor({
   const initializedKey = useRef<string | null>(null)
   const lastEmitted = useRef<string>("")
   const theme = useResolvedTheme()
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const notes = useVaultNotes()
+
+  // Keep the inline-content renderer's module-local note list in sync with
+  // the live vault. The renderer can't `useStore` because BlockNote renders
+  // it outside our React tree.
+  useEffect(() => {
+    setWikilinkNotes(notes)
+  }, [notes])
 
   const editor = useCreateBlockNote(
     useMemo(
       () => ({
+        schema: editorSchema,
         uploadFile: async (file: File): Promise<string> => {
           try {
             const { rootPath, openDoc, settings } = useStore.getState()
@@ -69,8 +88,10 @@ export function BlockEditor({
     if (initializedKey.current === docKey) return
     initializedKey.current = docKey
     ;(async () => {
-      const blocks = (await editor.tryParseMarkdownToBlocks(initialMarkdown)) as PartialBlock[]
-      editor.replaceBlocks(editor.document, blocks.length ? blocks : [{ type: "paragraph" }])
+      const pre = preprocessWikilinks(initialMarkdown)
+      const parsed = (await editor.tryParseMarkdownToBlocks(pre)) as PartialBlock[]
+      const hydrated = hydrateWikilinkBlocks(parsed)
+      editor.replaceBlocks(editor.document, hydrated.length ? hydrated : [{ type: "paragraph" }])
       lastEmitted.current = initialMarkdown
     })()
   }, [docKey, initialMarkdown, editor])
@@ -112,19 +133,78 @@ export function BlockEditor({
     return () => document.removeEventListener("paste", onPaste, true)
   }, [editor])
 
+  useLinkActivation(hostRef)
+
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={hostRef} className="h-full overflow-y-auto">
       <BlockNoteView
-        editor={editor as BlockNoteEditor}
+        editor={editor}
         theme={theme}
         onChange={async () => {
-          const md = await editor.blocksToMarkdownLossy(editor.document)
-          if (md !== lastEmitted.current) {
-            lastEmitted.current = md
-            onChangeMarkdown(md)
+          const md = await editor.blocksToMarkdownLossy()
+          // The export path emits our wikilinks as bracketed text already
+          // (via the inline spec's toExternalHTML); the postprocess only
+          // matters if BlockNote's HTML→markdown step escapes a bracket.
+          const out = postprocessWikilinks(md)
+          if (out !== lastEmitted.current) {
+            lastEmitted.current = out
+            onChangeMarkdown(out)
           }
         }}
-      />
+      >
+        <SuggestionMenuController
+          triggerCharacter="[["
+          getItems={async (query: string) => filterForMenu(notes, query)}
+          suggestionMenuComponent={WikilinkSuggestionMenu}
+          onItemClick={(item) => {
+            // BlockNote's SuggestionMenuWrapper has already deleted the
+            // `[[` trigger plus any query characters before invoking us.
+            // Insert our atomic wikilink node followed by a space so the
+            // user can keep typing without a no-break-space surprise.
+            editor.insertInlineContent([
+              {
+                type: "wikilink",
+                props: { target: item.target, alias: "" },
+              },
+              " ",
+            ] as never)
+          }}
+        />
+      </BlockNoteView>
     </div>
   )
+}
+
+type WikilinkMenuItem = {
+  title: string
+  subtitle: string
+  target: string
+}
+
+/**
+ * Substring match against note name and rel path. BlockNote strips the
+ * full multi-character trigger (`[[`) before passing the query, so we get
+ * the raw user-typed text after the brackets.
+ */
+function filterForMenu(notes: VaultNote[], query: string): WikilinkMenuItem[] {
+  const q = query.trim().toLowerCase()
+  const scored: { item: WikilinkMenuItem; score: number }[] = []
+  for (const n of notes) {
+    const name = n.name.toLowerCase()
+    const rel = n.rel.toLowerCase()
+    const nameIdx = name.indexOf(q)
+    const relIdx = rel.indexOf(q)
+    if (q && nameIdx < 0 && relIdx < 0) continue
+    const score = !q ? 0 : nameIdx >= 0 ? nameIdx : 1000 + relIdx
+    scored.push({
+      item: {
+        title: n.name,
+        subtitle: n.rel,
+        target: n.name,
+      },
+      score,
+    })
+  }
+  scored.sort((a, b) => a.score - b.score || a.item.title.localeCompare(b.item.title))
+  return scored.slice(0, 12).map((s) => s.item)
 }

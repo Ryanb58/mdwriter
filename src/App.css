@@ -207,4 +207,40 @@ body {
 }
 .cm-activeLine, .cm-activeLineGutter { background: var(--color-surface) !important; }
 .cm-content { padding: 24px 16px !important; }
+
+/* Wikilinks and internal markdown links — shared across BlockNote inline
+   content and CodeMirror raw-mode decorations. The `.wikilink` class is
+   the contract; modifiers `--resolved` / `--broken` adjust the color.
+   Internal `<a>` tags inside the editor inherit the same look so pasted
+   markdown links to vault notes don't look out of place. */
+.wikilink {
+  color: var(--color-accent);
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+  border-radius: 2px;
+  transition: background-color 80ms ease, border-color 80ms ease;
+}
+.wikilink:hover {
+  background: var(--color-accent-soft);
+  border-bottom-color: var(--color-accent);
+}
+.wikilink--broken {
+  color: var(--color-danger);
+  border-bottom-style: dotted;
+  border-bottom-color: var(--color-danger);
+}
+
+/* BlockNote renders our custom inline content via createReactInlineContentSpec
+   wrapped in a span; give it a little chip padding so it reads as a link
+   chip and not a run of text. */
+.bn-editor .wikilink {
+  padding: 0 2px;
+}
+
+/* CodeMirror's MatchDecorator marks the whole [[..]] run; we don't need
+   chip padding there since the brackets are still visible characters. */
+.cm-content .wikilink {
+  padding: 0;
+}
 .cm-line { padding: 0 8px; }

@@ -166,20 +166,45 @@ pub fn trash_path(path: PathBuf) -> Result<()> {
 }
 
 fn write_atomic(path: &Path, contents: &str) -> Result<()> {
-    write_bytes_atomic(path, contents.as_bytes())
+    write_bytes_atomic_clobber(path, contents.as_bytes())
 }
 
-fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+// Write to a unique temp file (random suffix) in the destination
+// directory, then atomic-rename onto the target — overwriting any
+// existing file. Used by text writes (write_file) that expect to
+// replace the doc in place.
+fn write_bytes_atomic_clobber(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
-    let temp = parent.join(format!(".{}.tmp", path.file_name().unwrap().to_string_lossy()));
-    {
-        let mut f = std::fs::File::create(&temp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-    }
-    std::fs::rename(&temp, path)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| AppError::Io(format!("tempfile: {e}")))?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path)
+        .map_err(|e| AppError::Io(format!("persist: {}", e.error)))?;
+    Ok(())
+}
+
+// No-clobber variant: persist_noclobber atomically refuses to
+// overwrite an existing destination. Avoids the prior TOCTOU race
+// (`path.exists()` + `rename`) — concurrent paste handlers can't
+// silently clobber each other's images.
+fn write_bytes_atomic_no_clobber(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| AppError::Io(format!("tempfile: {e}")))?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist_noclobber(path).map_err(|e| {
+        if e.error.kind() == std::io::ErrorKind::AlreadyExists {
+            AppError::Io(format!("already exists: {}", path.display()))
+        } else {
+            AppError::Io(format!("persist: {}", e.error))
+        }
+    })?;
     Ok(())
 }
 
@@ -197,15 +222,12 @@ pub fn write_image(path: PathBuf, bytes_b64: String) -> Result<()> {
 }
 
 pub fn write_image_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
-    if path.exists() {
-        return Err(AppError::Io(format!("already exists: {}", path.display())));
-    }
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             std::fs::create_dir_all(parent)?;
         }
     }
-    write_bytes_atomic(path, bytes)
+    write_bytes_atomic_no_clobber(path, bytes)
 }
 
 #[cfg(test)]
@@ -425,13 +447,29 @@ mod write_tests {
     }
 
     #[test]
-    fn write_image_bytes_atomic_cleans_up_temp_on_success() {
+    fn write_image_bytes_atomic_leaves_no_temp_files() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("x.png");
         write_image_bytes(&p, &[1, 2, 3]).unwrap();
-        let tmp = dir.path().join(".x.png.tmp");
-        assert!(!tmp.exists());
+        // Verify no .tmp* leftovers from tempfile in the parent directory.
+        let stragglers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != "x.png")
+            .collect();
+        assert!(stragglers.is_empty(), "leftover files: {stragglers:?}");
         assert!(p.exists());
+    }
+
+    #[test]
+    fn write_image_bytes_no_clobber_preserves_existing() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        std::fs::write(&p, b"original").unwrap();
+        let err = write_image_bytes(&p, b"new").unwrap_err();
+        assert!(matches!(err, AppError::Io(ref msg) if msg.starts_with("already exists:")));
+        // Original contents preserved — the no-clobber rename didn't fire.
+        assert_eq!(std::fs::read(&p).unwrap(), b"original");
     }
 
     #[test]

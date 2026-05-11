@@ -123,6 +123,15 @@ export function generateFilename(
   return `${stem}.${ext}`
 }
 
+// Percent-encode characters that have special meaning inside the
+// `![](url)` form: whitespace, parens, square brackets, and angle
+// brackets. Path separators stay as-is so the URL remains readable.
+export function encodeMarkdownUrl(path: string): string {
+  return path.replace(/[\s()[\]<>]/g, (c) =>
+    `%${c.charCodeAt(0).toString(16).padStart(2, "0").toUpperCase()}`,
+  )
+}
+
 export function relativeFromDocDir(docPath: string, absolutePath: string): string {
   const fromSegs = splitSegments(parent(docPath))
   const toSegs = splitSegments(absolutePath)

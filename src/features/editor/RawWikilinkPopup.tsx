@@ -9,6 +9,9 @@ type Props = {
   state: WikilinkCompletionState | null
   notes: VaultNote[]
   viewRef: React.RefObject<EditorView | null>
+  /** Suppress the popup until the trigger context changes. Plugin-state
+   *  only — does not mutate the document. */
+  onDismiss: () => void
 }
 
 /**
@@ -20,7 +23,7 @@ type Props = {
  * Keyboard handling is attached to the document so the editor keeps focus
  * — the popup never becomes the active element.
  */
-export function RawWikilinkPopup({ state, notes, viewRef }: Props) {
+export function RawWikilinkPopup({ state, notes, viewRef, onDismiss }: Props) {
   const results = state ? filterNotes(notes, state.query) : []
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -48,21 +51,16 @@ export function RawWikilinkPopup({ state, notes, viewRef }: Props) {
           applyWikilinkInsertion(view, state.from, state.to, pick.name)
         }
       } else if (e.key === "Escape") {
-        const view = viewRef.current
-        if (view) {
-          e.preventDefault()
-          // Insert a single space so the trigger no longer matches; this
-          // closes the popup on next selection update.
-          view.dispatch({
-            changes: { from: state.to, to: state.to, insert: " " },
-            selection: { anchor: state.to + 1 },
-          })
-        }
+        // Plugin-state dismissal: keeps the user's document untouched and
+        // suppresses the popup until the trigger snapshot changes (next
+        // keypress).
+        e.preventDefault()
+        onDismiss()
       }
     }
     document.addEventListener("keydown", onKey, true)
     return () => document.removeEventListener("keydown", onKey, true)
-  }, [state, results, active, viewRef])
+  }, [state, results, active, viewRef, onDismiss])
 
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLButtonElement>(`[data-idx="${active}"]`)

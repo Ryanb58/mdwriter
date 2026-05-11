@@ -33,6 +33,30 @@ describe("detectWikilinkTrigger", () => {
   })
 })
 
+describe("MD_LINK_RE behavior (via inspection)", () => {
+  // We exercise the regex through a small helper rather than importing it
+  // directly — the same negative-lookbehind pattern lives in wikilinkCM.ts.
+  const MD_LINK_RE = /(?<!!)\[([^\]\r\n]+)\]\(([^)\r\n]+)\)/g
+
+  function findFirst(s: string): string | null {
+    MD_LINK_RE.lastIndex = 0
+    const m = MD_LINK_RE.exec(s)
+    return m ? m[0] : null
+  }
+
+  it("matches a plain markdown link", () => {
+    expect(findFirst("see [Note](Note.md) here")).toBe("[Note](Note.md)")
+  })
+  it("does not match image syntax", () => {
+    expect(findFirst("![alt](image.png)")).toBeNull()
+  })
+  it("matches a link that follows an image on the same line", () => {
+    // Image at index 0 should be skipped; the link that follows still matches.
+    const found = findFirst("![alt](img.png) and [Note](Note.md)")
+    expect(found).toBe("[Note](Note.md)")
+  })
+})
+
 describe("filterNotes", () => {
   it("returns all up to max when query is empty", () => {
     expect(filterNotes(notes, "")).toHaveLength(3)

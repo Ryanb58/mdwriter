@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { EditorState } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
@@ -6,7 +6,12 @@ import { markdown } from "@codemirror/lang-markdown"
 import { useRawImagePaste } from "./useRawImagePaste"
 import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes } from "../../lib/vaultNotes"
-import { decorateLinks, wikilinkCompletion, type WikilinkCompletionState } from "./wikilinkCM"
+import {
+  decorateLinks,
+  rebuildLinkDecorations,
+  wikilinkCompletion,
+  type WikilinkCompletionState,
+} from "./wikilinkCM"
 import { RawWikilinkPopup } from "./RawWikilinkPopup"
 
 export function RawEditor({
@@ -20,6 +25,18 @@ export function RawEditor({
   const viewRef = useRef<EditorView | null>(null)
   const [trigger, setTrigger] = useState<WikilinkCompletionState | null>(null)
   const notes = useVaultNotes()
+  // Hold the live note list in a ref so the CM decoration callback —
+  // which lives outside React and doesn't re-run on prop changes — can
+  // always reach the current vault when resolving links.
+  const notesRef = useRef(notes)
+  notesRef.current = notes
+
+  // `wikilinkCompletion` returns both the extension and a `dismiss()`
+  // entrypoint the popup calls on Esc; build them once per editor mount.
+  const completion = useMemo(
+    () => wikilinkCompletion((s) => setTrigger(s)),
+    [],
+  )
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -32,8 +49,8 @@ export function RawEditor({
           keymap.of([...defaultKeymap, ...historyKeymap]),
           lineNumbers(),
           markdown(),
-          decorateLinks,
-          wikilinkCompletion((s) => setTrigger(s)),
+          decorateLinks(() => notesRef.current),
+          completion.extension,
           EditorView.theme({ "&": { height: "100%" } }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChange(u.state.doc.toString())
@@ -54,13 +71,27 @@ export function RawEditor({
     }
   }, [value])
 
+  // Whenever the vault note list changes, ask the decoration plugin to
+  // recompute so resolved↔broken styling stays accurate without a doc
+  // edit. The ref above keeps the resolver's view of `notes` fresh too.
+  useEffect(() => {
+    const v = viewRef.current
+    if (!v) return
+    v.dispatch({ effects: rebuildLinkDecorations.of() })
+  }, [notes])
+
   useRawImagePaste(viewRef)
   useLinkActivation(hostRef)
 
   return (
     <>
       <div ref={hostRef} className="h-full overflow-auto" />
-      <RawWikilinkPopup state={trigger} notes={notes} viewRef={viewRef} />
+      <RawWikilinkPopup
+        state={trigger}
+        notes={notes}
+        viewRef={viewRef}
+        onDismiss={completion.dismiss}
+      />
     </>
   )
 }

@@ -162,6 +162,15 @@ export const useStore = create<AppStore>()(
         aiPanelVisible: s.aiPanelVisible,
         aiAgent: s.aiAgent,
       }),
+      merge: (persisted, current) => {
+        const next = { ...current, ...(persisted as Partial<AppStore>) }
+        // Drop ImagesLocation values that no longer exist in the union.
+        const valid: ImagesLocation[] = ["vault-assets", "same-folder"]
+        if (!valid.includes(next.settings.imagesLocation)) {
+          next.settings = { ...next.settings, imagesLocation: DEFAULT_SETTINGS.imagesLocation }
+        }
+        return next
+      },
     },
   ),
 )

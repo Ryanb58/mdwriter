@@ -220,7 +220,7 @@ function ImagesLocationSegmented({
             className={[
               "flex items-center justify-center px-3 h-7 rounded text-[12px] whitespace-nowrap transition-colors",
               active
-                ? "bg-accent text-accent-fg font-medium"
+                ? "bg-accent text-accent-fg"
                 : "text-text-subtle hover:text-text hover:bg-elevated",
             ].join(" ")}
             aria-pressed={active}
@@ -240,7 +240,7 @@ function ThemeSegmented({ value, onChange }: { value: Theme; onChange: (v: Theme
     { value: "system", label: "System", icon: <Monitor size={13} weight="bold" /> },
   ]
   return (
-    <div className="inline-flex rounded-md border border-border bg-surface p-0.5 mt-0.5">
+    <div className="inline-flex rounded-md border border-border bg-surface p-0.5">
       {opts.map((o) => {
         const active = o.value === value
         return (

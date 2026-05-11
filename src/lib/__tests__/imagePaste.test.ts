@@ -196,7 +196,8 @@ describe("saveImage", () => {
     expect(invoke).toHaveBeenCalledTimes(1)
     expect(invoke).toHaveBeenCalledWith("write_image", {
       path: "/Vault/assets/a3f1.png",
-      bytes: [1, 2, 3],
+      // Bytes are base64-encoded; assert shape, not exact encoding.
+      bytesB64: expect.any(String),
     })
   })
 

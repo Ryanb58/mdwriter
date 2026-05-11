@@ -183,8 +183,20 @@ fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+// The Tauri IPC JSON-encodes everything, so a multi-megabyte Vec<u8>
+// arriving as `[1, 2, 3, ...]` would stall (or worse) the WebView
+// message channel. Frontend base64-encodes via FileReader (fast for
+// large blobs) and we decode here.
 #[tauri::command]
-pub fn write_image(path: PathBuf, bytes: Vec<u8>) -> Result<()> {
+pub fn write_image(path: PathBuf, bytes_b64: String) -> Result<()> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(bytes_b64.as_bytes())
+        .map_err(|e| AppError::Io(format!("invalid base64: {e}")))?;
+    write_image_bytes(&path, &bytes)
+}
+
+pub fn write_image_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     if path.exists() {
         return Err(AppError::Io(format!("already exists: {}", path.display())));
     }
@@ -193,7 +205,7 @@ pub fn write_image(path: PathBuf, bytes: Vec<u8>) -> Result<()> {
             std::fs::create_dir_all(parent)?;
         }
     }
-    write_bytes_atomic(&path, &bytes)
+    write_bytes_atomic(path, bytes)
 }
 
 #[cfg(test)]
@@ -387,38 +399,57 @@ mod write_tests {
     }
 
     #[test]
-    fn write_image_writes_bytes() {
+    fn write_image_bytes_writes_bytes() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("assets").join("foo.png");
         let bytes = vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3];
-        write_image(p.clone(), bytes.clone()).unwrap();
+        write_image_bytes(&p, &bytes).unwrap();
         assert_eq!(std::fs::read(&p).unwrap(), bytes);
     }
 
     #[test]
-    fn write_image_creates_missing_parent_dirs() {
+    fn write_image_bytes_creates_missing_parent_dirs() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("a").join("b").join("c").join("x.png");
-        write_image(p.clone(), vec![1, 2, 3]).unwrap();
+        write_image_bytes(&p, &[1, 2, 3]).unwrap();
         assert!(p.exists());
     }
 
     #[test]
-    fn write_image_errors_when_destination_exists() {
+    fn write_image_bytes_errors_when_destination_exists() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("x.png");
         std::fs::write(&p, b"old").unwrap();
-        let err = write_image(p, vec![1, 2, 3]).unwrap_err();
+        let err = write_image_bytes(&p, &[1, 2, 3]).unwrap_err();
         assert!(matches!(err, AppError::Io(_)));
     }
 
     #[test]
-    fn write_image_atomic_cleans_up_temp_on_success() {
+    fn write_image_bytes_atomic_cleans_up_temp_on_success() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("x.png");
-        write_image(p.clone(), vec![1, 2, 3]).unwrap();
+        write_image_bytes(&p, &[1, 2, 3]).unwrap();
         let tmp = dir.path().join(".x.png.tmp");
         assert!(!tmp.exists());
         assert!(p.exists());
+    }
+
+    #[test]
+    fn write_image_decodes_base64() {
+        use base64::Engine as _;
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        let bytes = vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3];
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        write_image(p.clone(), b64).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), bytes);
+    }
+
+    #[test]
+    fn write_image_rejects_invalid_base64() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        let err = write_image(p, "!!!not-base64!!!".to_string()).unwrap_err();
+        assert!(matches!(err, AppError::Io(_)));
     }
 }

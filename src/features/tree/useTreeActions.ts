@@ -26,7 +26,7 @@ export function useTreeActions() {
         }
       }
       await refreshTree()
-      useStore.setState({ selectedPath: candidate })
+      useStore.getState().setSelected(candidate)
     },
     async newFolder(parentDir: string) {
       let n = 1
@@ -47,14 +47,32 @@ export function useTreeActions() {
       const to = joinPath(parent(from), newBasename)
       await ipc.renamePath(from, to)
       await refreshTree()
-      const sel = useStore.getState().selectedPath
-      if (sel === from) useStore.setState({ selectedPath: to })
+      const s = useStore.getState()
+      const patch: Record<string, unknown> = {}
+      if (s.selectedPath === from) patch.selectedPath = to
+      if (s.selectedPaths.has(from)) {
+        const next = new Set(s.selectedPaths)
+        next.delete(from)
+        next.add(to)
+        patch.selectedPaths = next
+      }
+      if (Object.keys(patch).length > 0) useStore.setState(patch)
     },
     async trash(path: string) {
       await ipc.trashPath(path)
       await refreshTree()
-      const sel = useStore.getState().selectedPath
-      if (sel === path) useStore.setState({ selectedPath: null, openDoc: null })
+      const s = useStore.getState()
+      const patch: Record<string, unknown> = {}
+      if (s.selectedPath === path) {
+        patch.selectedPath = null
+        patch.openDoc = null
+      }
+      if (s.selectedPaths.has(path)) {
+        const next = new Set(s.selectedPaths)
+        next.delete(path)
+        patch.selectedPaths = next
+      }
+      if (Object.keys(patch).length > 0) useStore.setState(patch)
     },
   }
 }

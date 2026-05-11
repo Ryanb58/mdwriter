@@ -4,6 +4,7 @@ import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
 import { TreePane } from "./features/tree/TreePane"
 import { useTreeShortcuts } from "./features/tree/useTreeShortcuts"
+import { DndModals } from "./features/tree/DndModals"
 import { EditorPane } from "./features/editor/EditorPane"
 import { AiPanel } from "./features/ai/AiPanel"
 import { useAiSession } from "./features/ai/useAiSession"
@@ -35,6 +36,7 @@ export default function App() {
       <>
         <EmptyFolderState />
         <SettingsPanel />
+        <DndModals />
         <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
       </>
     )
@@ -84,6 +86,7 @@ export default function App() {
       </div>
       <CommandPalette />
       <SettingsPanel />
+      <DndModals />
       <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
     </>
   )

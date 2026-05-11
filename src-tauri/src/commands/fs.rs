@@ -166,15 +166,68 @@ pub fn trash_path(path: PathBuf) -> Result<()> {
 }
 
 fn write_atomic(path: &Path, contents: &str) -> Result<()> {
-    let parent = path.parent().ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
-    let temp = parent.join(format!(".{}.tmp", path.file_name().unwrap().to_string_lossy()));
-    {
-        let mut f = std::fs::File::create(&temp)?;
-        f.write_all(contents.as_bytes())?;
-        f.sync_all()?;
-    }
-    std::fs::rename(&temp, path)?;
+    write_bytes_atomic_clobber(path, contents.as_bytes())
+}
+
+// Write to a unique temp file (random suffix) in the destination
+// directory, then atomic-rename onto the target — overwriting any
+// existing file. Used by text writes (write_file) that expect to
+// replace the doc in place.
+fn write_bytes_atomic_clobber(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| AppError::Io(format!("tempfile: {e}")))?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path)
+        .map_err(|e| AppError::Io(format!("persist: {}", e.error)))?;
     Ok(())
+}
+
+// No-clobber variant: persist_noclobber atomically refuses to
+// overwrite an existing destination. Avoids the prior TOCTOU race
+// (`path.exists()` + `rename`) — concurrent paste handlers can't
+// silently clobber each other's images.
+fn write_bytes_atomic_no_clobber(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| AppError::Io(format!("tempfile: {e}")))?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist_noclobber(path).map_err(|e| {
+        if e.error.kind() == std::io::ErrorKind::AlreadyExists {
+            AppError::Io(format!("already exists: {}", path.display()))
+        } else {
+            AppError::Io(format!("persist: {}", e.error))
+        }
+    })?;
+    Ok(())
+}
+
+// The Tauri IPC JSON-encodes everything, so a multi-megabyte Vec<u8>
+// arriving as `[1, 2, 3, ...]` would stall (or worse) the WebView
+// message channel. Frontend base64-encodes via FileReader (fast for
+// large blobs) and we decode here.
+#[tauri::command]
+pub fn write_image(path: PathBuf, bytes_b64: String) -> Result<()> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(bytes_b64.as_bytes())
+        .map_err(|e| AppError::Io(format!("invalid base64: {e}")))?;
+    write_image_bytes(&path, &bytes)
+}
+
+pub fn write_image_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    write_bytes_atomic_no_clobber(path, bytes)
 }
 
 #[cfg(test)]
@@ -365,5 +418,76 @@ mod write_tests {
         std::fs::write(&from, "").unwrap();
         std::fs::write(&to, "").unwrap();
         assert!(rename_path(from, to).is_err());
+    }
+
+    #[test]
+    fn write_image_bytes_writes_bytes() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("assets").join("foo.png");
+        let bytes = vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3];
+        write_image_bytes(&p, &bytes).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), bytes);
+    }
+
+    #[test]
+    fn write_image_bytes_creates_missing_parent_dirs() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("a").join("b").join("c").join("x.png");
+        write_image_bytes(&p, &[1, 2, 3]).unwrap();
+        assert!(p.exists());
+    }
+
+    #[test]
+    fn write_image_bytes_errors_when_destination_exists() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        std::fs::write(&p, b"old").unwrap();
+        let err = write_image_bytes(&p, &[1, 2, 3]).unwrap_err();
+        assert!(matches!(err, AppError::Io(_)));
+    }
+
+    #[test]
+    fn write_image_bytes_atomic_leaves_no_temp_files() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        write_image_bytes(&p, &[1, 2, 3]).unwrap();
+        // Verify no .tmp* leftovers from tempfile in the parent directory.
+        let stragglers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != "x.png")
+            .collect();
+        assert!(stragglers.is_empty(), "leftover files: {stragglers:?}");
+        assert!(p.exists());
+    }
+
+    #[test]
+    fn write_image_bytes_no_clobber_preserves_existing() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        std::fs::write(&p, b"original").unwrap();
+        let err = write_image_bytes(&p, b"new").unwrap_err();
+        assert!(matches!(err, AppError::Io(ref msg) if msg.starts_with("already exists:")));
+        // Original contents preserved — the no-clobber rename didn't fire.
+        assert_eq!(std::fs::read(&p).unwrap(), b"original");
+    }
+
+    #[test]
+    fn write_image_decodes_base64() {
+        use base64::Engine as _;
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        let bytes = vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3];
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        write_image(p.clone(), b64).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), bytes);
+    }
+
+    #[test]
+    fn write_image_rejects_invalid_base64() {
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("x.png");
+        let err = write_image(p, "!!!not-base64!!!".to_string()).unwrap_err();
+        assert!(matches!(err, AppError::Io(_)));
     }
 }

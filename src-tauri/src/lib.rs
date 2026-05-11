@@ -3,6 +3,8 @@ mod errors;
 mod state;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+#[cfg(debug_assertions)]
+use tauri::Manager;
 use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -14,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(state::AppState::default())
         .manage(commands::agents::AgentSession::default())
         .setup(|app| {
@@ -51,6 +54,19 @@ pub fn run() {
                 .item(&PredefinedMenuItem::select_all(app, None)?)
                 .build()?;
 
+            #[cfg(debug_assertions)]
+            let devtools_item = MenuItemBuilder::new("Toggle Developer Tools")
+                .id("devtools")
+                .accelerator("CmdOrCtrl+Alt+I")
+                .build(app)?;
+
+            #[cfg(debug_assertions)]
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .item(&PredefinedMenuItem::fullscreen(app, None)?)
+                .separator()
+                .item(&devtools_item)
+                .build()?;
+            #[cfg(not(debug_assertions))]
             let view_menu = SubmenuBuilder::new(app, "View")
                 .item(&PredefinedMenuItem::fullscreen(app, None)?)
                 .build()?;
@@ -71,6 +87,16 @@ pub fn run() {
                     "check-updates" => {
                         let _ = app_handle.emit("menu:check-updates", ());
                     }
+                    #[cfg(debug_assertions)]
+                    "devtools" => {
+                        if let Some(w) = app_handle.get_webview_window("main") {
+                            if w.is_devtools_open() {
+                                w.close_devtools();
+                            } else {
+                                w.open_devtools();
+                            }
+                        }
+                    }
                     _ => {}
                 }
             });
@@ -85,6 +111,7 @@ pub fn run() {
             commands::fs::create_dir,
             commands::fs::rename_path,
             commands::fs::trash_path,
+            commands::fs::write_image,
             commands::recent::get_recent_folders,
             commands::recent::push_recent_folder,
             commands::watch::start_watcher,

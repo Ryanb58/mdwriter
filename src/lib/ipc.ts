@@ -42,6 +42,21 @@ export const ipc = {
   createDir: (path: string) => invoke<void>("create_dir", { path }),
   renamePath: (from: string, to: string) => invoke<void>("rename_path", { from, to }),
   trashPath: (path: string) => invoke<void>("trash_path", { path }),
+  // Tauri's IPC JSON-encodes args, so a multi-megabyte Uint8Array sent
+  // as a number array stalls on big pastes. FileReader.readAsDataURL
+  // is the fastest browser path to base64 for a Blob.
+  writeImage: async (path: string, bytes: Uint8Array): Promise<void> => {
+    const bytesB64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        resolve(result.slice(result.indexOf(",") + 1))
+      }
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(new Blob([bytes as BlobPart]))
+    })
+    return invoke<void>("write_image", { path, bytesB64 })
+  },
   startWatcher: (root: string) => invoke<void>("start_watcher", { root }),
   stopWatcher: () => invoke<void>("stop_watcher"),
   getRecentFolders: () => invoke<string[]>("get_recent_folders"),

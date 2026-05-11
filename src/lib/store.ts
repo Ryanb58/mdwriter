@@ -16,6 +16,8 @@ export type OpenDoc = {
 
 export type Theme = "light" | "dark" | "system"
 
+export type ImagesLocation = "vault-assets" | "same-folder"
+
 export type Settings = {
   theme: Theme
   autoRenameFromH1: boolean
@@ -23,6 +25,8 @@ export type Settings = {
   showPdfs: boolean
   showImages: boolean
   showUnsupported: boolean
+  imagesLocation: ImagesLocation
+  imageFilenameTemplate: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,6 +36,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showPdfs: false,
   showImages: false,
   showUnsupported: false,
+  imagesLocation: "vault-assets",
+  imageFilenameTemplate: "{date}-{time}-{rand}",
 }
 
 export type AppStore = {
@@ -156,6 +162,20 @@ export const useStore = create<AppStore>()(
         aiPanelVisible: s.aiPanelVisible,
         aiAgent: s.aiAgent,
       }),
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<AppStore>
+        // Re-merge settings against DEFAULT_SETTINGS so any field added in a
+        // later release picks up its default for users who persisted earlier.
+        const settings = { ...DEFAULT_SETTINGS, ...(p.settings ?? {}) }
+        const validLocations: ImagesLocation[] = ["vault-assets", "same-folder"]
+        if (!validLocations.includes(settings.imagesLocation)) {
+          settings.imagesLocation = DEFAULT_SETTINGS.imagesLocation
+        }
+        if (typeof settings.imageFilenameTemplate !== "string") {
+          settings.imageFilenameTemplate = DEFAULT_SETTINGS.imageFilenameTemplate
+        }
+        return { ...current, ...p, settings }
+      },
     },
   ),
 )

@@ -13,6 +13,7 @@ import { useTheme } from "./features/settings/useTheme"
 import { useExternalChanges } from "./features/watcher/useExternalChanges"
 import { useUpdates } from "./features/updates/useUpdates"
 import { UpdateBanner } from "./features/updates/UpdateBanner"
+import { usePasteDiagnostic } from "./lib/pasteDiagnostic"
 import "./App.css"
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
   useExternalChanges()
   useTheme()
   useTreeShortcuts()
+  usePasteDiagnostic()
   const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
   const propertiesVisible = useStore((s) => s.propertiesVisible)

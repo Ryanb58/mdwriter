@@ -210,7 +210,7 @@ function ImagesLocationSegmented({
     { value: "same-folder", label: "Same folder" },
   ]
   return (
-    <div className="inline-flex rounded-md border border-border bg-surface p-0.5 mt-0.5">
+    <div className="inline-flex rounded-md border border-border bg-surface p-0.5">
       {opts.map((o) => {
         const active = o.value === value
         return (
@@ -219,9 +219,9 @@ function ImagesLocationSegmented({
             type="button"
             onClick={() => onChange(o.value)}
             className={[
-              "px-2.5 h-7 rounded text-[12px] transition-colors",
+              "flex items-center justify-center px-3 h-7 rounded text-[12px] whitespace-nowrap transition-colors",
               active
-                ? "bg-accent text-accent-fg"
+                ? "bg-accent text-accent-fg font-medium"
                 : "text-text-subtle hover:text-text hover:bg-elevated",
             ].join(" ")}
             aria-pressed={active}

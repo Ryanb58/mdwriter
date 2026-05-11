@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { ipc, type AiStreamEvent } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
+import { buildPrompt } from "./buildPrompt"
 
 /**
  * Detect installed agents on mount and listen for the streaming events that
@@ -84,8 +85,13 @@ export async function sendPrompt(text: string) {
   store.appendAiMessage({ role: "assistant", text: "", tools: [], finished: false })
   store.setAiRunning(true)
 
+  // The user sees their raw prompt in history, but the agent gets a wrapped
+  // version with the currently-open note and wikilink hints.
+  const currentNote = relForCurrentNote(store.openDoc?.path ?? store.selectedPath ?? null, root)
+  const wrapped = buildPrompt({ currentNote, userText: trimmed })
+
   try {
-    await ipc.startAiSession(store.aiAgent, trimmed, root)
+    await ipc.startAiSession(store.aiAgent, wrapped, root)
   } catch (e) {
     store.patchLastAssistantMessage((m) => ({
       ...m,
@@ -99,4 +105,10 @@ export async function sendPrompt(text: string) {
 export async function cancelSession() {
   await ipc.stopAiSession().catch(console.error)
   useStore.getState().setAiRunning(false)
+}
+
+function relForCurrentNote(absPath: string | null, root: string | null): string | null {
+  if (!absPath || !root) return null
+  if (!absPath.startsWith(root)) return null
+  return absPath.slice(root.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
 }

@@ -33,6 +33,9 @@ export async function openFolder(
   await ipc.startWatcher(path)
   await ipc.pushRecentFolder(path)
   const recent = await ipc.getRecentFolders()
+  // Best-effort: seed AGENTS.md if missing so the AI agent has vault
+  // conventions on hand. Don't block vault open if this fails.
+  ipc.ensureVaultAgentsMd(path).catch(() => {})
   deps.setRoot(path)
   deps.setTree(tree)
   deps.setRecent(recent)

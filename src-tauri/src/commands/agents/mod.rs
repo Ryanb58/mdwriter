@@ -14,6 +14,7 @@
 //!   `src-tauri/src/commands/agents/<agent>.rs` and register in [`spawn_for`].
 
 mod claude_code;
+mod codex;
 
 use crate::errors::{AppError, Result};
 use serde::{Deserialize, Serialize};
@@ -119,11 +120,9 @@ pub struct AgentCommand {
 fn agent_for(id: AgentId) -> Option<Box<dyn Agent>> {
     match id {
         AgentId::ClaudeCode => Some(Box::new(claude_code::ClaudeCodeAgent)),
+        AgentId::Codex => Some(Box::new(codex::CodexAgent)),
         // Other agents are stubs until their adapters are written.
-        AgentId::Codex
-        | AgentId::OpenCode
-        | AgentId::Pi
-        | AgentId::Gemini => None,
+        AgentId::OpenCode | AgentId::Pi | AgentId::Gemini => None,
     }
 }
 

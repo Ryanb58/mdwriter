@@ -11,6 +11,15 @@ export type MoveResult = {
   cancelled: boolean
 }
 
+// Tauri serializes command errors as `{ kind, message }`. Sniffing
+// `String(err)` would yield `"[object Object]"`, so collision detection
+// has to read `err.message` directly.
+function isDestinationExistsError(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false
+  const msg = (e as { message?: unknown }).message
+  return typeof msg === "string" && msg.startsWith("destination exists:")
+}
+
 /**
  * Suggest a non-colliding name in `targetDir` by appending `-1`, `-2`, ...
  * before the extension. Pure (doesn't probe disk) — collision detection
@@ -45,7 +54,8 @@ async function tryRenameWithSuffix(
       noteSelfWrite(candidate)
       await ipc.renamePath(from, candidate)
       return candidate
-    } catch {
+    } catch (err) {
+      if (!isDestinationExistsError(err)) throw err
       // Collision on this suffix — try the next.
     }
   }
@@ -85,9 +95,7 @@ export async function moveItems(
       moved++
       continue
     } catch (err) {
-      // Inspect error: rename_path returns AppError::Io("destination exists: …") on collision.
-      const msg = String(err)
-      if (!msg.includes("destination exists")) {
+      if (!isDestinationExistsError(err)) {
         console.error("move failed", from, "→", to, err)
         skipped++
         continue
@@ -110,6 +118,9 @@ export async function moveItems(
       choice = decision.choice
     }
     if (choice === "cancel") {
+      // Refresh so already-moved items show up; watcher events for
+      // the moves we made are dropped by noteSelfWrite's window.
+      await refreshTree()
       return { moved, skipped, cancelled: true }
     }
     if (choice === "skip") {
@@ -117,11 +128,16 @@ export async function moveItems(
       continue
     }
     // Rename branch — try -1, -2, ...
-    const renamed = await tryRenameWithSuffix(from, targetDir, suggestRenameName(name))
-    if (renamed) {
-      await onMoved(from, renamed)
-      moved++
-    } else {
+    try {
+      const renamed = await tryRenameWithSuffix(from, targetDir, suggestRenameName(name))
+      if (renamed) {
+        await onMoved(from, renamed)
+        moved++
+      } else {
+        skipped++
+      }
+    } catch (err) {
+      console.error("rename-with-suffix failed", from, err)
       skipped++
     }
   }

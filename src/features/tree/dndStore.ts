@@ -5,7 +5,10 @@ type Source = { kind: "internal"; paths: string[] } | { kind: "external" }
 type DndState = {
   active: boolean
   source: Source | null
-  dropTarget: string | null // target folder path, or "" for vault root
+  // Absolute folder path of the current drop target. The vault root uses
+  // its full rootPath here, not "" — anywhere this is read should treat
+  // it as a normal absolute path.
+  dropTarget: string | null
 
   beginInternalDrag(paths: string[]): void
   beginExternalDrag(): void

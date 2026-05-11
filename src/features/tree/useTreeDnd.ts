@@ -10,10 +10,14 @@ import { requestConfirm } from "./dndPrompts"
 const AUTO_EXPAND_MS = 600
 
 /**
- * Decide whether `target` (a folder path or "" for vault root) is a
- * legal destination for an internal drag of `sources`. Rejects:
- *   - dropping a folder into itself or any of its descendants
- *   - dropping into the same parent (no-op)
+ * Decide whether `target` (a folder absolute path; the vault root uses
+ * its full rootPath, not "") is a legal destination for an internal drag
+ * of `sources`. Rejects:
+ *   - dropping a folder onto itself
+ *   - dropping a folder into any of its descendants
+ *
+ * Same-parent drops are deliberately allowed here so the drop UI still
+ * highlights; `handleInternalDrop` short-circuits them as no-ops.
  */
 function isLegalInternalDrop(sources: string[], target: string): boolean {
   if (sources.length === 0) return false
@@ -230,15 +234,25 @@ export function useRowDnd(node: TN) {
     }
 
     const dt = e.dataTransfer
-    if (dataTransferHasInternalDrag(dt)) {
-      const sources = readInternalSources(dt)
-      handleInternalDrop(sources, node.path).finally(endDnd)
-    } else if (dataTransferHasFiles(dt) && dt.files.length > 0) {
-      importDroppedFiles(dt.files, node.path).finally(endDnd)
-    } else {
-      endDnd()
-    }
+    // Snapshot drag payload BEFORE the synchronous endDnd(). DataTransfer
+    // contents are only valid during the drop event itself, so copy
+    // FileList into a real array.
+    const sources = dataTransferHasInternalDrag(dt) ? readInternalSources(dt) : null
+    const files = dataTransferHasFiles(dt) && dt.files.length > 0
+      ? Array.from(dt.files)
+      : null
+
+    // External (Finder) drops never fire dragend, so we have to reset DnD
+    // here. Do it synchronously — otherwise useDragScroll's RAF loop keeps
+    // running while the import/collision modal is open.
     setOverCount(0)
+    endDnd()
+
+    if (sources) {
+      handleInternalDrop(sources, node.path).catch(console.error)
+    } else if (files) {
+      importDroppedFiles(files, node.path).catch(console.error)
+    }
   }
 
   return {
@@ -322,15 +336,20 @@ export function useRootDnd() {
     if (!rootPath) return
     e.preventDefault()
     const dt = e.dataTransfer
-    if (dataTransferHasInternalDrag(dt)) {
-      const sources = readInternalSources(dt)
-      handleInternalDrop(sources, rootPath).finally(endDnd)
-    } else if (dataTransferHasFiles(dt) && dt.files.length > 0) {
-      importDroppedFiles(dt.files, rootPath).finally(endDnd)
-    } else {
-      endDnd()
-    }
+    const sources = dataTransferHasInternalDrag(dt) ? readInternalSources(dt) : null
+    const files = dataTransferHasFiles(dt) && dt.files.length > 0
+      ? Array.from(dt.files)
+      : null
+
+    // Reset DnD synchronously — see useRowDnd.onDrop for the reasoning.
     setOverCount(0)
+    endDnd()
+
+    if (sources) {
+      handleInternalDrop(sources, rootPath).catch(console.error)
+    } else if (files) {
+      importDroppedFiles(files, rootPath).catch(console.error)
+    }
   }
 
   return { isDropTarget, onDragOver, onDragLeave, onDrop }

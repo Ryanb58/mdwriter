@@ -13,15 +13,21 @@ function ConfirmModal() {
     if (!req) return
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
         req!.resolve(false)
         setConfirm(null)
       } else if (e.key === "Enter") {
+        e.preventDefault()
+        e.stopPropagation()
         req!.resolve(true)
         setConfirm(null)
       }
     }
-    document.addEventListener("keydown", onKey)
-    return () => document.removeEventListener("keydown", onKey)
+    // Capture phase so we beat the tree's document-level shortcut listener
+    // (notably Escape, which would otherwise also collapse multi-selection).
+    document.addEventListener("keydown", onKey, true)
+    return () => document.removeEventListener("keydown", onKey, true)
   }, [req, setConfirm])
 
   if (!req) return null
@@ -77,10 +83,15 @@ function CollisionModal() {
   useEffect(() => {
     if (!req) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") choose("cancel")
+      if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
+        choose("cancel")
+      }
     }
-    document.addEventListener("keydown", onKey)
-    return () => document.removeEventListener("keydown", onKey)
+    // Capture phase — see ConfirmModal for the reasoning.
+    document.addEventListener("keydown", onKey, true)
+    return () => document.removeEventListener("keydown", onKey, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [req, applyToRest])
 

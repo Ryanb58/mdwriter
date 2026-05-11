@@ -3,6 +3,8 @@ mod errors;
 mod state;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+#[cfg(debug_assertions)]
+use tauri::Manager;
 use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -51,6 +53,19 @@ pub fn run() {
                 .item(&PredefinedMenuItem::select_all(app, None)?)
                 .build()?;
 
+            #[cfg(debug_assertions)]
+            let devtools_item = MenuItemBuilder::new("Toggle Developer Tools")
+                .id("devtools")
+                .accelerator("CmdOrCtrl+Alt+I")
+                .build(app)?;
+
+            #[cfg(debug_assertions)]
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .item(&PredefinedMenuItem::fullscreen(app, None)?)
+                .separator()
+                .item(&devtools_item)
+                .build()?;
+            #[cfg(not(debug_assertions))]
             let view_menu = SubmenuBuilder::new(app, "View")
                 .item(&PredefinedMenuItem::fullscreen(app, None)?)
                 .build()?;
@@ -70,6 +85,16 @@ pub fn run() {
                     }
                     "check-updates" => {
                         let _ = app_handle.emit("menu:check-updates", ());
+                    }
+                    #[cfg(debug_assertions)]
+                    "devtools" => {
+                        if let Some(w) = app_handle.get_webview_window("main") {
+                            if w.is_devtools_open() {
+                                w.close_devtools();
+                            } else {
+                                w.open_devtools();
+                            }
+                        }
                     }
                     _ => {}
                 }

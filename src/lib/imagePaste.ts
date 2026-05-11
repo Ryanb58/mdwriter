@@ -1,5 +1,6 @@
 import { readImage } from "@tauri-apps/plugin-clipboard-manager"
 import { ipc } from "./ipc"
+import { basename, joinPath, parent } from "./paths"
 import type { ImagesLocation } from "./store"
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -25,8 +26,8 @@ const EXT_TO_MIME: Record<string, string> = {
 
 const DEFAULT_TEMPLATE = "{date}-{time}-{rand}"
 
-// Characters illegal in filenames on at least one major OS: path
-// separators, the Windows reserved set, NUL, and control chars.
+// Path separators, Windows reserved set, NUL, and control chars —
+// illegal on at least one major OS.
 // eslint-disable-next-line no-control-regex
 const ILLEGAL_CHARS = /[<>:"/\\|?*\x00-\x1f]/g
 
@@ -43,22 +44,8 @@ export function guessMimeFromName(name: string): string | null {
   return EXT_TO_MIME[ext] ?? null
 }
 
-function detectSep(p: string): "/" | "\\" {
-  return p.includes("\\") && !p.includes("/") ? "\\" : "/"
-}
-
-function parentDir(p: string): string {
-  const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))
-  return idx <= 0 ? "" : p.slice(0, idx)
-}
-
-function joinPath(a: string, b: string): string {
-  const sep = detectSep(a)
-  return a.endsWith(sep) ? a + b : a + sep + b
-}
-
 function fileStem(p: string): string {
-  const name = p.split(/[\\/]/).pop() ?? ""
+  const name = basename(p)
   const dot = name.lastIndexOf(".")
   return dot <= 0 ? name : name.slice(0, dot)
 }
@@ -76,9 +63,9 @@ export function resolveImageDir(
     case "vault-assets":
       return joinPath(vaultRoot, "assets")
     case "sibling-assets":
-      return joinPath(parentDir(docPath), `${fileStem(docPath)}.assets`)
+      return joinPath(parent(docPath), `${fileStem(docPath)}.assets`)
     case "same-folder":
-      return parentDir(docPath)
+      return parent(docPath)
   }
 }
 
@@ -95,8 +82,7 @@ function formatTime(d: Date): string {
 }
 
 function randHex(): string {
-  // 4 hex chars = 16 bits of entropy. Plenty for collision avoidance
-  // when combined with a timestamp.
+  // 4 hex chars = 16 bits of entropy. Enough when combined with a timestamp.
   const bytes = new Uint8Array(2)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
@@ -140,12 +126,25 @@ export function generateFilename(
 }
 
 export function relativeFromDocDir(docPath: string, absolutePath: string): string {
-  const fromSegs = splitSegments(parentDir(docPath))
+  const fromSegs = splitSegments(parent(docPath))
   const toSegs = splitSegments(absolutePath)
   let i = 0
   while (i < fromSegs.length && i < toSegs.length && fromSegs[i] === toSegs[i]) i++
   const up = Array(fromSegs.length - i).fill("..")
   return [...up, ...toSegs.slice(i)].join("/")
+}
+
+export function resolveAgainstDocDir(docPath: string, rel: string): string {
+  if (rel.startsWith("/") || /^[A-Za-z]:[\\/]/.test(rel)) return rel
+  const sep = docPath.includes("\\") ? "\\" : "/"
+  const segs = [...splitSegments(parent(docPath)), ...rel.split("/").filter(Boolean)]
+  const stack: string[] = []
+  for (const s of segs) {
+    if (s === "..") stack.pop()
+    else if (s !== ".") stack.push(s)
+  }
+  const prefix = docPath.startsWith("/") ? "/" : ""
+  return prefix + stack.join(sep)
 }
 
 export type SaveImageInput = {
@@ -204,15 +203,14 @@ export async function saveImage(input: SaveImageInput): Promise<SaveImageResult>
   throw new Error("Couldn't pick a unique filename — try again")
 }
 
-// WKWebView on macOS refuses to expose pasted image data via the JS
-// ClipboardEvent (items/files are empty even when types contains
-// "Files"). Read it natively through the clipboard-manager plugin
-// instead, then encode RGBA → PNG via canvas so the rest of the
+// WKWebView on macOS reports `types: ["Files"]` for pasted images but
+// keeps `items`/`files` empty, so BlockNote's paste plugin can't fire
+// uploadFile. Read the image natively through the clipboard-manager
+// plugin instead and encode RGBA → PNG via canvas so the rest of the
 // pipeline (saveImage / BlockNote) gets a normal PNG Blob.
 export async function readClipboardImageAsPng(): Promise<Uint8Array | null> {
   const image = await readImage()
-  const rgba = await image.rgba()
-  const size = await image.size()
+  const [rgba, size] = await Promise.all([image.rgba(), image.size()])
   if (!size.width || !size.height) return null
 
   const canvas = document.createElement("canvas")
@@ -230,4 +228,3 @@ export async function readClipboardImageAsPng(): Promise<Uint8Array | null> {
   if (!blob) return null
   return new Uint8Array(await blob.arrayBuffer())
 }
-

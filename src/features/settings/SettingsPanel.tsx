@@ -142,16 +142,14 @@ export function SettingsPanel() {
             </div>
             <Divider />
             <div className="flex flex-col gap-2 py-3">
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-medium text-text">Filename template</div>
-                <div className="text-[12px] text-text-subtle mt-0.5 leading-relaxed">
-                  Tokens:{" "}
-                  <code className="font-mono">{"{date}"}</code>{" "}
-                  <code className="font-mono">{"{time}"}</code>{" "}
-                  <code className="font-mono">{"{rand}"}</code>{" "}
-                  <code className="font-mono">{"{note}"}</code>.
-                  Extension is added automatically from the image type.
-                </div>
+              <div className="text-[13px] font-medium text-text">Filename template</div>
+              <div className="text-[12px] text-text-subtle leading-relaxed">
+                Tokens:{" "}
+                <code className="font-mono">{"{date}"}</code>{" "}
+                <code className="font-mono">{"{time}"}</code>{" "}
+                <code className="font-mono">{"{rand}"}</code>{" "}
+                <code className="font-mono">{"{note}"}</code>.
+                Extension is added automatically from the image type.
               </div>
               <input
                 type="text"

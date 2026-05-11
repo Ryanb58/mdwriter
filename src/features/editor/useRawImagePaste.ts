@@ -79,9 +79,13 @@ export function useRawImagePaste(
         })
         return
       }
-      // WKWebView clipboard fallback: types includes "Files" but items
-      // are empty. Read the image natively.
-      if (cd && cd.items.length === 0 && Array.from(cd.types).includes("Files")) {
+      // WKWebView clipboard fallback: types=["Files"] but items/files empty.
+      if (
+        cd &&
+        cd.items.length === 0 &&
+        cd.files.length === 0 &&
+        Array.from(cd.types).includes("Files")
+      ) {
         e.preventDefault()
         void (async () => {
           try {
@@ -99,7 +103,7 @@ export function useRawImagePaste(
       if (!file) return
       e.preventDefault()
       void insertImage(view!, file).catch((err) => {
-        console.error("drop image failed", err)
+        console.error("[image paste] drop failed:", err)
       })
     }
 

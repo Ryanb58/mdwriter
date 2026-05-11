@@ -8,8 +8,8 @@ Write in a clean block editor, save plain `.md` files to any folder on your mach
 
 - **Plain Markdown on disk.** Every note is a `.md` file in a folder you chose. Open them in any other editor. Sync them with iCloud, Dropbox, git — whatever you already use.
 - **A block editor that respects the format.** Blocks, slash commands, drag-to-reorder. Saves back to clean Markdown you'd be happy to read by hand.
-- **Frontmatter without the YAML.** A Properties pane edits your YAML frontmatter as real form fields. Toggle to raw mode (`Cmd+E`) when you want to see the source.
-- **Find files instantly.** `Cmd+P` fuzzy palette across your whole folder.
+- **Frontmatter without writing YAML.** A Properties pane edits your frontmatter as real form fields. Toggle to raw mode (`Cmd/Ctrl+E`) when you want to see the source.
+- **Find files instantly.** `Cmd/Ctrl+P` fuzzy palette across your whole folder.
 - **Built-in AI assistant.** Chat with Claude Code about the file you're editing, ask it to draft, rewrite, or summarize — it can read and write notes in your folder when you ask.
 - **External changes welcome.** Edit a file in another app and mdwriter picks it up automatically.
 
@@ -40,9 +40,9 @@ Update payloads are cryptographically signed, so even though the OS isn't yet si
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+P` | Find a file by name |
-| `Cmd+E` | Toggle between block editor and raw Markdown |
-| `Cmd+S` | Save (autosave runs every 500ms anyway) |
+| `Cmd/Ctrl+P` | Find a file by name |
+| `Cmd/Ctrl+E` | Toggle between block editor and raw Markdown |
+| `Cmd/Ctrl+S` | Save (autosave runs every 500ms anyway) |
 
 ---
 

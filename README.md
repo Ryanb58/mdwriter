@@ -1,67 +1,61 @@
 # mdwriter
 
-A fast, lightweight desktop markdown editor. Block editor with a Properties pane for YAML frontmatter, a left file tree with create/rename/delete, fuzzy file palette (Cmd+P), raw markdown toggle (Cmd+E), and external file watching.
+A fast, native Markdown editor that keeps your files yours.
 
-Built with Tauri 2, React, TypeScript, BlockNote, and CodeMirror.
+Write in a clean block editor, save plain `.md` files to any folder on your machine, and walk away whenever you want — no proprietary database, no sync service, no lock-in.
 
-## Install
+## Why mdwriter
 
-Download the latest `.dmg` (macOS), `.msi` (Windows), or `.AppImage` / `.deb` (Linux) from the [Releases page](https://github.com/Ryanb58/mdwriter/releases/latest).
+- **Plain Markdown on disk.** Every note is a `.md` file in a folder you chose. Open them in any other editor. Sync them with iCloud, Dropbox, git — whatever you already use.
+- **A block editor that respects the format.** Blocks, slash commands, drag-to-reorder. Saves back to clean Markdown you'd be happy to read by hand.
+- **Frontmatter without the YAML.** A Properties pane edits your YAML frontmatter as real form fields. Toggle to raw mode (`Cmd+E`) when you want to see the source.
+- **Find files instantly.** `Cmd+P` fuzzy palette across your whole folder.
+- **Built-in AI assistant.** Chat with Claude Code about the file you're editing, ask it to draft, rewrite, or summarize — it can read and write notes in your folder when you ask.
+- **External changes welcome.** Edit a file in another app and mdwriter picks it up automatically.
 
-### First launch on macOS
+## Get mdwriter
 
-mdwriter is not (yet) signed with an Apple Developer ID, so macOS will warn you on first launch:
+Download the latest build from the [Releases page](https://github.com/Ryanb58/mdwriter/releases/latest):
 
-> "mdwriter cannot be opened because Apple cannot check it for malicious software."
+- **macOS** — `mdwriter_*_macOS_Silicon.dmg` (Apple Silicon) or `mdwriter_*_macOS_Intel.dmg`
+- **Windows** — `mdwriter_*_x64-setup.exe`
+- **Linux** — `.AppImage`, `.deb`, or `.rpm`
 
-To open it the first time:
+Open it and pick any folder of Markdown files (or an empty folder to start fresh). That's it.
 
-- **Right-click** the `mdwriter.app` icon (in Applications or wherever you put it) and choose **Open** from the menu.
-- Click **Open** in the confirmation dialog.
+### First launch
 
-After this one-time approval, normal double-click launches work, and auto-updates install silently.
+mdwriter isn't signed with a paid Apple or Windows certificate yet, so your OS will warn you the first time. One-time approval:
 
-Alternative — strip the quarantine flag from a terminal:
+- **macOS** — right-click `mdwriter.app` and choose **Open**, then click **Open** in the confirmation dialog. Normal double-click works after that.
+- **Windows** — on the SmartScreen warning, click **More info → Run anyway**.
+
+## Stays up to date
+
+mdwriter checks for updates about ten seconds after launch. If there's a new version, you'll see a banner in the bottom-right of the window — click **Restart and install** when you're ready. You can also check manually from **mdwriter → Check for Updates…** (macOS) or **Settings → About → Check for Updates** (anywhere).
+
+Update payloads are cryptographically signed, so even though the OS isn't yet signing the app, the app verifies every update against a key it trusts.
+
+## A few handy shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd+P` | Find a file by name |
+| `Cmd+E` | Toggle between block editor and raw Markdown |
+| `Cmd+S` | Save (autosave runs every 500ms anyway) |
+
+---
+
+## For developers
+
+mdwriter is built with [Tauri 2](https://tauri.app), React 19, TypeScript, [BlockNote](https://www.blocknotejs.org), and [CodeMirror](https://codemirror.net). Package manager is `pnpm`.
 
 ```sh
-xattr -d com.apple.quarantine /Applications/mdwriter.app
+pnpm install
+pnpm tauri dev      # run the full desktop app
+pnpm dev            # frontend only, in a browser
+pnpm test           # frontend unit tests
+pnpm tauri build    # production bundle
 ```
 
-### First launch on Windows
-
-mdwriter is not (yet) signed with a code-signing certificate, so Windows SmartScreen will show:
-
-> "Windows protected your PC."
-
-Click **More info**, then **Run anyway**.
-
-### Updates
-
-mdwriter checks for updates ~10 seconds after launch. When one is available, a banner appears in the bottom-right of the window — click **Restart and install** to apply, or dismiss for later. Manual checks via **mdwriter → Check for Updates…** in the macOS menu, or **Settings → About → Check for Updates** on any platform.
-
-Update payloads are signed with a Tauri minisign key — the app rejects tampered downloads even though the OS isn't signing the app itself.
-
-## Develop
-
-    pnpm install
-    pnpm tauri dev
-
-## Test
-
-    pnpm test          # frontend unit
-    cargo test --manifest-path src-tauri/Cargo.toml --lib
-    pnpm test:e2e      # smoke
-
-## Build
-
-    pnpm tauri build
-
-## Release
-
-See [`docs/RELEASING.md`](docs/RELEASING.md) for the runbook.
-
-## Design docs
-
-- `docs/superpowers/specs/2026-05-09-mdwriter-design.md` — original design
-- `docs/superpowers/specs/2026-05-10-update-system.md` — auto-update system design
-- `docs/superpowers/plans/2026-05-09-mdwriter.md` — original implementation plan
+Releases are cut from the **Release** GitHub Actions workflow — see [`docs/RELEASING.md`](docs/RELEASING.md). Architecture notes for contributors live in [`CLAUDE.md`](CLAUDE.md).

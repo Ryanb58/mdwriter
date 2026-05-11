@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { applyWikilinkSelection, detectWikilinkTrigger } from "../wikilinkDetect"
+import {
+  applyWikilinkSelection,
+  detectAtTrigger,
+  detectMentionTrigger,
+  detectWikilinkTrigger,
+} from "../wikilinkDetect"
 
 describe("detectWikilinkTrigger", () => {
   it("returns null for empty input", () => {
@@ -47,6 +52,73 @@ describe("detectWikilinkTrigger", () => {
   })
 })
 
+describe("detectAtTrigger", () => {
+  it("returns null for empty input", () => {
+    expect(detectAtTrigger("", 0)).toBeNull()
+  })
+
+  it("matches @ at the start of the input", () => {
+    const t = detectAtTrigger("@note", 5)
+    expect(t).toEqual({ start: 0, end: 5, query: "note" })
+  })
+
+  it("matches @ after a space", () => {
+    const t = detectAtTrigger("see @note", 9)
+    expect(t).toEqual({ start: 4, end: 9, query: "note" })
+  })
+
+  it("matches @ with empty query", () => {
+    const t = detectAtTrigger("ask about @", 11)
+    expect(t).toEqual({ start: 10, end: 11, query: "" })
+  })
+
+  it("rejects @ inside an email-like token", () => {
+    expect(detectAtTrigger("user@host", 9)).toBeNull()
+  })
+
+  it("rejects @ after a letter", () => {
+    expect(detectAtTrigger("foo@bar", 7)).toBeNull()
+  })
+
+  it("allows @ after an opening bracket", () => {
+    expect(detectAtTrigger("(@note", 6)).toEqual({ start: 1, end: 6, query: "note" })
+  })
+
+  it("cancels on whitespace inside the query", () => {
+    expect(detectAtTrigger("@a b", 4)).toBeNull()
+  })
+
+  it("cancels on newline inside the query", () => {
+    expect(detectAtTrigger("@a\nb", 4)).toBeNull()
+  })
+
+  it("respects maxLen", () => {
+    const text = "@" + "a".repeat(100)
+    expect(detectAtTrigger(text, text.length, 60)).toBeNull()
+  })
+})
+
+describe("detectMentionTrigger", () => {
+  it("returns null when neither form is open", () => {
+    expect(detectMentionTrigger("nothing here", 12)).toBeNull()
+  })
+
+  it("returns the [[ trigger when only that is open", () => {
+    expect(detectMentionTrigger("[[note", 6)?.start).toBe(0)
+  })
+
+  it("returns the @ trigger when only that is open", () => {
+    expect(detectMentionTrigger("see @note", 9)?.start).toBe(4)
+  })
+
+  it("prefers the trigger closer to the caret when both could match", () => {
+    // `[[` opens at 0; later, an unfinished `@no` opens at 12.
+    const t = detectMentionTrigger("[[orphan and @no", 16)
+    expect(t?.start).toBe(13)
+    expect(t?.query).toBe("no")
+  })
+})
+
 describe("applyWikilinkSelection", () => {
   it("replaces the open [[ with a complete wikilink", () => {
     const r = applyWikilinkSelection(
@@ -66,5 +138,15 @@ describe("applyWikilinkSelection", () => {
     )
     expect(r.value).toBe("before [[x]] after")
     expect(r.caret).toBe("before [[x]]".length)
+  })
+
+  it("replaces an @ trigger with a wikilink", () => {
+    const r = applyWikilinkSelection(
+      "see @note",
+      { start: 4, end: 9, query: "note" },
+      "my-note",
+    )
+    expect(r.value).toBe("see [[my-note]]")
+    expect(r.caret).toBe("see [[my-note]]".length)
   })
 })

@@ -6,7 +6,7 @@ import { useVaultNotes } from "../../lib/vaultNotes"
 import { sendPrompt } from "../ai/useAiSession"
 import {
   applyWikilinkSelection,
-  detectWikilinkTrigger,
+  detectMentionTrigger,
   type WikilinkTrigger,
 } from "../ai/wikilinkDetect"
 import { WikilinkPopover, useWikilinkResults } from "../ai/WikilinkPopover"
@@ -159,7 +159,7 @@ function AskMode({ initialQuery, close }: { initialQuery: string; close: () => v
   useEffect(() => { setActiveIdx(0) }, [trigger?.query])
 
   function syncTrigger(value: string, caret: number) {
-    setTrigger(detectWikilinkTrigger(value, caret))
+    setTrigger(detectMentionTrigger(value, caret))
   }
 
   function onChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -233,7 +233,7 @@ function AskMode({ initialQuery, close }: { initialQuery: string; close: () => v
           onKeyDown={onKeyDown}
           onSelect={(e) => syncTrigger(e.currentTarget.value, e.currentTarget.selectionStart ?? e.currentTarget.value.length)}
           rows={1}
-          placeholder="Ask the agent…   type [[ to reference a note"
+          placeholder="Ask the agent…   type @ or [[ to reference a note"
           className="flex-1 resize-none bg-transparent outline-none text-[14px] leading-relaxed placeholder:text-text-subtle"
           style={{ maxHeight: 180 }}
         />
@@ -261,7 +261,7 @@ function AskMode({ initialQuery, close }: { initialQuery: string; close: () => v
         </button>
       </div>
       <div className="px-4 py-2 text-[11px] text-text-subtle border-t border-border">
-        <kbd className="font-mono">Enter</kbd> sends · <kbd className="font-mono">Shift+Enter</kbd> newline · <kbd className="font-mono">[[</kbd> reference
+        <kbd className="font-mono">Enter</kbd> sends · <kbd className="font-mono">Shift+Enter</kbd> newline · <kbd className="font-mono">@</kbd> or <kbd className="font-mono">[[</kbd> reference
       </div>
     </div>
   )

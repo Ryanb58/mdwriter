@@ -208,6 +208,26 @@ body {
 .cm-activeLine, .cm-activeLineGutter { background: var(--color-surface) !important; }
 .cm-content { padding: 24px 16px !important; }
 
+/* Regular markdown links inside the BlockNote editor. Without these the
+   accent color is the only visual cue, but BlockNote's inline links don't
+   set a color, so links would render as plain text. Solid underline pairs
+   with the wikilink's dashed underline-on-hover to keep the two readable
+   as different things. Pointer cursor only shows on modifier hover —
+   useLinkActivation requires Cmd/Ctrl-click to navigate. */
+.bn-editor a[href] {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--color-accent) 50%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  border-radius: 2px;
+  transition: text-decoration-color 80ms ease, background-color 80ms ease;
+}
+.bn-editor a[href]:hover {
+  text-decoration-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
 /* Wikilinks and internal markdown links — shared across BlockNote inline
    content and CodeMirror raw-mode decorations. The `.wikilink` class is
    the contract; modifiers `--resolved` / `--broken` adjust the color.

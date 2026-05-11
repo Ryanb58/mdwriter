@@ -146,25 +146,28 @@ body {
   background-clip: padding-box;
 }
 
-/* Buttons reset (override Tauri scaffold defaults) */
-button {
-  background: transparent;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
-}
+/* Buttons reset (override Tauri scaffold defaults). Lives in @layer base
+   so Tailwind utilities like `px-3` can override the zeroed padding. */
+@layer base {
+  button {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+  }
 
-input, textarea {
-  background: transparent;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  outline: none;
-  padding: 0;
-  margin: 0;
+  input, textarea {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    outline: none;
+    padding: 0;
+    margin: 0;
+  }
 }
 
 /* BlockNote — make it inherit the dark theme cleanly.

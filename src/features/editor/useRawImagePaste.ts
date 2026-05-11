@@ -1,7 +1,12 @@
 import { useEffect } from "react"
 import type { EditorView } from "@codemirror/view"
 import { useStore } from "../../lib/store"
-import { saveImage, mimeToExt, guessMimeFromName } from "../../lib/imagePaste"
+import {
+  saveImage,
+  mimeToExt,
+  guessMimeFromName,
+  readClipboardImageAsPng,
+} from "../../lib/imagePaste"
 
 function isImageFile(f: File): boolean {
   return Boolean(mimeToExt(f.type) || guessMimeFromName(f.name))
@@ -26,13 +31,16 @@ function firstImageFromItems(items: DataTransferItemList | null): File | null {
   return null
 }
 
-async function insertImage(view: EditorView, file: File): Promise<void> {
+async function insertImageBytes(
+  view: EditorView,
+  bytes: Uint8Array,
+  mime: string,
+): Promise<void> {
   const { rootPath, openDoc, settings } = useStore.getState()
   if (!rootPath || !openDoc) return
-  const bytes = new Uint8Array(await file.arrayBuffer())
   const result = await saveImage({
     bytes,
-    mime: file.type || guessMimeFromName(file.name) || "application/octet-stream",
+    mime,
     vaultRoot: rootPath,
     docPath: openDoc.path,
     location: settings.imagesLocation,
@@ -47,6 +55,12 @@ async function insertImage(view: EditorView, file: File): Promise<void> {
   view.focus()
 }
 
+async function insertImage(view: EditorView, file: File): Promise<void> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const mime = file.type || guessMimeFromName(file.name) || "application/octet-stream"
+  await insertImageBytes(view, bytes, mime)
+}
+
 export function useRawImagePaste(
   viewRef: React.MutableRefObject<EditorView | null>,
 ): void {
@@ -56,12 +70,28 @@ export function useRawImagePaste(
     const host = view.dom
 
     function onPaste(e: ClipboardEvent) {
-      const file = firstImageFromItems(e.clipboardData?.items ?? null)
-      if (!file) return
-      e.preventDefault()
-      void insertImage(view!, file).catch((err) => {
-        console.error("paste image failed", err)
-      })
+      const cd = e.clipboardData
+      const file = firstImageFromItems(cd?.items ?? null)
+      if (file) {
+        e.preventDefault()
+        void insertImage(view!, file).catch((err) => {
+          console.error("[image paste] raw paste failed:", err)
+        })
+        return
+      }
+      // WKWebView clipboard fallback: types includes "Files" but items
+      // are empty. Read the image natively.
+      if (cd && cd.items.length === 0 && Array.from(cd.types).includes("Files")) {
+        e.preventDefault()
+        void (async () => {
+          try {
+            const bytes = await readClipboardImageAsPng()
+            if (bytes) await insertImageBytes(view!, bytes, "image/png")
+          } catch (err) {
+            console.error("[image paste] raw clipboard fallback failed:", err)
+          }
+        })()
+      }
     }
 
     function onDrop(e: DragEvent) {

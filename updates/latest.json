@@ -5,15 +5,15 @@
   "platforms": {
     "darwin-aarch64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmRhSHRZTnNwU0NQMjJaUXFtK3N6Nm1KMTZ1QWZtLzJ5VXR4emtHeVM2b29oTjhaK3Q4ZTVoZ0M0NndiOTNyOHJrU3NhOTRMbWk4K3JVSUhpR1BUTWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NDU3NDMxCWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpteVhBOUdHUkNBMnpIcGNGTXUrR2w3VDFwa05Xd0I1TkJxd1JhWVNKcllqY044cnVhSXlmNWk2UnI2dEpOcHY3amhPdmwzOWtudUxCRFlRVkJESmpCUT09Cg==\n",
-      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-10.28c56c5/mdwriter_2026.5.10_aarch64.app.tar.gz"
+      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.10_macOS_Silicon.app.tar.gz"
     },
     "darwin-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlN2RUE5MEIrSU5tWWRTbkVaVGQ5WmhqN0VBK3NhQW8zU1NwMEVMMTNXNytEWVR3dms1Q2p1OXdWVWU0aERSTTVDa0JoVFdZa2hlK1NFWlRWdzFwT1E0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NDU3NDQ1CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpvZFgwME5OS1I0UnM1ZGlIOVk2RTNCMTVvLzZ4R3hUbjE4SlBQNE1ESDFYVmxSYi9xeGdScFQ4OTh5Nk1mS25CU29qdzJzTUJ1cnN4ZktoWUt5ZnpDdz09Cg==\n",
-      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-10.28c56c5/mdwriter_2026.5.10_x86_64.app.tar.gz"
+      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.10_macOS_Intel.app.tar.gz"
     },
     "windows-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmI1VlBCaCtGa2w2Z1R5NHBER1hmUkYrWk1QMFpsbUV3bDdYaVJFcTlhV0JHcUNGUUl5OUpvcVdjZG9hQ2VkeVB2YUpjZkVuWTQ1eThraXhxc01TTlFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NDU3NTcxCWZpbGU6bWR3cml0ZXJfMjAyNi41LjEwX3g2NC1zZXR1cC5leGUKbCtEaDEzNE0xZmZGd0FiRGJnRm9nTDNCMWhsUmRkWFd6TVpTQ0dYZnhLU3ZPaTEvVTFCR1VBQmlsUUQvbzhiSllncWQ2d2tMMGlweEduRnoydGNPQVE9PQo=\n",
-      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-10.28c56c5/mdwriter_2026.5.10_x64-setup.exe"
+      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.10_x64-setup.exe"
     }
   }
 }

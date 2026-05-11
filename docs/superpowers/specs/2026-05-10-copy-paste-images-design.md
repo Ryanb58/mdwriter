@@ -27,9 +27,8 @@ Adds support for getting images into a note without leaving the editor: paste a 
 
 | Decision | Choice |
 |---|---|
-| Image directory | Configurable: `vault-assets`, `sibling-assets`, `same-folder`. Default `vault-assets`. |
+| Image directory | Configurable: `vault-assets`, `same-folder`. Default `vault-assets`. |
 | `vault-assets` resolves to | `<vault>/assets/` |
-| `sibling-assets` resolves to | `<note-dir>/<note-stem>.assets/` |
 | `same-folder` resolves to | `<note-dir>/` |
 | Filename | Configurable template; default `{date}-{time}-{rand}` → `2026-05-10-143052-a3f1.png`. Extension is appended automatically from MIME. |
 | Filename tokens | `{date}` (YYYY-MM-DD, local), `{time}` (HHMMSS, local), `{rand}` (4 hex chars), `{note}` (current note stem, slugified). Unknown tokens are left literally. |
@@ -121,7 +120,7 @@ src-tauri/capabilities/default.json
 ### `src/lib/imagePaste.ts`
 
 ```ts
-export type ImagesLocation = "vault-assets" | "sibling-assets" | "same-folder"
+export type ImagesLocation = "vault-assets" | "same-folder"
 
 export type SaveImageInput = {
   bytes: Uint8Array
@@ -201,7 +200,7 @@ Defaults in `DEFAULT_SETTINGS`. Persisted in the existing localStorage `partiali
 
 `SettingsPanel.tsx` gains two controls under a new **"Images"** section:
 
-- **Storage location** — segmented control with three options (Vault assets, Sibling folder, Same folder as note).
+- **Storage location** — segmented control with two options (Vault assets, Same folder as note).
 - **Filename template** — text input. Helper text lists the available tokens (`{date}`, `{time}`, `{rand}`, `{note}`) and notes that the extension is appended automatically. Invalid templates revert to default on save with a toast.
 
 ## 6. Behavior
@@ -311,7 +310,6 @@ user ⌘V on CodeMirror
 | `write_image` fails (permission, full disk) | Toast with the error; nothing inserted. |
 | Target file already exists (4-hex collision) | Retry up to 3 times with a fresh filename. After 3, toast: "Couldn't pick a unique filename — try again". |
 | No doc open | Listener is unmounted; event has no effect. |
-| Settings location is `sibling-assets` and the note has no extension or is at the vault root | Resolve normally — `<docDir>/<docStem>.assets/`. If the stem is empty for some reason, fall back to `<docDir>/.assets/` and log a warning. |
 | Paste of an image while in raw mode but no markdown image-link syntax can be inserted (e.g., inside a code fence) | We don't detect fences in v1 — the link is inserted literally. User can edit. |
 | URL paste of a non-image URL | BlockNote's default text paste handles it. No change. |
 | Pasted file's MIME is empty (`File.type === ""`) | Use the file extension to guess MIME. If still unknown, toast and abort. |
@@ -329,7 +327,6 @@ user ⌘V on CodeMirror
 
 - `resolveImageDir`:
   - `vault-assets` for vault root + nested note paths.
-  - `sibling-assets` for vault root + nested note paths.
   - `same-folder` for vault root + nested note paths.
 - `generateFilename`:
   - Default template → `YYYY-MM-DD-HHMMSS-<4hex>.<ext>` shape.

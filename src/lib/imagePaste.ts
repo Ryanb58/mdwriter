@@ -62,8 +62,6 @@ export function resolveImageDir(
   switch (location) {
     case "vault-assets":
       return joinPath(vaultRoot, "assets")
-    case "sibling-assets":
-      return joinPath(parent(docPath), `${fileStem(docPath)}.assets`)
     case "same-folder":
       return parent(docPath)
   }

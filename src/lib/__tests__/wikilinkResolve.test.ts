@@ -69,6 +69,18 @@ describe("resolveLinkTarget", () => {
   it("returns null when no match", () => {
     expect(resolveLinkTarget("Nonexistent note", notes)).toBeNull()
   })
+  it("strips a leading slash before matching", () => {
+    const n = resolveLinkTarget("/Index.md", notes)
+    expect(n?.path).toBe("/v/Index.md")
+  })
+  it("strips a leading ./ before matching", () => {
+    const n = resolveLinkTarget("./biographies/Inertia", notes)
+    expect(n?.path).toBe("/v/biographies/Inertia.md")
+  })
+  it("collapses repeated ./ prefixes", () => {
+    const n = resolveLinkTarget(".//./Index", notes)
+    expect(n?.path).toBe("/v/Index.md")
+  })
 })
 
 describe("isInternalHref", () => {

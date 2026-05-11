@@ -30,12 +30,32 @@ export function parseWikilink(inner: string): ParsedWikilink {
 }
 
 /**
+ * Normalize a raw target string into a vault-relative form ready for
+ * comparison against `VaultNote.rel`. Backslashes become slashes, and
+ * any leading `/` or `./` is stripped — both are equivalent to a bare
+ * relative target from the vault root. `../` segments are *not*
+ * collapsed; markdown inside the vault shouldn't reach outside it.
+ */
+function normalizeRelTarget(s: string): string {
+  let out = s.trim().replace(/\\/g, "/")
+  // Collapse any `./` or leading `/` prefix; loops handle `././foo` etc.
+  while (out.startsWith("./") || out.startsWith("/")) {
+    out = out.startsWith("./") ? out.slice(2) : out.slice(1)
+  }
+  return out
+}
+
+/**
  * Resolve a wikilink target (e.g. `Three laws of motion`, `folder/note`,
  * `note.md`) against the vault's flat note list. Tries, in order:
  *   1. Exact relative path match (with or without `.md`).
  *   2. Path suffix match — `folder/note` resolves `…/folder/note.md`.
  *   3. Filename stem match — `Three laws of motion` resolves any note whose
  *      basename (without extension) matches.
+ *
+ * Targets are normalized first: backslashes → slashes, leading `/` and
+ * `./` stripped so absolute-looking hrefs (`/Index.md`) and explicit
+ * relative paths (`./notes/foo`) both resolve against vault rels.
  *
  * All comparisons are case-insensitive. Returns the first match in tree
  * order, or `null` if no match.
@@ -44,11 +64,10 @@ export function resolveLinkTarget(
   rawTarget: string,
   notes: VaultNote[],
 ): VaultNote | null {
-  const target = stripMdExt(decodeTarget(rawTarget).trim())
+  const target = stripMdExt(normalizeRelTarget(decodeTarget(rawTarget)))
   if (!target) return null
   const lc = target.toLowerCase()
-  // Normalize backslashes for windows-friendly inputs.
-  const lcSlash = lc.replace(/\\/g, "/")
+  const lcSlash = lc
 
   // Pass 1: exact rel match.
   for (const n of notes) {

@@ -61,12 +61,12 @@ export function useLinkActivation(host: React.RefObject<HTMLElement | null>) {
     }
 
     // Capture phase so we run before BlockNote's link toolbar or the
-    // ProseMirror link plugin can swallow the event.
+    // ProseMirror link plugin can swallow the event. Only `click` is
+    // bound — a single user click also fires `mousedown`, so wiring
+    // both would navigate twice.
     el.addEventListener("click", onClick, true)
-    el.addEventListener("mousedown", onClick, true)
     return () => {
       el.removeEventListener("click", onClick, true)
-      el.removeEventListener("mousedown", onClick, true)
     }
   }, [host])
 }

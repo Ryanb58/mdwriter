@@ -6,6 +6,7 @@ import { TreePane } from "./features/tree/TreePane"
 import { useTreeShortcuts } from "./features/tree/useTreeShortcuts"
 import { EditorPane } from "./features/editor/EditorPane"
 import { AiPanel } from "./features/ai/AiPanel"
+import { useAiSession } from "./features/ai/useAiSession"
 import { StatusBar } from "./features/statusbar/StatusBar"
 import { PropertiesPane } from "./features/properties/PropertiesPane"
 import { CommandPalette } from "./features/palette/CommandPalette"
@@ -23,6 +24,7 @@ export default function App() {
   useTheme()
   useTreeShortcuts()
   usePasteDiagnostic()
+  useAiSession()
   const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
   const rightPane = useStore((s) => s.rightPane)

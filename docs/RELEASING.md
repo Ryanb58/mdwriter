@@ -35,7 +35,7 @@ cat ~/.tauri/mdwriter.key | pbcopy
 
 Enable GitHub Pages on the `gh-pages` branch (`Settings → Pages → Source: Deploy from a branch → gh-pages`). The release workflow creates this branch on first run if it doesn't exist.
 
-The updater endpoint is `https://ryanb58.github.io/mdwriter/updates/latest.json` — wired into `tauri.conf.json`.
+The updater endpoint is `https://ryanb58.github.io/mdwriter/updates/latest.json` — wired into `tauri.conf.json`. The binaries the manifest points at live on a separate download host at `https://taylorbrazelton.com/mdwriter/`; that host must serve the same filenames the release workflow uploads to the GitHub release (e.g. `mdwriter_${VERSION}_macOS_Silicon.app.tar.gz`, `mdwriter_${VERSION}_macOS_Intel.app.tar.gz`, `mdwriter_${VERSION}_x64-setup.exe`). The simplest mirror is to sync the GitHub release's asset list to that path.
 
 ## Cutting a release
 

@@ -208,6 +208,22 @@ fn write_bytes_atomic_no_clobber(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Write a default `AGENTS.md` at the vault root if one isn't already there.
+/// Returns true if a new file was written, false if one already existed.
+/// Used on vault open so AI agents started from the vault have a baseline
+/// understanding of the format (wikilinks, H1-as-title, frontmatter).
+#[tauri::command]
+pub fn ensure_vault_agents_md(vault_path: PathBuf) -> Result<bool> {
+    let target = vault_path.join("AGENTS.md");
+    if target.exists() {
+        return Ok(false);
+    }
+    write_bytes_atomic_no_clobber(&target, DEFAULT_AGENTS_MD.as_bytes())?;
+    Ok(true)
+}
+
+const DEFAULT_AGENTS_MD: &str = include_str!("default_agents.md");
+
 // The Tauri IPC JSON-encodes everything, so a multi-megabyte Vec<u8>
 // arriving as `[1, 2, 3, ...]` would stall (or worse) the WebView
 // message channel. Frontend base64-encodes via FileReader (fast for
@@ -481,6 +497,29 @@ mod write_tests {
         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
         write_image(p.clone(), b64).unwrap();
         assert_eq!(std::fs::read(&p).unwrap(), bytes);
+    }
+
+    #[test]
+    fn ensure_vault_agents_md_creates_when_missing() {
+        let dir = tempdir().unwrap();
+        let wrote = ensure_vault_agents_md(dir.path().to_path_buf()).unwrap();
+        assert!(wrote);
+        let target = dir.path().join("AGENTS.md");
+        assert!(target.exists());
+        let contents = std::fs::read_to_string(&target).unwrap();
+        assert!(contents.contains("mdwriter vault"));
+        assert!(contents.contains("[[filename]]"));
+    }
+
+    #[test]
+    fn ensure_vault_agents_md_leaves_existing_file_alone() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("AGENTS.md");
+        std::fs::write(&target, "user-customized content").unwrap();
+        let wrote = ensure_vault_agents_md(dir.path().to_path_buf()).unwrap();
+        assert!(!wrote);
+        let contents = std::fs::read_to_string(&target).unwrap();
+        assert_eq!(contents, "user-customized content");
     }
 
     #[test]

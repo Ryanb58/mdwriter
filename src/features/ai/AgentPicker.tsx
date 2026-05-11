@@ -2,7 +2,14 @@ import { useStore } from "../../lib/store"
 import { CaretUpDown, Robot, CircleNotch } from "@phosphor-icons/react"
 import { useEffect, useRef, useState } from "react"
 
-export function AgentPicker() {
+type Props = {
+  /** Where the menu opens relative to the trigger. Default below. */
+  placement?: "above" | "below"
+  /** Visual variant — `panel` is roomy, `compact` is for the status bar. */
+  variant?: "panel" | "compact"
+}
+
+export function AgentPicker({ placement = "below", variant = "panel" }: Props = {}) {
   const aiAgent = useStore((s) => s.aiAgent)
   const setAiAgent = useStore((s) => s.setAiAgent)
   const available = useStore((s) => s.aiAvailable)
@@ -20,23 +27,29 @@ export function AgentPicker() {
 
   const current = available.find((r) => r.id === aiAgent)
   const label = current?.label ?? "Claude Code"
+  const menuClass = placement === "above"
+    ? "right-0 bottom-[calc(100%+4px)]"
+    : "left-0 top-[calc(100%+4px)]"
 
   return (
     <div ref={wrapRef} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
         className={[
-          "flex items-center gap-1.5 px-2 py-1 rounded text-[12px] transition-colors",
+          variant === "compact"
+            ? "flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors"
+            : "flex items-center gap-1.5 px-2 py-1 rounded text-[12px] transition-colors",
           open ? "bg-elevated text-text" : "text-text-muted hover:text-text hover:bg-elevated",
         ].join(" ")}
+        title={`AI agent: ${label}`}
       >
-        <Robot size={12} weight="bold" className="text-text-subtle" />
+        <Robot size={variant === "compact" ? 11 : 12} weight="bold" className="text-text-subtle" />
         <span className="font-medium">{label}</span>
-        <CaretUpDown size={10} className="text-text-subtle" />
+        <CaretUpDown size={variant === "compact" ? 9 : 10} className="text-text-subtle" />
       </button>
       {open && (
         <div
-          className="absolute left-0 top-[calc(100%+4px)] w-[280px] rounded-lg bg-elevated border border-border-strong overflow-hidden z-20"
+          className={`absolute ${menuClass} w-[280px] rounded-lg bg-elevated border border-border-strong overflow-hidden z-20`}
           style={{ boxShadow: "0 12px 32px -8px oklch(0 0 0 / 0.55), 0 2px 4px oklch(0 0 0 / 0.3)" }}
         >
           <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle px-3 pt-2 pb-1">Agent</div>

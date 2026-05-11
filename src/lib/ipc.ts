@@ -59,6 +59,8 @@ export const ipc = {
   },
   startWatcher: (root: string) => invoke<void>("start_watcher", { root }),
   stopWatcher: () => invoke<void>("stop_watcher"),
+  ensureVaultAgentsMd: (vaultPath: string) =>
+    invoke<boolean>("ensure_vault_agents_md", { vaultPath }),
   getRecentFolders: () => invoke<string[]>("get_recent_folders"),
   pushRecentFolder: (folder: string) => invoke<void>("push_recent_folder", { folder }),
   detectAgents: () =>

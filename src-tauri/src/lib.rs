@@ -112,6 +112,7 @@ pub fn run() {
             commands::fs::rename_path,
             commands::fs::trash_path,
             commands::fs::write_image,
+            commands::fs::ensure_vault_agents_md,
             commands::recent::get_recent_folders,
             commands::recent::push_recent_folder,
             commands::watch::start_watcher,

@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { ipc } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
+import { findNode } from "../tree/findNode"
 
 export function useOpenFile() {
   const selectedPath = useStore((s) => s.selectedPath)
@@ -8,6 +9,10 @@ export function useOpenFile() {
 
   useEffect(() => {
     if (!selectedPath) { setOpenDoc(null); return }
+    // If the selected row is a directory, leave the current openDoc alone —
+    // tree selection (highlight) is independent of which file is open.
+    const node = findNode(useStore.getState().tree, selectedPath)
+    if (node && node.kind === "dir") return
     let cancelled = false
     ;(async () => {
       try {

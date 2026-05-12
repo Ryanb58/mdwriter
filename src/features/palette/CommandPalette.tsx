@@ -10,8 +10,9 @@ import {
   type WikilinkTrigger,
 } from "../ai/wikilinkDetect"
 import { WikilinkPopover, useWikilinkResults } from "../ai/WikilinkPopover"
+import { SearchMode } from "./SearchMode"
 
-type Mode = "file" | "ask"
+type Mode = "file" | "ask" | "search"
 
 // Sentinel prefixes that switch into ask-mode from the regular palette.
 function detectModeFromQuery(query: string): { mode: Mode; rest: string } {
@@ -28,6 +29,13 @@ export function CommandPalette() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey
+      if (meta && e.shiftKey && (e.key === "f" || e.key === "F")) {
+        e.preventDefault()
+        setInitialMode("search")
+        setQuery("")
+        setOpen((o) => !o)
+        return
+      }
       if (meta && e.key === "p") {
         e.preventDefault()
         setInitialMode("file")
@@ -50,9 +58,13 @@ export function CommandPalette() {
 
   // When opened via Cmd+P, the user can pivot to ask-mode by typing `> ` or
   // a leading space. When opened via Cmd+K, we stay in ask-mode regardless.
-  const { mode: derivedMode, rest } = initialMode === "ask"
-    ? { mode: "ask" as const, rest: query }
-    : detectModeFromQuery(query)
+  // Search mode is its own entrypoint (Cmd+Shift+F) and does not switch.
+  const { mode: derivedMode, rest } =
+    initialMode === "ask"
+      ? { mode: "ask" as const, rest: query }
+      : initialMode === "search"
+        ? { mode: "search" as const, rest: query }
+        : detectModeFromQuery(query)
 
   return (
     <div
@@ -66,6 +78,12 @@ export function CommandPalette() {
         {derivedMode === "ask" ? (
           <AskMode
             initialQuery={rest}
+            close={() => setOpen(false)}
+          />
+        ) : derivedMode === "search" ? (
+          <SearchMode
+            initialQuery={rest}
+            onQueryChange={setQuery}
             close={() => setOpen(false)}
           />
         ) : (

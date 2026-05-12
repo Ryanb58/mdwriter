@@ -36,6 +36,11 @@ export function BlockEditor({
   docKey: string
 }) {
   const initializedKey = useRef<string | null>(null)
+  // True while the init effect is awaiting `tryParseMarkdownToBlocks` /
+  // `replaceBlocks` for a new docKey. Standalone pendingScroll effects must
+  // wait for this to flip back to false before walking `editor.document` —
+  // otherwise they see the *old* doc's blocks.
+  const parsing = useRef(false)
   const lastEmitted = useRef<string>("")
   const theme = useResolvedTheme()
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -145,12 +150,14 @@ export function BlockEditor({
   useEffect(() => {
     if (initializedKey.current === docKey) return
     initializedKey.current = docKey
+    parsing.current = true
     ;(async () => {
       const pre = preprocessWikilinks(initialMarkdown)
       const parsed = (await editor.tryParseMarkdownToBlocks(pre)) as PartialBlock[]
       const hydrated = hydrateWikilinkBlocks(parsed)
       editor.replaceBlocks(editor.document, hydrated.length ? hydrated : [{ type: "paragraph" }])
       lastEmitted.current = initialMarkdown
+      parsing.current = false
       tryConsumePendingScroll()
     })()
     // tryConsumePendingScroll is closed over the latest store snapshot via
@@ -160,11 +167,15 @@ export function BlockEditor({
   }, [docKey, initialMarkdown, editor])
 
   // Pending scroll fired after the doc is already loaded (e.g., user clicks
-  // another search hit in the same file).
+  // another search hit in the same file). The `parsing` guard prevents this
+  // from racing the init effect — when we're switching files, the init
+  // effect's async parse has set `editor.document` to the *new* blocks only
+  // after it finishes; firing earlier would walk the previous file's tree.
   const pendingScroll = useStore((s) => s.pendingScroll)
   useEffect(() => {
     if (!pendingScroll) return
     if (initializedKey.current !== docKey) return
+    if (parsing.current) return
     tryConsumePendingScroll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingScroll, docKey])

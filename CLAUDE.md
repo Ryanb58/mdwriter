@@ -41,7 +41,7 @@ All cross-process calls funnel through **`src/lib/ipc.ts`**. It is the single fa
 - `editor/` — `BlockEditor` (BlockNote) and `RawEditor` (CodeMirror, lazy) share a single `openDoc` in the store; `useEditorMode` handles the YAML round-trip when toggling. `useAutoSave` debounces 500ms.
 - `tree/` — file tree + context menu + keyboard shortcuts.
 - `properties/` — frontmatter editor; `fields/` has one component per inferred YAML type.
-- `palette/` — Cmd+P fuzzy file palette (uses `cmdk`).
+- `palette/` — Cmd+P fuzzy file palette, Cmd+K agent ask, Cmd+Shift+F vault content search (uses `cmdk`). `SearchMode.tsx` calls `ipc.searchVault` (Rust `commands/search.rs`) with a 180ms debounce.
 - `watcher/` — listens for `vault-changed` events from Rust and refreshes the tree / reloads the open doc when clean.
 - `ai/` — chat panel that drives a Claude Code subprocess via the agents adapter.
 - `updates/` — Tauri updater UI; checks ~10s after launch, banner in bottom-right.

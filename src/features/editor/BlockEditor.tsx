@@ -95,23 +95,28 @@ export function BlockEditor({
   // highlight could be drawn — the doc may have changed since the search ran.
   function tryConsumePendingScroll() {
     const { pendingScroll, openDoc, setPendingScroll } = useStore.getState()
-    if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) return
+    console.log("[BlockEditor] tryConsumePendingScroll", { pendingScroll, openPath: openDoc?.path })
+    if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) {
+      console.log("[BlockEditor] bail — no pending or path mismatch")
+      return
+    }
     const target = findNthBlockMatch(
       editor.document as Parameters<typeof findNthBlockMatch>[0],
       pendingScroll.matchText,
       pendingScroll.occurrence,
     )
+    console.log("[BlockEditor] findNthBlockMatch target:", target)
     if (!target) {
       setPendingScroll(null)
       return
     }
     try {
       editor.setTextCursorPosition(target.block as never, "start")
-    } catch {
-      // Block may have been removed in a race; clearing the pending target
-      // still lets the next hit succeed.
+    } catch (e) {
+      console.warn("[BlockEditor] setTextCursorPosition failed", e)
     }
     const id = (target.block as { id?: string }).id
+    console.log("[BlockEditor] target block id:", id)
     setPendingScroll(null)
     if (!id) return
     // ProseMirror commits DOM updates synchronously on dispatch, but a

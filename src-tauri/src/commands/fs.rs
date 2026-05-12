@@ -116,7 +116,12 @@ fn is_visible_file(p: &Path, opts: &TreeOptions) -> bool {
 fn has_visible_file(node: &TreeNode) -> bool {
     match node {
         TreeNode::File { .. } => true,
-        TreeNode::Dir { children, .. } => children.iter().any(has_visible_file),
+        // Dirs are kept if they hold visible content OR if they're empty after
+        // filtering — otherwise a freshly-created (still empty) folder would
+        // be invisible the moment it's created.
+        TreeNode::Dir { children, .. } => {
+            children.is_empty() || children.iter().any(has_visible_file)
+        }
     }
 }
 
@@ -296,15 +301,34 @@ mod tests {
     }
 
     #[test]
-    fn hides_subdirs_with_no_markdown() {
+    fn shows_empty_subdirs() {
+        // Empty folders must appear in the tree so newly-created (empty)
+        // folders are visible to the user. Sort order puts dirs first.
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join("empty")).unwrap();
         fs::write(dir.path().join("a.md"), "").unwrap();
         let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
-        match tree {
-            TreeNode::Dir { children, .. } => assert_eq!(children.len(), 1),
-            _ => panic!(),
+        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        assert_eq!(children.len(), 2);
+        match &children[0] {
+            TreeNode::Dir { name, .. } => assert_eq!(name, "empty"),
+            _ => panic!("expected dir first"),
         }
+    }
+
+    #[test]
+    fn shows_subdirs_whose_only_contents_are_filtered() {
+        // A folder containing only non-markdown files (filtered by default)
+        // still appears — same reasoning as `shows_empty_subdirs`.
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join("notes")).unwrap();
+        fs::write(dir.path().join("notes/x.txt"), "").unwrap();
+        let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
+        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        assert_eq!(children.len(), 1);
+        let TreeNode::Dir { name, children: subc, .. } = &children[0] else { panic!() };
+        assert_eq!(name, "notes");
+        assert!(subc.is_empty());
     }
 
     #[test]

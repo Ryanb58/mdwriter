@@ -3,30 +3,35 @@ import { TreeNodeView } from "./TreeNode"
 import { useTreeActions } from "./useTreeActions"
 import { useRootDnd } from "./useTreeDnd"
 import { useDragScroll } from "./useDragScroll"
+import { targetParentDir } from "./targetDir"
 import { FilePlus, FolderPlus } from "@phosphor-icons/react"
 
 export function TreePane() {
   const tree = useStore((s) => s.tree)
   const rootPath = useStore((s) => s.rootPath)
+  const selectedPath = useStore((s) => s.selectedPath)
   const actions = useTreeActions()
   const rootDnd = useRootDnd()
   const dragScroll = useDragScroll()
   if (!tree) return null
 
+  const target = targetParentDir(tree, selectedPath, rootPath)
+  const inSubfolder = !!target && target !== rootPath
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-end gap-1 px-2 py-1.5">
         <button
-          onClick={() => rootPath && actions.newFile(rootPath)}
+          onClick={() => target && actions.newFile(target)}
           className="p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
-          title="New file at root"
+          title={inSubfolder ? "New file in selected folder" : "New file at root"}
         >
           <FilePlus size={13} />
         </button>
         <button
-          onClick={() => rootPath && actions.newFolder(rootPath)}
+          onClick={() => target && actions.newFolder(target)}
           className="p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
-          title="New folder at root"
+          title={inSubfolder ? "New folder in selected folder" : "New folder at root"}
         >
           <FolderPlus size={13} />
         </button>

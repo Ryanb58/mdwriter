@@ -1,24 +1,42 @@
 /**
- * Briefly paint a fading background on the given element — used after a
- * search-result jump to draw the user's eye to the target line/block. We
- * toggle a class instead of overlaying a positioned div because BlockNote's
- * Mantine tree (and other rich-text editors) frequently contain ancestors
- * with `transform` / `filter` / `contain`, which break `position: fixed`.
+ * Briefly mark the target line/block after a search-result jump. Uses the
+ * Web Animations API so the styles are applied via the browser's animation
+ * engine (beats regular CSS specificity, immune to ancestor transforms or
+ * stylesheet pickup issues).
  *
- * Styling lives in `.search-flash-active` in App.css.
+ * Visual: a 4px accent stripe along the left edge (inset box-shadow) paired
+ * with a soft background tint. The stripe sits inside the element's padding
+ * box, so it shows up cleanly even when children paint their own backgrounds
+ * over the parent. Fade duration is intentionally a bit longer (~1s) so the
+ * eye has time to land on it before it disappears.
  */
 export function flashHighlight(el: HTMLElement | null | undefined) {
-  if (!el) return
-  // Restart the animation if it's already running so a rapid second hit on
-  // the same element still flashes visibly.
-  el.classList.remove("search-flash-active")
-  // Force a reflow so the browser sees the class removal before re-adding.
-  void el.offsetWidth
-  el.classList.add("search-flash-active")
-  const clear = () => el.classList.remove("search-flash-active")
-  el.addEventListener("animationend", clear, { once: true })
-  // Defensive fallback — if animationend doesn't fire (interrupted scroll,
-  // browser quirk), clear the class anyway after the fade window.
-  window.setTimeout(clear, 800)
+  if (!el || typeof el.animate !== "function") {
+    if (typeof console !== "undefined") {
+      console.debug("[flashHighlight] no element or animate() unavailable", el)
+    }
+    return
+  }
+  const isDark =
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("dark")
+
+  const stripe = isDark ? "oklch(0.78 0.20 95)" : "oklch(0.62 0.22 95)"
+  const tint = isDark ? "oklch(0.80 0.18 95 / 0.30)" : "oklch(0.88 0.20 95 / 0.55)"
+
+  // box-shadow: an inset stripe on the LEFT edge + an outer ring. The outer
+  // ring is what catches the eye even if the element's background is hidden
+  // by descendant painting.
+  const startShadow = `inset 4px 0 0 0 ${stripe}, 0 0 0 2px ${stripe}`
+  const endShadow = `inset 4px 0 0 0 transparent, 0 0 0 2px transparent`
+
+  el.animate(
+    [
+      { backgroundColor: tint, boxShadow: startShadow, offset: 0 },
+      { backgroundColor: tint, boxShadow: startShadow, offset: 0.4 },
+      { backgroundColor: "transparent", boxShadow: endShadow, offset: 1 },
+    ],
+    { duration: 1000, easing: "ease-out", fill: "none" },
+  )
 }
 

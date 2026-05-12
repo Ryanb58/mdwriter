@@ -1,14 +1,14 @@
 {
   "version": "2026.5.12",
-  "notes": "See https://github.com/Ryanb58/mdwriter/releases/tag/v2026-05-12.d989513 for the full changelog.",
-  "pub_date": "2026-05-12T03:13:17Z",
+  "notes": "See https://github.com/Ryanb58/mdwriter/releases/tag/v2026-05-12.eef017b for the full changelog.",
+  "pub_date": "2026-05-12T15:49:31Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlpxM1dLTnNHVnNsUnc3VCswb3RlZjczMnZKQ0Q3QmxHb3hKOHlabktyZjhxK2VxZm5IWWlBdlo4NW16ektlU1NLdVBsQXBwVEJQWEUvWllhTUVEbEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTU1NTIzCWZpbGU6bWR3cml0ZXIuYXBwLnRhci5nego1OHlmeVZNN0ZseTVIZGhiamNWV2NEblk3NjZkTWhjVWNpY2xnd0g2dTY5b0ZGOUJFOFhuaE9YQmxLcmo0OGFHb2hqMENOT1hxMUo3dytyQmIwUW1DQT09Cg==\n",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmJaMWsxUXZQTWZ3RCtFRDVCRWpZcHEzdDFVclVuNXEvUVg4UCtpdUlUM2FpOFp5aENOQlpvbTc1RUFhMkM5eHlMbTZlRUc5ZGxZUUdab1pSR3FWWmdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NjAwNTA1CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpSYkk4c2RmRVoxc3hCL2pRU0tGV2xCN29HVVRYc0UyaUltaHJoenhmRSt2emNoQXZScGJ0WXUxYzNVM0w0eGRIcGMzRVQxSXFTRWVxWkdwYWhuSndEZz09Cg==\n",
       "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.12_macOS_Silicon.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlFObzBEUXp3c01JMTRJQ2FpRlN2REovekFRQXZpdWlOWjVFeG5kbEpPVFZJdjJVSkpGSUhlNldqV0pyM0RMSm9ib1NGYWpwNVk2T1pCTHZHZXNiOEFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTU1NDc5CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpOeENJbWtMeWphNlpwdGpkM0VXOFl0ZmZXMk1xS3BvSXZwakhyNy9mRTYzZGhkM000QUswOVhlbDNheXhoallQSXdxRWxxWTY0cy96dW8rTnN2TjVEUT09Cg==\n",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmQ2Y0ZuWDlqMUpkTGtXRDc1RFpxQUQ3UUIzLzJLc2RmUElmNnBOVUFRWDVLVVBYSDN6TkpoZlRFL093NFVFUzkwdnNhK244Z0xxdnVSdTNRT2toZkFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NjAwNTA1CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpzUUREQ2k1Y3hwNUpaWkVyUjE3bkIzUml0YjRQWWdjUFFOcWtpTW5HZndQaXpqTkJlNlowdnlobzFaN3o1elFiNzBIcVpQTWtnR280YkxLd25VNjNDdz09Cg==\n",
       "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.12_macOS_Intel.app.tar.gz"
     },
     "windows-x86_64": {

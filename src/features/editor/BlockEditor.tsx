@@ -100,24 +100,19 @@ export function BlockEditor({
   // highlight could be drawn — the doc may have changed since the search ran.
   function tryConsumePendingScroll() {
     const { pendingScroll, openDoc, setPendingScroll } = useStore.getState()
-    console.log("[BlockEditor] tryConsumePendingScroll", { pendingScroll, openPath: openDoc?.path })
-    if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) {
-      console.log("[BlockEditor] bail — no pending or path mismatch")
-      return
-    }
+    if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) return
     let target = findNthBlockMatch(
       editor.document as Parameters<typeof findNthBlockMatch>[0],
       pendingScroll.matchText,
       pendingScroll.occurrence,
     )
-    console.log("[BlockEditor] findNthBlockMatch target:", target)
     if (!target) {
-      // Match not in any block — likely frontmatter (BlockNote strips YAML)
-      // or a block content type we don't extract from. Fall back to the
-      // first non-empty block so the user lands somewhere and sees a flash.
+      // Match not in any block — likely frontmatter (BlockNote strips YAML
+      // when parsing) or a block content type we don't extract text from.
+      // Fall back to the first block so the user still lands somewhere and
+      // sees a flash, rather than a silent no-op.
       const docBlocks = editor.document as Array<{ id?: string }>
       const first = docBlocks?.[0]
-      console.log("[BlockEditor] no match — falling back to first block:", first)
       if (!first || !first.id) {
         setPendingScroll(null)
         return
@@ -126,11 +121,11 @@ export function BlockEditor({
     }
     try {
       editor.setTextCursorPosition(target.block as never, "start")
-    } catch (e) {
-      console.warn("[BlockEditor] setTextCursorPosition failed", e)
+    } catch {
+      // Block may have been removed in a race; clearing the pending target
+      // still lets the next hit succeed.
     }
     const id = (target.block as { id?: string }).id
-    console.log("[BlockEditor] target block id:", id)
     setPendingScroll(null)
     if (!id) return
     // ProseMirror commits DOM updates synchronously on dispatch, but a
@@ -138,10 +133,9 @@ export function BlockEditor({
     // when this closure runs. Poll up to a handful of frames for the block
     // element to appear, then scroll + flash.
     waitForBlockNode(hostRef, id, (node) => {
-      console.log("[BlockEditor] scrolling to block:", id, node)
-      // Instant scroll (not smooth) so the flash overlay is inserted at the
-      // settled position — smooth scrolling spans ~300ms during which the
-      // flash would already be fading.
+      // Instant scroll (not smooth) so the highlight paints at the settled
+      // position — a smooth scroll spans hundreds of milliseconds during
+      // which the flash would already be fading on an off-screen element.
       node.scrollIntoView({ block: "center", behavior: "auto" })
       requestAnimationFrame(() => flashHighlight(node))
     })

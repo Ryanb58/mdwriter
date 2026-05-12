@@ -86,7 +86,6 @@ export function SearchMode({
     const matchText = hit.snippet.slice(hit.colStart, hit.colEnd)
     const fileGroup = groups.find((g) => g.path === hit.path)
     const occurrence = fileGroup ? Math.max(0, fileGroup.hits.indexOf(hit)) : 0
-    console.log("[SearchMode] openHit", { path: hit.path, line: hit.line, matchText, occurrence })
     setPendingScroll({ path: hit.path, line: hit.line, matchText, occurrence })
     setSelected(hit.path)
     close()

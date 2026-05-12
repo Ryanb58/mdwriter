@@ -103,10 +103,12 @@ export function SearchMode({
 
   function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (flat.length === 0) return
-    if (e.key === "ArrowDown") {
+    const forward = e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)
+    const backward = e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)
+    if (forward) {
       e.preventDefault()
       setActiveIdx((i) => (i + 1) % flat.length)
-    } else if (e.key === "ArrowUp") {
+    } else if (backward) {
       e.preventDefault()
       setActiveIdx((i) => (i - 1 + flat.length) % flat.length)
     } else if (e.key === "Enter") {
@@ -187,7 +189,7 @@ export function SearchMode({
       </div>
       <div className="px-4 py-2 text-[11px] text-text-subtle border-t border-border flex items-center gap-3">
         <span>
-          <kbd className="font-mono">↑↓</kbd> navigate
+          <kbd className="font-mono">↑↓</kbd> / <kbd className="font-mono">Tab</kbd> navigate
         </span>
         <span>
           <kbd className="font-mono">Enter</kbd> open

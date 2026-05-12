@@ -4,6 +4,7 @@ import { useOpenFile } from "./useOpenFile"
 import { useAutoSave } from "./useAutoSave"
 import { useEditorMode } from "./useEditorMode"
 import { useAutoRename } from "./useAutoRename"
+import { usePendingScrollMode } from "./usePendingScrollMode"
 import { basename } from "../../lib/paths"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
@@ -22,6 +23,7 @@ export function EditorPane() {
   useOpenFile()
   useAutoSave()
   useAutoRename()
+  usePendingScrollMode()
   const { toggle: toggleMode } = useEditorMode()
   const doc = useStore((s) => s.openDoc)
   const mode = useStore((s) => s.editorMode)

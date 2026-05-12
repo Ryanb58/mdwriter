@@ -6,6 +6,8 @@ import { markdown } from "@codemirror/lang-markdown"
 import { useRawImagePaste } from "./useRawImagePaste"
 import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes } from "../../lib/vaultNotes"
+import { useStore } from "../../lib/store"
+import { scrollViewToLine } from "./scrollViewToLine"
 import {
   decorateLinks,
   rebuildLinkDecorations,
@@ -82,6 +84,7 @@ export function RawEditor({
 
   useRawImagePaste(viewRef)
   useLinkActivation(hostRef)
+  usePendingScroll(viewRef, value)
 
   return (
     <>
@@ -94,4 +97,29 @@ export function RawEditor({
       />
     </>
   )
+}
+
+// Consumes the store's `pendingScroll` target once the editor is showing the
+// matching doc. Deferred behind a frame so the value-sync effect above has
+// updated the CM doc before we look up line offsets.
+function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: string) {
+  const pending = useStore((s) => s.pendingScroll)
+  const setPending = useStore((s) => s.setPendingScroll)
+  const openPath = useStore((s) => s.openDoc?.path ?? null)
+
+  useEffect(() => {
+    if (!pending || !openPath) return
+    if (pending.path !== openPath) return
+    const raf = requestAnimationFrame(() => {
+      const view = viewRef.current
+      if (!view) return
+      if (scrollViewToLine(view, pending.line)) {
+        setPending(null)
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+    // `value` is in deps because the editor's content may update after the
+    // pending target was set (file load), and we want to re-evaluate once it
+    // matches.
+  }, [pending, openPath, value, viewRef, setPending])
 }

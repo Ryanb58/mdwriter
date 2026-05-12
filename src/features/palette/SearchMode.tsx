@@ -78,9 +78,11 @@ export function SearchMode({
 
   function openHit(hit: SearchHit) {
     // Set the scroll target before selection so it's already present by the
-    // time useOpenFile resolves and the editor mounts — usePendingScrollMode
-    // and RawEditor's scroll effect will consume it once the doc paths align.
-    setPendingScroll({ path: hit.path, line: hit.line })
+    // time useOpenFile resolves and the editor mounts. Whichever editor mode
+    // the user is in handles the rest: raw mode scrolls to `line`, block
+    // mode looks up the first block containing `matchText`.
+    const matchText = hit.snippet.slice(hit.colStart, hit.colEnd)
+    setPendingScroll({ path: hit.path, line: hit.line, matchText })
     setSelected(hit.path)
     close()
   }

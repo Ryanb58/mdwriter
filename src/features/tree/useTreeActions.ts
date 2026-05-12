@@ -1,6 +1,7 @@
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
 import { joinPath, parent } from "../../lib/paths"
+import { pruneSubpaths, isUnderAny } from "./pruneSubpaths"
 
 export async function refreshTree() {
   const root = useStore.getState().rootPath
@@ -8,6 +9,35 @@ export async function refreshTree() {
   const opts = treeOptionsFromSettings(useStore.getState().settings)
   const tree = await ipc.listTree(root, opts)
   useStore.setState({ tree })
+}
+
+async function trashImpl(paths: readonly string[]) {
+  const targets = pruneSubpaths(paths)
+  if (targets.length === 0) return
+  for (const p of targets) {
+    try { await ipc.trashPath(p) } catch (e) { console.error(e) }
+  }
+  await refreshTree()
+  const s = useStore.getState()
+  const patch: Record<string, unknown> = {}
+
+  if (s.openDoc && isUnderAny(s.openDoc.path, targets)) {
+    patch.openDoc = null
+  }
+
+  let selectionChanged = false
+  const nextPaths = new Set<string>()
+  for (const cur of s.selectedPaths) {
+    if (isUnderAny(cur, targets)) selectionChanged = true
+    else nextPaths.add(cur)
+  }
+  if (selectionChanged) patch.selectedPaths = nextPaths
+
+  if (s.selectedPath && isUnderAny(s.selectedPath, targets)) {
+    patch.selectedPath = null
+  }
+
+  if (Object.keys(patch).length > 0) useStore.setState(patch)
 }
 
 export function useTreeActions() {
@@ -26,6 +56,7 @@ export function useTreeActions() {
         }
       }
       await refreshTree()
+      useStore.getState().toggleFolderExpanded(parentDir, true)
       useStore.getState().setSelected(candidate)
     },
     async newFolder(parentDir: string) {
@@ -42,6 +73,7 @@ export function useTreeActions() {
         }
       }
       await refreshTree()
+      useStore.getState().toggleFolderExpanded(parentDir, true)
     },
     async rename(from: string, newBasename: string) {
       const to = joinPath(parent(from), newBasename)
@@ -59,20 +91,10 @@ export function useTreeActions() {
       if (Object.keys(patch).length > 0) useStore.setState(patch)
     },
     async trash(path: string) {
-      await ipc.trashPath(path)
-      await refreshTree()
-      const s = useStore.getState()
-      const patch: Record<string, unknown> = {}
-      if (s.selectedPath === path) {
-        patch.selectedPath = null
-        patch.openDoc = null
-      }
-      if (s.selectedPaths.has(path)) {
-        const next = new Set(s.selectedPaths)
-        next.delete(path)
-        patch.selectedPaths = next
-      }
-      if (Object.keys(patch).length > 0) useStore.setState(patch)
+      await trashImpl([path])
+    },
+    async trashMany(paths: readonly string[]) {
+      await trashImpl(paths)
     },
   }
 }

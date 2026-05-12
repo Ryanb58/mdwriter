@@ -6,6 +6,9 @@ import { markdown } from "@codemirror/lang-markdown"
 import { useRawImagePaste } from "./useRawImagePaste"
 import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes } from "../../lib/vaultNotes"
+import { useStore } from "../../lib/store"
+import { scrollViewToMatch } from "./scrollViewToMatch"
+import { flashHighlight } from "./flashHighlight"
 import {
   decorateLinks,
   rebuildLinkDecorations,
@@ -82,6 +85,7 @@ export function RawEditor({
 
   useRawImagePaste(viewRef)
   useLinkActivation(hostRef)
+  usePendingScroll(viewRef, value)
 
   return (
     <>
@@ -94,4 +98,39 @@ export function RawEditor({
       />
     </>
   )
+}
+
+function findLineElement(view: EditorView, pos: number): HTMLElement | null {
+  let n: Node | null = view.domAtPos(pos).node
+  while (n) {
+    if (n instanceof HTMLElement && n.classList.contains("cm-line")) return n
+    n = n.parentNode
+  }
+  return null
+}
+
+function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: string) {
+  const pending = useStore((s) => s.pendingScroll)
+  const setPending = useStore((s) => s.setPendingScroll)
+  const openPath = useStore((s) => s.openDoc?.path ?? null)
+
+  useEffect(() => {
+    if (!pending || !openPath || pending.path !== openPath) return
+    // Defer a frame so the value-sync effect upstream has applied the new
+    // file's content before we walk the doc for the match.
+    const raf = requestAnimationFrame(() => {
+      const view = viewRef.current
+      if (!view) return
+      const pos = scrollViewToMatch(view, pending.matchText, pending.occurrence, pending.line)
+      if (pos) {
+        requestAnimationFrame(() => {
+          const v = viewRef.current
+          if (!v) return
+          flashHighlight(findLineElement(v, pos.from))
+        })
+      }
+      setPending(null)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [pending, openPath, value, viewRef, setPending])
 }

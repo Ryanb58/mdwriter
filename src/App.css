@@ -264,3 +264,34 @@ body {
   padding: 0;
 }
 .cm-line { padding: 0 8px; }
+
+/* Search-result jump flash. The overlay is appended to <body> with absolute
+   positioning sourced from the target's bounding rect, so it paints above
+   everything regardless of editor stacking contexts. The keyframe holds the
+   tinted fill for the first ~25% of the animation, then fades to fully
+   transparent — signals "you're here" without lingering. */
+.search-flash-overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2147483647;
+  border-radius: 4px;
+  background: rgba(55, 138, 221, 0.28);
+  border-left: 3px solid #378ADD;
+  animation: search-flash 1500ms ease-out forwards;
+}
+@keyframes search-flash {
+  0%   { background: rgba(55, 138, 221, 0.28); border-left-color: #378ADD; }
+  25%  { background: rgba(55, 138, 221, 0.28); border-left-color: #378ADD; }
+  100% { background: transparent;              border-left-color: transparent; }
+}
+html.dark .search-flash-overlay,
+html[data-theme="dark"] .search-flash-overlay {
+  background: rgba(133, 183, 235, 0.32);
+  border-left-color: #85B7EB;
+  animation-name: search-flash-dark;
+}
+@keyframes search-flash-dark {
+  0%   { background: rgba(133, 183, 235, 0.32); border-left-color: #85B7EB; }
+  25%  { background: rgba(133, 183, 235, 0.32); border-left-color: #85B7EB; }
+  100% { background: transparent;               border-left-color: transparent; }
+}

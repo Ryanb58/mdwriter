@@ -116,6 +116,7 @@ pub fn run() {
             commands::fs::ensure_vault_agents_md,
             commands::recent::get_recent_folders,
             commands::recent::push_recent_folder,
+            commands::search::search_vault,
             commands::watch::start_watcher,
             commands::watch::stop_watcher,
             commands::agents::detect_agents,

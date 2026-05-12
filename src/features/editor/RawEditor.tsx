@@ -100,6 +100,19 @@ export function RawEditor({
   )
 }
 
+// Walk up from the DOM node at `pos` to the surrounding `.cm-line` element.
+// Returns null if the editor hasn't materialized a line element at that
+// position yet (e.g., far off-screen with viewport rendering).
+function findLineElement(view: EditorView, pos: number): HTMLElement | null {
+  const at = view.domAtPos(pos)
+  let n: Node | null = at.node
+  while (n) {
+    if (n instanceof HTMLElement && n.classList.contains("cm-line")) return n
+    n = n.parentNode
+  }
+  return null
+}
+
 // Consumes the store's `pendingScroll` target once the editor is showing the
 // matching doc. Deferred behind a frame so the value-sync effect above has
 // updated the CM doc before we walk it for the match.
@@ -115,22 +128,16 @@ function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: st
       const view = viewRef.current
       if (!view) return
       const pos = scrollViewToMatch(view, pending.matchText, pending.occurrence, pending.line)
-      // Wait one more frame for scrollIntoView to settle before measuring
-      // the match's coordinates for the flash overlay.
+      // Wait one more frame for the scroll to settle, then flash the whole
+      // `.cm-line` element. A line-wide highlight is far easier for the eye
+      // to catch than a few-character span, and avoids edge cases where
+      // coordsAtPos hasn't refreshed after the scroll.
       if (pos) {
         requestAnimationFrame(() => {
           const v = viewRef.current
           if (!v) return
-          const start = v.coordsAtPos(pos.from)
-          const end = v.coordsAtPos(pos.to)
-          if (start && end) {
-            flashHighlight({
-              left: Math.min(start.left, end.left),
-              top: Math.min(start.top, end.top),
-              width: Math.max(end.right - start.left, 0),
-              height: Math.max(start.bottom - start.top, 0),
-            })
-          }
+          const lineEl = findLineElement(v, pos.from)
+          if (lineEl) flashHighlight(lineEl.getBoundingClientRect())
         })
       }
       setPending(null)

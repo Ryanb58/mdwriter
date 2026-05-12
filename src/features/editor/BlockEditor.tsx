@@ -24,7 +24,7 @@ import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
 import { findNthBlockMatch } from "./blockTextSearch"
-import { flashHighlight, findTextRangeIn } from "./flashHighlight"
+import { flashHighlight } from "./flashHighlight"
 
 export function BlockEditor({
   initialMarkdown,
@@ -118,16 +118,12 @@ export function BlockEditor({
       host && id ? host.querySelector(`[data-id="${cssEscape(id)}"]`) : null
     if (node instanceof HTMLElement) {
       node.scrollIntoView({ block: "center", behavior: "smooth" })
-      // Wait for the scroll to settle before measuring + flashing. Two
-      // animation frames is more reliable than one — smooth scroll commits
-      // its first position-update on the second frame in some browsers.
+      // Wait for the smooth scroll to settle before measuring. Two animation
+      // frames is more reliable than one — Chrome commits its first scroll
+      // position-update on the second frame.
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
-          const range = findTextRangeIn(node, pendingScroll.matchText, target.localIndex)
-          if (range) {
-            const rect = range.getBoundingClientRect()
-            flashHighlight(rect)
-          }
+          flashHighlight(node.getBoundingClientRect())
         }),
       )
     }

@@ -266,19 +266,19 @@ body {
 .cm-line { padding: 0 8px; }
 
 /* Search-result jump highlight. A `position: fixed` overlay anchored to the
-   match's viewport rect, painted once and faded out over 500ms. The accent
-   tint is intentionally muted in dark mode so it reads as a hint, not a
-   selection. */
+   target line's viewport rect, painted once and faded out over 500ms. The
+   tint is intentionally yellow-leaning (highlighter feel) and translucent
+   so the text underneath stays readable while the eye is drawn in. */
 .search-flash {
   position: fixed;
   pointer-events: none;
   z-index: 60;
-  background: oklch(0.85 0.16 90 / 0.65);
+  background: oklch(0.88 0.18 95 / 0.55);
   border-radius: 3px;
   animation: search-flash-fade 500ms ease-out forwards;
 }
 html.dark .search-flash {
-  background: oklch(0.78 0.15 90 / 0.45);
+  background: oklch(0.80 0.16 95 / 0.40);
 }
 @keyframes search-flash-fade {
   from { opacity: 1; }

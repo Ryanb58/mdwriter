@@ -125,9 +125,10 @@ export function BlockEditor({
     // element to appear, then scroll + flash.
     waitForBlockNode(hostRef, id, (node) => {
       console.log("[BlockEditor] scrolling to block:", id, node)
-      node.scrollIntoView({ block: "center", behavior: "smooth" })
-      // Defer one frame so the flash starts after the scroll dispatch — the
-      // animation runs as the user's eye arrives.
+      // Instant scroll (not smooth) so the flash overlay is inserted at the
+      // settled position — smooth scrolling spans ~300ms during which the
+      // flash would already be fading.
+      node.scrollIntoView({ block: "center", behavior: "auto" })
       requestAnimationFrame(() => flashHighlight(node))
     })
   }

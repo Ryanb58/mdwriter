@@ -264,13 +264,28 @@ jobs:
             "mdwriter_${VERSION}_${SUFFIX}.dmg"       "mdwriter_${VERSION}_${FRIENDLY}.dmg"
           )
 
+          # GET /releases/tags/{tag} does NOT return draft releases (it 404s).
+          # The release is still a draft at this point — promotion happens in
+          # publish-manifest after every platform finishes. Use the list
+          # endpoint instead, which includes drafts. The release we just
+          # created is the most recent, so the default first page is enough.
+          RELEASE_ID=$(gh api "/repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq "first(.[] | select(.tag_name == \"${TAG}\") | .id) // empty")
+          if [[ -z "$RELEASE_ID" ]]; then
+            echo "::error::Release for tag ${TAG} not found (drafts included)"
+            exit 1
+          fi
+
+          # Fetch assets once. Looking them up per-pair would re-query the API
+          # three times for the same release.
+          ASSETS_JSON=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" --jq '.assets')
+
           MISSING=0
           for ((i=0; i<${#PAIRS[@]}; i+=2)); do
             OLD="${PAIRS[i]}"
             NEW="${PAIRS[i+1]}"
-            ASSET_ID=$(gh api "/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-              --jq ".assets[] | select(.name == \"${OLD}\") | .id" 2>/dev/null || echo "")
-            if [[ -n "$ASSET_ID" ]]; then
+            ASSET_ID=$(jq -r --arg name "$OLD" '.[] | select(.name == $name) | .id' <<<"$ASSETS_JSON")
+            if [[ -n "$ASSET_ID" && "$ASSET_ID" != "null" ]]; then
               gh api -X PATCH "/repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}" \
                 -f "name=${NEW}" >/dev/null
               echo "Renamed: $OLD -> $NEW"

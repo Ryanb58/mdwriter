@@ -265,22 +265,22 @@ body {
 }
 .cm-line { padding: 0 8px; }
 
-/* Search-result jump highlight. A `position: fixed` overlay anchored to the
-   target line's viewport rect, painted once and faded out over 500ms. The
-   tint is intentionally yellow-leaning (highlighter feel) and translucent
-   so the text underneath stays readable while the eye is drawn in. */
-.search-flash {
-  position: fixed;
-  pointer-events: none;
-  z-index: 60;
-  background: oklch(0.88 0.18 95 / 0.55);
+/* Search-result jump highlight. After a jump the target line/block has this
+   class added; a 500ms keyframe paints a translucent yellow background that
+   fades to transparent, drawing the eye to where the cursor landed. The
+   class is removed on animationend (with a safety timeout). */
+.search-flash-active {
+  animation: search-flash-fade 500ms ease-out;
   border-radius: 3px;
-  animation: search-flash-fade 500ms ease-out forwards;
-}
-html.dark .search-flash {
-  background: oklch(0.80 0.16 95 / 0.40);
 }
 @keyframes search-flash-fade {
-  from { opacity: 1; }
-  to   { opacity: 0; }
+  0%   { background-color: oklch(0.88 0.18 95 / 0.70); }
+  100% { background-color: transparent; }
+}
+html.dark .search-flash-active {
+  animation-name: search-flash-fade-dark;
+}
+@keyframes search-flash-fade-dark {
+  0%   { background-color: oklch(0.80 0.16 95 / 0.55); }
+  100% { background-color: transparent; }
 }

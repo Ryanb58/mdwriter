@@ -122,7 +122,7 @@ function FileMode({
               key={f.path}
               value={`${f.rel} ${f.name}`}
               onSelect={() => {
-                useStore.setState({ selectedPath: f.path })
+                useStore.getState().setSelected(f.path)
                 close()
               }}
               className="mx-1.5 px-2.5 py-1.5 rounded-md text-[13px] flex items-center gap-2.5 cursor-pointer aria-selected:bg-accent-soft aria-selected:text-text text-text-muted"

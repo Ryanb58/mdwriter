@@ -68,12 +68,22 @@ export function useAutoRename() {
           await ipc.renamePath(fromPath, target)
           await refreshTree()
           // Update editor state to point at the renamed path.
-          useStore.setState((s) => ({
-            selectedPath: target,
-            openDoc: s.openDoc && s.openDoc.path === fromPath
-              ? { ...s.openDoc, path: target }
-              : s.openDoc,
-          }))
+          useStore.setState((s) => {
+            const nextPaths = new Set(s.selectedPaths)
+            if (nextPaths.has(fromPath)) {
+              nextPaths.delete(fromPath)
+              nextPaths.add(target)
+            } else {
+              nextPaths.add(target)
+            }
+            return {
+              selectedPath: target,
+              selectedPaths: nextPaths,
+              openDoc: s.openDoc && s.openDoc.path === fromPath
+                ? { ...s.openDoc, path: target }
+                : s.openDoc,
+            }
+          })
           return
         } catch {
           // Collision — try the next suffix.

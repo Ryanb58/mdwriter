@@ -57,6 +57,18 @@ export const ipc = {
     })
     return invoke<void>("write_image", { path, bytesB64 })
   },
+  importFile: async (path: string, bytes: Uint8Array): Promise<void> => {
+    const bytesB64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        resolve(result.slice(result.indexOf(",") + 1))
+      }
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(new Blob([bytes as BlobPart]))
+    })
+    return invoke<void>("import_file", { path, bytesB64 })
+  },
   startWatcher: (root: string) => invoke<void>("start_watcher", { root }),
   stopWatcher: () => invoke<void>("stop_watcher"),
   ensureVaultAgentsMd: (vaultPath: string) =>

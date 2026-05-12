@@ -8,15 +8,22 @@ import { useStore } from "../../lib/store"
 import { useTreeActions } from "./useTreeActions"
 import { TreeContextMenu, type ContextActionGroup } from "./TreeContextMenu"
 import { parent, basename } from "../../lib/paths"
+import { handleRowClick } from "./selection"
+import { useRowDnd } from "./useTreeDnd"
 
 export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) {
-  const [expanded, setExpanded] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(node.name)
   const selectedPath = useStore((s) => s.selectedPath)
+  const selectedPaths = useStore((s) => s.selectedPaths)
+  const expandedFolders = useStore((s) => s.expandedFolders)
+  const toggleFolderExpanded = useStore((s) => s.toggleFolderExpanded)
   const renamingPath = useStore((s) => s.renamingPath)
   const actions = useTreeActions()
+  const expanded = node.kind === "dir" && expandedFolders.has(node.path)
+  const inSelection = selectedPaths.has(node.path)
+  const dnd = useRowDnd(node)
 
   // Global F2 — when this row is the selected file, the keyboard handler in
   // useTreeShortcuts sets `renamingPath` to its path; we react to that here.
@@ -74,7 +81,9 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
 
   // Visual nesting via per-row guide lines + indent
   const indent = depth * 12
-  const selected = !isDir && selectedPath === node.path
+  const isAnchor = selectedPath === node.path
+  const fileSelected = !isDir && inSelection
+  const dirSelected = isDir && inSelection
 
   // Strip extension from display name for files (cleaner)
   const displayName = !isDir && /\.(md|markdown)$/i.test(node.name)
@@ -87,13 +96,35 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
         className={[
           "group relative flex items-center gap-1.5 px-2 py-[3px] rounded-md cursor-pointer select-none",
           "transition-colors",
-          selected
+          fileSelected || dirSelected
             ? "bg-accent-soft text-text"
             : "hover:bg-elevated text-text-muted hover:text-text",
+          dnd.isDropTarget ? "ring-1 ring-accent" : "",
+          dnd.isDragging ? "opacity-50" : "",
         ].join(" ")}
         style={{ paddingLeft: 8 + indent }}
+        draggable={!renaming}
+        onDragStart={dnd.onDragStart}
+        onDragEnd={dnd.onDragEnd}
+        onDragOver={dnd.onDragOver}
+        onDragLeave={dnd.onDragLeave}
+        onDrop={dnd.onDrop}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }) }}
-        onClick={() => isDir ? setExpanded((x) => !x) : useStore.setState({ selectedPath: node.path })}
+        onClick={(e) => {
+          // Folder: toggle on plain click; selection updates on Cmd/Shift only.
+          if (isDir) {
+            if (e.metaKey || e.ctrlKey || e.shiftKey) {
+              handleRowClick(node.path, { meta: e.metaKey || e.ctrlKey, shift: e.shiftKey })
+            } else {
+              toggleFolderExpanded(node.path)
+            }
+            return
+          }
+          handleRowClick(node.path, {
+            meta: e.metaKey || e.ctrlKey,
+            shift: e.shiftKey,
+          })
+        }}
         onDoubleClick={(e) => {
           e.preventDefault()
           if (renaming) return
@@ -125,7 +156,7 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className={`truncate ${selected ? "font-medium" : ""}`}>{displayName}</span>
+          <span className={`truncate ${isAnchor ? "font-medium" : ""}`}>{displayName}</span>
         )}
       </div>
       {isDir && expanded && (node as Extract<TN, { kind: "dir" }>).children.map((c) => (

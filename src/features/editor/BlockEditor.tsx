@@ -100,15 +100,24 @@ export function BlockEditor({
       console.log("[BlockEditor] bail — no pending or path mismatch")
       return
     }
-    const target = findNthBlockMatch(
+    let target = findNthBlockMatch(
       editor.document as Parameters<typeof findNthBlockMatch>[0],
       pendingScroll.matchText,
       pendingScroll.occurrence,
     )
     console.log("[BlockEditor] findNthBlockMatch target:", target)
     if (!target) {
-      setPendingScroll(null)
-      return
+      // Match not in any block — likely frontmatter (BlockNote strips YAML)
+      // or a block content type we don't extract from. Fall back to the
+      // first non-empty block so the user lands somewhere and sees a flash.
+      const docBlocks = editor.document as Array<{ id?: string }>
+      const first = docBlocks?.[0]
+      console.log("[BlockEditor] no match — falling back to first block:", first)
+      if (!first || !first.id) {
+        setPendingScroll(null)
+        return
+      }
+      target = { block: first as never, localIndex: 0 }
     }
     try {
       editor.setTextCursorPosition(target.block as never, "start")

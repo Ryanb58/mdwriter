@@ -128,13 +128,16 @@ function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: st
       const view = viewRef.current
       if (!view) return
       const pos = scrollViewToMatch(view, pending.matchText, pending.occurrence, pending.line)
+      console.log("[RawEditor] scrollViewToMatch returned:", pos)
       // Wait one more frame so CM has materialized the `.cm-line` for the
       // scrolled-to line, then flash the line element.
       if (pos) {
         requestAnimationFrame(() => {
           const v = viewRef.current
           if (!v) return
-          flashHighlight(findLineElement(v, pos.from))
+          const lineEl = findLineElement(v, pos.from)
+          console.log("[RawEditor] line element:", lineEl)
+          flashHighlight(lineEl)
         })
       }
       setPending(null)

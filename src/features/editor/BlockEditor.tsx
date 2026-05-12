@@ -119,9 +119,10 @@ export function BlockEditor({
     // when this closure runs. Poll up to a handful of frames for the block
     // element to appear, then scroll + flash.
     waitForBlockNode(hostRef, id, (node) => {
+      console.log("[BlockEditor] scrolling to block:", id, node)
       node.scrollIntoView({ block: "center", behavior: "smooth" })
-      // Defer one frame so the highlight class is applied after the scroll
-      // dispatch — the animation starts as the user's eye arrives.
+      // Defer one frame so the flash starts after the scroll dispatch — the
+      // animation runs as the user's eye arrives.
       requestAnimationFrame(() => flashHighlight(node))
     })
   }

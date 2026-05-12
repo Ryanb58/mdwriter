@@ -11,32 +11,58 @@
  * eye has time to land on it before it disappears.
  */
 export function flashHighlight(el: HTMLElement | null | undefined) {
-  if (!el || typeof el.animate !== "function") {
-    if (typeof console !== "undefined") {
-      console.debug("[flashHighlight] no element or animate() unavailable", el)
-    }
+  console.log("[flashHighlight] called with:", el)
+  if (!el) {
+    console.warn("[flashHighlight] element is null/undefined")
     return
   }
-  const isDark =
-    typeof document !== "undefined" &&
-    document.documentElement.classList.contains("dark")
+  if (typeof el.animate !== "function") {
+    console.warn("[flashHighlight] el.animate is not a function", el)
+    return
+  }
 
-  const stripe = isDark ? "oklch(0.78 0.20 95)" : "oklch(0.62 0.22 95)"
-  const tint = isDark ? "oklch(0.80 0.18 95 / 0.30)" : "oklch(0.88 0.20 95 / 0.55)"
+  const rect = el.getBoundingClientRect()
+  console.log("[flashHighlight] target rect:", rect, "tag:", el.tagName, "class:", el.className)
 
-  // box-shadow: an inset stripe on the LEFT edge + an outer ring. The outer
-  // ring is what catches the eye even if the element's background is hidden
-  // by descendant painting.
-  const startShadow = `inset 4px 0 0 0 ${stripe}, 0 0 0 2px ${stripe}`
-  const endShadow = `inset 4px 0 0 0 transparent, 0 0 0 2px transparent`
+  // Inject a positioned overlay as a *child* of the target element. Living
+  // inside the target means it inherits the same containing block — we
+  // sidestep all the position:fixed/ancestor-transform issues that ate the
+  // previous attempts. The overlay covers the target via `inset: 0`.
+  const overlay = document.createElement("div")
+  overlay.style.cssText = [
+    "position: absolute",
+    "inset: 0",
+    "pointer-events: none",
+    "background: oklch(0.85 0.22 95 / 0.75)",
+    "outline: 3px solid oklch(0.55 0.25 95)",
+    "outline-offset: 0",
+    "border-radius: 4px",
+    "z-index: 2147483640",
+  ].join("; ")
 
-  el.animate(
-    [
-      { backgroundColor: tint, boxShadow: startShadow, offset: 0 },
-      { backgroundColor: tint, boxShadow: startShadow, offset: 0.4 },
-      { backgroundColor: "transparent", boxShadow: endShadow, offset: 1 },
-    ],
-    { duration: 1000, easing: "ease-out", fill: "none" },
+  // The target needs `position: relative` (or any non-static) for `inset: 0`
+  // on the overlay to size against it. Capture the original and restore.
+  const previousPosition = el.style.position
+  const computed =
+    typeof window !== "undefined" ? window.getComputedStyle(el).position : "static"
+  if (computed === "static") el.style.position = "relative"
+
+  el.appendChild(overlay)
+
+  const animation = overlay.animate(
+    [{ opacity: 1 }, { opacity: 1, offset: 0.35 }, { opacity: 0 }],
+    { duration: 900, easing: "ease-out", fill: "forwards" },
   )
+
+  const cleanup = () => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay)
+    if (computed === "static") el.style.position = previousPosition
+  }
+  animation.addEventListener("finish", cleanup, { once: true })
+  animation.addEventListener("cancel", cleanup, { once: true })
+  // Safety net in case neither event fires.
+  window.setTimeout(cleanup, 1200)
+
+  console.log("[flashHighlight] overlay inserted, animation started")
 }
 

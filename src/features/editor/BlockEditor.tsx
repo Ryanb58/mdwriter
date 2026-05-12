@@ -23,6 +23,7 @@ import {
 import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
+import { findBlockContaining } from "./blockTextSearch"
 
 export function BlockEditor({
   initialMarkdown,
@@ -86,6 +87,40 @@ export function BlockEditor({
     ),
   )
 
+  // Closure shared by the init effect (fresh load) and the standalone
+  // pendingScroll effect (same doc, new hit). Walks the current block tree
+  // for a block whose plain text contains `matchText`, places the cursor at
+  // its start, and scrolls its DOM node into view. Either consumes the
+  // pending target or clears it if no block matched (the doc may have
+  // changed since the search ran).
+  function tryConsumePendingScroll() {
+    const { pendingScroll, openDoc, setPendingScroll } = useStore.getState()
+    if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) return
+    const target = findBlockContaining(
+      editor.document as Parameters<typeof findBlockContaining>[0],
+      pendingScroll.matchText,
+    )
+    if (!target) {
+      setPendingScroll(null)
+      return
+    }
+    try {
+      editor.setTextCursorPosition(target as never, "start")
+    } catch {
+      // Block may have been removed in a race; clearing the pending target
+      // still lets the next hit succeed.
+    }
+    const host = hostRef.current
+    const id = (target as { id?: string }).id
+    if (host && id) {
+      const node = host.querySelector(`[data-id="${cssEscape(id)}"]`)
+      if (node instanceof HTMLElement) {
+        node.scrollIntoView({ block: "center", behavior: "smooth" })
+      }
+    }
+    setPendingScroll(null)
+  }
+
   useEffect(() => {
     if (initializedKey.current === docKey) return
     initializedKey.current = docKey
@@ -95,8 +130,23 @@ export function BlockEditor({
       const hydrated = hydrateWikilinkBlocks(parsed)
       editor.replaceBlocks(editor.document, hydrated.length ? hydrated : [{ type: "paragraph" }])
       lastEmitted.current = initialMarkdown
+      tryConsumePendingScroll()
     })()
+    // tryConsumePendingScroll is closed over the latest store snapshot via
+    // getState — intentionally not in deps so this effect only re-runs on
+    // doc change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey, initialMarkdown, editor])
+
+  // Pending scroll fired after the doc is already loaded (e.g., user clicks
+  // another search hit in the same file).
+  const pendingScroll = useStore((s) => s.pendingScroll)
+  useEffect(() => {
+    if (!pendingScroll) return
+    if (initializedKey.current !== docKey) return
+    tryConsumePendingScroll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingScroll, docKey])
 
   // WKWebView reports clipboard images as types=["Files"] with empty
   // items/files. BlockNote's paste plugin never fires uploadFile, so
@@ -207,6 +257,14 @@ export function BlockEditor({
       </BlockNoteView>
     </div>
   )
+}
+
+// CSS.escape is widely supported but JSDOM (used by vitest) may lack it.
+function cssEscape(s: string): string {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(s)
+  }
+  return s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`)
 }
 
 type WikilinkMenuItem = {

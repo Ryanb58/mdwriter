@@ -19,12 +19,20 @@ export type Theme = "light" | "dark" | "system"
 export type RightPaneTab = "properties" | "ai"
 
 /**
- * One-shot scroll target consumed by the raw editor right after a doc loads.
- * Set by features that open a file at a specific location (vault search,
- * future "go to backlink", etc). The raw editor scrolls to `line` and clears
- * this back to null — pending scrolls are *not* persisted.
+ * One-shot scroll target consumed by whichever editor is mounted after a doc
+ * loads. Set by features that open a file at a specific location (vault
+ * search, future "go to backlink", etc). The active editor consumes it and
+ * clears it back to null — pending scrolls are *not* persisted.
+ *
+ * Raw mode uses `line` (1-indexed, file-on-disk line numbers). Block mode
+ * uses `matchText` to locate the first block whose plain text contains it,
+ * since block view has no concept of file lines.
  */
-export type PendingScroll = { path: string; line: number }
+export type PendingScroll = {
+  path: string
+  line: number
+  matchText: string
+}
 
 export type ImagesLocation = "vault-assets" | "same-folder"
 

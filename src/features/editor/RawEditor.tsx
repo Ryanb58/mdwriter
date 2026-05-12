@@ -100,12 +100,8 @@ export function RawEditor({
   )
 }
 
-// Walk up from the DOM node at `pos` to the surrounding `.cm-line` element.
-// Returns null if the editor hasn't materialized a line element at that
-// position yet (e.g., far off-screen with viewport rendering).
 function findLineElement(view: EditorView, pos: number): HTMLElement | null {
-  const at = view.domAtPos(pos)
-  let n: Node | null = at.node
+  let n: Node | null = view.domAtPos(pos).node
   while (n) {
     if (n instanceof HTMLElement && n.classList.contains("cm-line")) return n
     n = n.parentNode
@@ -113,24 +109,20 @@ function findLineElement(view: EditorView, pos: number): HTMLElement | null {
   return null
 }
 
-// Consumes the store's `pendingScroll` target once the editor is showing the
-// matching doc. Deferred behind a frame so the value-sync effect above has
-// updated the CM doc before we walk it for the match.
 function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: string) {
   const pending = useStore((s) => s.pendingScroll)
   const setPending = useStore((s) => s.setPendingScroll)
   const openPath = useStore((s) => s.openDoc?.path ?? null)
 
   useEffect(() => {
-    if (!pending || !openPath) return
-    if (pending.path !== openPath) return
+    if (!pending || !openPath || pending.path !== openPath) return
+    // Defer a frame so the value-sync effect upstream has applied the new
+    // file's content before we walk the doc for the match.
     const raf = requestAnimationFrame(() => {
       const view = viewRef.current
       if (!view) return
       const pos = scrollViewToMatch(view, pending.matchText, pending.occurrence, pending.line)
       if (pos) {
-        // CM's scrollIntoView is synchronous; the `.cm-line` should be in
-        // view by the next frame. Then flash it.
         requestAnimationFrame(() => {
           const v = viewRef.current
           if (!v) return
@@ -140,8 +132,5 @@ function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: st
       setPending(null)
     })
     return () => cancelAnimationFrame(raf)
-    // `value` is in deps because the editor's content may update after the
-    // pending target was set (file load), and we want to re-evaluate once it
-    // matches.
   }, [pending, openPath, value, viewRef, setPending])
 }

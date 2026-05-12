@@ -53,7 +53,13 @@ export function useTreeShortcuts() {
         useStore.getState().setRenamingPath(sel)
       } else if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault()
-        if (confirm(`Move "${basename(sel)}" to trash?`)) {
+        const selectedPaths = useStore.getState().selectedPaths
+        if (selectedPaths.size > 1) {
+          const paths = Array.from(selectedPaths)
+          if (confirm(`Move ${paths.length} items to trash?`)) {
+            actions.trashMany(paths).catch(console.error)
+          }
+        } else if (confirm(`Move "${basename(sel)}" to trash?`)) {
           actions.trash(sel).catch(console.error)
         }
       }

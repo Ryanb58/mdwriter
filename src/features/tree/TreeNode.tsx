@@ -68,9 +68,18 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
     ],
     [
       {
-        label: "Move to Trash",
+        label: selectedPaths.size > 1 && inSelection
+          ? `Move ${selectedPaths.size} items to Trash`
+          : "Move to Trash",
         onClick: () => {
-          if (confirm(`Move "${node.name}" to trash?`)) actions.trash(node.path).catch(console.error)
+          if (selectedPaths.size > 1 && inSelection) {
+            const paths = Array.from(selectedPaths)
+            if (confirm(`Move ${paths.length} items to trash?`)) {
+              actions.trashMany(paths).catch(console.error)
+            }
+          } else if (confirm(`Move "${node.name}" to trash?`)) {
+            actions.trash(node.path).catch(console.error)
+          }
         },
         icon: <TrashSimple size={14} />,
         shortcut: "⌫",
@@ -111,19 +120,16 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
         onDrop={dnd.onDrop}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }) }}
         onClick={(e) => {
-          // Folder: toggle on plain click; selection updates on Cmd/Shift only.
-          if (isDir) {
-            if (e.metaKey || e.ctrlKey || e.shiftKey) {
-              handleRowClick(node.path, { meta: e.metaKey || e.ctrlKey, shift: e.shiftKey })
-            } else {
-              toggleFolderExpanded(node.path)
-            }
-            return
-          }
+          // Plain click on a folder both replaces the selection (matching the
+          // file-click contract) and toggles expansion. Modifier clicks defer
+          // to handleRowClick so cmd/shift behavior stays consistent.
           handleRowClick(node.path, {
             meta: e.metaKey || e.ctrlKey,
             shift: e.shiftKey,
           })
+          if (isDir && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+            toggleFolderExpanded(node.path)
+          }
         }}
         onDoubleClick={(e) => {
           e.preventDefault()

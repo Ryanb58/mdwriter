@@ -1,35 +1,42 @@
-// Outlines paint at the compositor level — they sit above descendant
-// backgrounds and aren't subject to ancestor transforms or stacking contexts,
-// which is what makes inline `outline` on the target element a reliable flash
-// in places where positioned overlays got eaten (notably BlockNote's Mantine
-// tree).
+// We tried several approaches; the one the user could actually see was an
+// absolute-positioned overlay appended to `document.body`. Inline styles on
+// the target element alone (outline + background) were applied correctly but
+// invisible — BlockNote's Mantine block tree paints children with their own
+// backgrounds that hide the parent. Sibling-of-body positioning sidesteps
+// that entire stacking-context problem.
 const FLASH_HOLD_MS = 800
 const FLASH_FADE_MS = 1200
 const FLASH_TOTAL_MS = FLASH_HOLD_MS + FLASH_FADE_MS + 200
 
-/** Briefly highlight `el` and fade back to normal. */
+/** Briefly highlight `el` with a fading yellow overlay (~2s total). */
 export function flashHighlight(el: HTMLElement | null | undefined) {
   if (!el) return
-  const prevOutline = el.style.outline
-  const prevOutlineOffset = el.style.outlineOffset
-  const prevBackground = el.style.background
-  const prevTransition = el.style.transition
+  const rect = el.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return
 
-  el.style.outline = "3px solid #f59e0b"
-  el.style.outlineOffset = "0px"
-  el.style.background = "rgba(252, 211, 77, 0.45)"
+  const overlay = document.createElement("div")
+  overlay.style.cssText = [
+    "position: absolute",
+    `left: ${rect.left + window.scrollX - 2}px`,
+    `top: ${rect.top + window.scrollY - 2}px`,
+    `width: ${rect.width + 4}px`,
+    `height: ${rect.height + 4}px`,
+    "pointer-events: none",
+    "background: rgba(252, 211, 77, 0.45)",
+    "border: 3px solid #f59e0b",
+    "border-radius: 4px",
+    "z-index: 2147483647",
+    "opacity: 1",
+    `transition: opacity ${FLASH_FADE_MS}ms ease-out`,
+  ].join("; ")
+  document.body.appendChild(overlay)
 
   window.setTimeout(() => {
-    el.style.transition = `outline-color ${FLASH_FADE_MS}ms ease-out, background-color ${FLASH_FADE_MS}ms ease-out`
-    el.style.outlineColor = "transparent"
-    el.style.background = "transparent"
+    overlay.style.opacity = "0"
   }, FLASH_HOLD_MS)
 
   window.setTimeout(() => {
-    el.style.outline = prevOutline
-    el.style.outlineOffset = prevOutlineOffset
-    el.style.background = prevBackground
-    el.style.transition = prevTransition
+    overlay.remove()
   }, FLASH_TOTAL_MS)
 }
 

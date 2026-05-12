@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { extractBlockText, findBlockContaining } from "../blockTextSearch"
+import { extractBlockText, findNthBlockMatch } from "../blockTextSearch"
 
 describe("extractBlockText", () => {
   it("returns text from a single text run", () => {
@@ -61,59 +61,66 @@ describe("extractBlockText", () => {
   })
 })
 
-describe("findBlockContaining", () => {
+describe("findNthBlockMatch", () => {
   const blocks = [
-    { id: "a", type: "paragraph", content: [{ type: "text", text: "Hello world" }] },
-    {
-      id: "b",
-      type: "paragraph",
-      content: [
-        { type: "text", text: "See " },
-        { type: "wikilink", props: { target: "Inertia", alias: "" } },
-      ],
-    },
+    { id: "a", type: "paragraph", content: [{ type: "text", text: "needle one" }] },
+    { id: "b", type: "paragraph", content: [{ type: "text", text: "needle two and needle three" }] },
     {
       id: "c",
       type: "bulletListItem",
       content: [{ type: "text", text: "outer" }],
       children: [
-        {
-          id: "c-1",
-          type: "paragraph",
-          content: [{ type: "text", text: "nested needle" }],
-        },
+        { id: "c-1", type: "paragraph", content: [{ type: "text", text: "nested needle four" }] },
       ],
     },
   ]
 
-  it("case-insensitive substring match", () => {
-    expect(findBlockContaining(blocks, "world")?.id).toBe("a")
-    expect(findBlockContaining(blocks, "WORLD")?.id).toBe("a")
+  it("first occurrence returns first block, local 0", () => {
+    expect(findNthBlockMatch(blocks, "needle", 0)).toEqual({ block: blocks[0], localIndex: 0 })
   })
 
-  it("matches wikilink display text", () => {
-    expect(findBlockContaining(blocks, "Inertia")?.id).toBe("b")
-  })
-
-  it("returns the first match in document order", () => {
-    // Both "a" and "c-1" contain "e"; "a" comes first.
-    expect(findBlockContaining(blocks, "e")?.id).toBe("a")
+  it("counts across blocks in document order", () => {
+    // Hit ordering: a/0, b/0, b/1, c-1/0
+    expect(findNthBlockMatch(blocks, "needle", 1)).toMatchObject({ block: { id: "b" }, localIndex: 0 })
+    expect(findNthBlockMatch(blocks, "needle", 2)).toMatchObject({ block: { id: "b" }, localIndex: 1 })
   })
 
   it("descends into children", () => {
-    expect(findBlockContaining(blocks, "nested needle")?.id).toBe("c-1")
+    expect(findNthBlockMatch(blocks, "needle", 3)).toMatchObject({ block: { id: "c-1" }, localIndex: 0 })
   })
 
-  it("returns null on no match", () => {
-    expect(findBlockContaining(blocks, "xyzzy")).toBeNull()
+  it("case-insensitive", () => {
+    const upper = [
+      { id: "u", type: "paragraph", content: [{ type: "text", text: "Hello WORLD" }] },
+    ]
+    expect(findNthBlockMatch(upper, "world", 0)).toMatchObject({ block: { id: "u" }, localIndex: 0 })
+  })
+
+  it("out-of-range occurrence falls back to the last available match", () => {
+    // Only 4 hits across the tree; asking for the 99th should land on the last.
+    expect(findNthBlockMatch(blocks, "needle", 99)).toMatchObject({ block: { id: "c-1" }, localIndex: 0 })
+  })
+
+  it("returns null when no block contains the needle", () => {
+    expect(findNthBlockMatch(blocks, "xyzzy", 0)).toBeNull()
   })
 
   it("returns null on empty needle", () => {
-    expect(findBlockContaining(blocks, "")).toBeNull()
+    expect(findNthBlockMatch(blocks, "", 0)).toBeNull()
   })
 
   it("tolerates null/undefined block lists", () => {
-    expect(findBlockContaining(null, "hi")).toBeNull()
-    expect(findBlockContaining(undefined, "hi")).toBeNull()
+    expect(findNthBlockMatch(null, "hi", 0)).toBeNull()
+    expect(findNthBlockMatch(undefined, "hi", 0)).toBeNull()
+  })
+
+  it("handles wikilink display text", () => {
+    const withLink = [
+      { id: "w", type: "paragraph", content: [
+        { type: "text", text: "go to " },
+        { type: "wikilink", props: { target: "Inertia", alias: "" } },
+      ] },
+    ]
+    expect(findNthBlockMatch(withLink, "inertia", 0)).toMatchObject({ block: { id: "w" }, localIndex: 0 })
   })
 })

@@ -23,7 +23,8 @@ import {
 import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
-import { findBlockContaining } from "./blockTextSearch"
+import { findNthBlockMatch } from "./blockTextSearch"
+import { flashHighlight, findTextRangeIn } from "./flashHighlight"
 
 export function BlockEditor({
   initialMarkdown,
@@ -88,35 +89,47 @@ export function BlockEditor({
   )
 
   // Closure shared by the init effect (fresh load) and the standalone
-  // pendingScroll effect (same doc, new hit). Walks the current block tree
-  // for a block whose plain text contains `matchText`, places the cursor at
-  // its start, and scrolls its DOM node into view. Either consumes the
-  // pending target or clears it if no block matched (the doc may have
-  // changed since the search ran).
+  // pendingScroll effect (same doc, new hit). Walks blocks for the Nth
+  // occurrence of `matchText`, scrolls that block's DOM node into view, and
+  // briefly highlights the exact match. Clears the pending target whether or
+  // not the highlight could be drawn — the doc may have changed since the
+  // search ran.
   function tryConsumePendingScroll() {
     const { pendingScroll, openDoc, setPendingScroll } = useStore.getState()
     if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) return
-    const target = findBlockContaining(
-      editor.document as Parameters<typeof findBlockContaining>[0],
+    const target = findNthBlockMatch(
+      editor.document as Parameters<typeof findNthBlockMatch>[0],
       pendingScroll.matchText,
+      pendingScroll.occurrence,
     )
     if (!target) {
       setPendingScroll(null)
       return
     }
     try {
-      editor.setTextCursorPosition(target as never, "start")
+      editor.setTextCursorPosition(target.block as never, "start")
     } catch {
       // Block may have been removed in a race; clearing the pending target
       // still lets the next hit succeed.
     }
     const host = hostRef.current
-    const id = (target as { id?: string }).id
-    if (host && id) {
-      const node = host.querySelector(`[data-id="${cssEscape(id)}"]`)
-      if (node instanceof HTMLElement) {
-        node.scrollIntoView({ block: "center", behavior: "smooth" })
-      }
+    const id = (target.block as { id?: string }).id
+    const node =
+      host && id ? host.querySelector(`[data-id="${cssEscape(id)}"]`) : null
+    if (node instanceof HTMLElement) {
+      node.scrollIntoView({ block: "center", behavior: "smooth" })
+      // Wait for the scroll to settle before measuring + flashing. Two
+      // animation frames is more reliable than one — smooth scroll commits
+      // its first position-update on the second frame in some browsers.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const range = findTextRangeIn(node, pendingScroll.matchText, target.localIndex)
+          if (range) {
+            const rect = range.getBoundingClientRect()
+            flashHighlight(rect)
+          }
+        }),
+      )
     }
     setPendingScroll(null)
   }

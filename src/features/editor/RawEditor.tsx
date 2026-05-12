@@ -7,7 +7,8 @@ import { useRawImagePaste } from "./useRawImagePaste"
 import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes } from "../../lib/vaultNotes"
 import { useStore } from "../../lib/store"
-import { scrollViewToLine } from "./scrollViewToLine"
+import { scrollViewToMatch } from "./scrollViewToMatch"
+import { flashHighlight } from "./flashHighlight"
 import {
   decorateLinks,
   rebuildLinkDecorations,
@@ -101,7 +102,7 @@ export function RawEditor({
 
 // Consumes the store's `pendingScroll` target once the editor is showing the
 // matching doc. Deferred behind a frame so the value-sync effect above has
-// updated the CM doc before we look up line offsets.
+// updated the CM doc before we walk it for the match.
 function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: string) {
   const pending = useStore((s) => s.pendingScroll)
   const setPending = useStore((s) => s.setPendingScroll)
@@ -113,9 +114,26 @@ function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: st
     const raf = requestAnimationFrame(() => {
       const view = viewRef.current
       if (!view) return
-      if (scrollViewToLine(view, pending.line)) {
-        setPending(null)
+      const pos = scrollViewToMatch(view, pending.matchText, pending.occurrence, pending.line)
+      // Wait one more frame for scrollIntoView to settle before measuring
+      // the match's coordinates for the flash overlay.
+      if (pos) {
+        requestAnimationFrame(() => {
+          const v = viewRef.current
+          if (!v) return
+          const start = v.coordsAtPos(pos.from)
+          const end = v.coordsAtPos(pos.to)
+          if (start && end) {
+            flashHighlight({
+              left: Math.min(start.left, end.left),
+              top: Math.min(start.top, end.top),
+              width: Math.max(end.right - start.left, 0),
+              height: Math.max(start.bottom - start.top, 0),
+            })
+          }
+        })
       }
+      setPending(null)
     })
     return () => cancelAnimationFrame(raf)
     // `value` is in deps because the editor's content may update after the

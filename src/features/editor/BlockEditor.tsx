@@ -120,13 +120,9 @@ export function BlockEditor({
     // element to appear, then scroll + flash.
     waitForBlockNode(hostRef, id, (node) => {
       node.scrollIntoView({ block: "center", behavior: "smooth" })
-      // Two frames after scrollIntoView so smooth scrolling has committed
-      // its first position update before we measure the rect.
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          flashHighlight(node.getBoundingClientRect())
-        }),
-      )
+      // Defer one frame so the highlight class is applied after the scroll
+      // dispatch — the animation starts as the user's eye arrives.
+      requestAnimationFrame(() => flashHighlight(node))
     })
   }
 

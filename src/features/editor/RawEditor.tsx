@@ -128,16 +128,13 @@ function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: st
       const view = viewRef.current
       if (!view) return
       const pos = scrollViewToMatch(view, pending.matchText, pending.occurrence, pending.line)
-      // Wait one more frame for the scroll to settle, then flash the whole
-      // `.cm-line` element. A line-wide highlight is far easier for the eye
-      // to catch than a few-character span, and avoids edge cases where
-      // coordsAtPos hasn't refreshed after the scroll.
+      // Wait one more frame so CM has materialized the `.cm-line` for the
+      // scrolled-to line, then flash the line element.
       if (pos) {
         requestAnimationFrame(() => {
           const v = viewRef.current
           if (!v) return
-          const lineEl = findLineElement(v, pos.from)
-          if (lineEl) flashHighlight(lineEl.getBoundingClientRect())
+          flashHighlight(findLineElement(v, pos.from))
         })
       }
       setPending(null)

@@ -1,28 +1,24 @@
 /**
- * Briefly paint a fading highlight at a viewport-space rect — used after a
- * search-result jump to draw the user's eye to the matched text. The element
- * is `position: fixed`, so it stays on screen during the 500ms fade even if
- * the document scrolls slightly. After the animation it removes itself.
+ * Briefly paint a fading background on the given element — used after a
+ * search-result jump to draw the user's eye to the target line/block. We
+ * toggle a class instead of overlaying a positioned div because BlockNote's
+ * Mantine tree (and other rich-text editors) frequently contain ancestors
+ * with `transform` / `filter` / `contain`, which break `position: fixed`.
  *
- * Styling lives in `.search-flash` in App.css.
+ * Styling lives in `.search-flash-active` in App.css.
  */
-export function flashHighlight(rect: { left: number; top: number; width: number; height: number }) {
-  if (rect.width <= 0 || rect.height <= 0) return
-  const el = document.createElement("div")
-  el.className = "search-flash"
-  // Pad a hair to make the flash read as a highlight, not as text.
-  const pad = 2
-  el.style.left = `${rect.left - pad}px`
-  el.style.top = `${rect.top - pad}px`
-  el.style.width = `${rect.width + pad * 2}px`
-  el.style.height = `${rect.height + pad * 2}px`
-  document.body.appendChild(el)
-  const remove = () => {
-    if (el.parentNode) el.parentNode.removeChild(el)
-  }
-  el.addEventListener("animationend", remove, { once: true })
-  // Defensive fallback — if animationend never fires (browser quirk or
-  // animation interrupted), remove the overlay anyway after the fade.
-  window.setTimeout(remove, 800)
+export function flashHighlight(el: HTMLElement | null | undefined) {
+  if (!el) return
+  // Restart the animation if it's already running so a rapid second hit on
+  // the same element still flashes visibly.
+  el.classList.remove("search-flash-active")
+  // Force a reflow so the browser sees the class removal before re-adding.
+  void el.offsetWidth
+  el.classList.add("search-flash-active")
+  const clear = () => el.classList.remove("search-flash-active")
+  el.addEventListener("animationend", clear, { once: true })
+  // Defensive fallback — if animationend doesn't fire (interrupted scroll,
+  // browser quirk), clear the class anyway after the fade window.
+  window.setTimeout(clear, 800)
 }
 

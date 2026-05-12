@@ -99,7 +99,7 @@ jobs:
 
           ---
 
-          **macOS (unsigned):** right-click the app and choose Open the first time.
+          **macOS (unsigned):** on first launch, click **Done** on the "could not verify" warning, then go to **System Settings → Privacy & Security**, scroll to *"mdwriter.app was blocked"*, and click **Open Anyway**. (On macOS 14 and earlier, right-click → **Open** also works.)
           **Windows (unsigned):** click "More info → Run anyway" on SmartScreen.
           EOF
           )
@@ -230,7 +230,7 @@ jobs:
 
             ---
 
-            **macOS (unsigned):** right-click the app and choose Open the first time.
+            **macOS (unsigned):** on first launch, click **Done** on the "could not verify" warning, then go to **System Settings → Privacy & Security**, scroll to *"mdwriter.app was blocked"*, and click **Open Anyway**. (On macOS 14 and earlier, right-click → **Open** also works.)
             **Windows (unsigned):** click "More info → Run anyway" on SmartScreen.
           releaseDraft: true
           prerelease: false

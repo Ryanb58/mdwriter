@@ -91,9 +91,8 @@ export function BlockEditor({
   // Closure shared by the init effect (fresh load) and the standalone
   // pendingScroll effect (same doc, new hit). Walks blocks for the Nth
   // occurrence of `matchText`, scrolls that block's DOM node into view, and
-  // briefly highlights the exact match. Clears the pending target whether or
-  // not the highlight could be drawn — the doc may have changed since the
-  // search ran.
+  // briefly highlights it. Clears the pending target whether or not the
+  // highlight could be drawn — the doc may have changed since the search ran.
   function tryConsumePendingScroll() {
     const { pendingScroll, openDoc, setPendingScroll } = useStore.getState()
     if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) return
@@ -112,22 +111,23 @@ export function BlockEditor({
       // Block may have been removed in a race; clearing the pending target
       // still lets the next hit succeed.
     }
-    const host = hostRef.current
     const id = (target.block as { id?: string }).id
-    const node =
-      host && id ? host.querySelector(`[data-id="${cssEscape(id)}"]`) : null
-    if (node instanceof HTMLElement) {
+    setPendingScroll(null)
+    if (!id) return
+    // ProseMirror commits DOM updates synchronously on dispatch, but a
+    // freshly-replaced editor (init path) may not have rendered nodes yet
+    // when this closure runs. Poll up to a handful of frames for the block
+    // element to appear, then scroll + flash.
+    waitForBlockNode(hostRef, id, (node) => {
       node.scrollIntoView({ block: "center", behavior: "smooth" })
-      // Wait for the smooth scroll to settle before measuring. Two animation
-      // frames is more reliable than one — Chrome commits its first scroll
-      // position-update on the second frame.
+      // Two frames after scrollIntoView so smooth scrolling has committed
+      // its first position update before we measure the rect.
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
           flashHighlight(node.getBoundingClientRect())
         }),
       )
-    }
-    setPendingScroll(null)
+    })
   }
 
   useEffect(() => {
@@ -274,6 +274,29 @@ function cssEscape(s: string): string {
     return CSS.escape(s)
   }
   return s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`)
+}
+
+// Find the block element with `data-id="<id>"` inside the BlockEditor host.
+// ProseMirror commits DOM updates synchronously on dispatch, but after the
+// init effect's `replaceBlocks` the new nodes may not exist in the DOM yet
+// when this closure runs. Poll a few frames before giving up — `cb` only
+// fires once a match is located.
+function waitForBlockNode(
+  hostRef: React.RefObject<HTMLDivElement | null>,
+  id: string,
+  cb: (node: HTMLElement) => void,
+  attempt = 0,
+) {
+  const host = hostRef.current
+  if (host) {
+    const node = host.querySelector(`[data-id="${cssEscape(id)}"]`)
+    if (node instanceof HTMLElement) {
+      cb(node)
+      return
+    }
+  }
+  if (attempt >= 10) return
+  requestAnimationFrame(() => waitForBlockNode(hostRef, id, cb, attempt + 1))
 }
 
 type WikilinkMenuItem = {

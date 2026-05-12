@@ -27,7 +27,7 @@ Open it and pick any folder of Markdown files (or an empty folder to start fresh
 
 mdwriter isn't signed with a paid Apple or Windows certificate yet, so your OS will warn you the first time. One-time approval:
 
-- **macOS** — right-click `mdwriter.app` and choose **Open**, then click **Open** in the confirmation dialog. Normal double-click works after that.
+- **macOS** — double-click `mdwriter.app`. On the "could not verify" warning click **Done**, then open **System Settings → Privacy & Security**, scroll to *"mdwriter.app was blocked"*, and click **Open Anyway**. Normal double-click works after that. (On macOS 14 and earlier, right-click → **Open** also works.)
 - **Windows** — on the SmartScreen warning, click **More info → Run anyway**.
 
 ## Stays up to date

@@ -6,6 +6,15 @@ import { noteSelfWrite } from "../watcher/useExternalChanges"
 
 const SAVE_DELAY_MS = 500
 
+// Module-level handle to the active autosave debounce. Exposed so the rename
+// flow can drop a pending write before swapping the open doc's path — without
+// this, the cleanup flush would re-create the old file at its prior path.
+let activeSaver: { flush: () => void; cancel: () => void } | null = null
+
+export function cancelPendingDocSave() {
+  activeSaver?.cancel()
+}
+
 export function useAutoSave() {
   const doc = useStore((s) => s.openDoc)
 
@@ -21,6 +30,11 @@ export function useAutoSave() {
       console.error("save failed", e)
     }
   }, SAVE_DELAY_MS), [])
+
+  useEffect(() => {
+    activeSaver = saver
+    return () => { if (activeSaver === saver) activeSaver = null }
+  }, [saver])
 
   useEffect(() => {
     if (!doc || !doc.dirty) return

@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react"
+import { lazy, Suspense, useState } from "react"
 import { useStore } from "../../lib/store"
 import { useOpenFile } from "./useOpenFile"
 import { useAutoSave } from "./useAutoSave"
@@ -6,6 +6,7 @@ import { useEditorMode } from "./useEditorMode"
 import { useAutoRename } from "./useAutoRename"
 import { basename } from "../../lib/paths"
 import { BlockEditor } from "./BlockEditor"
+import { renameOpenDoc } from "./renameOpenDoc"
 import { Sidebar, Warning, TextAa, Code, Robot } from "@phosphor-icons/react"
 
 // CodeMirror only loads when the user enters raw mode.
@@ -69,7 +70,7 @@ export function EditorPane() {
           {folderTrail && (
             <span className="text-[12px] text-text-subtle truncate">{folderTrail} /</span>
           )}
-          <span className="text-[14px] font-medium text-text truncate">{fileName}</span>
+          <EditableFileName fileName={fileName} />
         </div>
         <div className="flex items-center gap-3 flex-none">
           <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
@@ -124,6 +125,62 @@ export function EditorPane() {
         )}
       </div>
     </div>
+  )
+}
+
+function EditableFileName({ fileName }: { fileName: string }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState("")
+  const dotIdx = fileName.lastIndexOf(".")
+  const stem = dotIdx > 0 ? fileName.slice(0, dotIdx) : fileName
+  const ext = dotIdx > 0 ? fileName.slice(dotIdx) : ""
+
+  function begin() {
+    setDraft(stem)
+    setEditing(true)
+  }
+
+  async function commit() {
+    const trimmed = draft.trim()
+    setEditing(false)
+    if (!trimmed || trimmed === stem) return
+    try {
+      await renameOpenDoc(trimmed)
+    } catch (e) {
+      // Keep the prior name visible; surface details in the console.
+      console.error("breadcrumb rename failed", e)
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit() }
+          if (e.key === "Escape") { e.preventDefault(); setEditing(false) }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        aria-label="Rename file"
+        title={fileName}
+        className="text-[14px] font-medium text-text bg-elevated border border-border-strong rounded px-1 -mx-1 outline-none min-w-0"
+        style={{ width: `${Math.max(draft.length + 1, 4)}ch` }}
+      />
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={begin}
+      title={ext ? `Rename (${ext.slice(1)})` : "Rename"}
+      className="text-[14px] font-medium text-text truncate cursor-text hover:bg-elevated rounded px-1 -mx-1 text-left"
+    >
+      {stem}
+    </button>
   )
 }
 

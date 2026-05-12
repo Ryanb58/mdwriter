@@ -16,53 +16,50 @@ export function flashHighlight(el: HTMLElement | null | undefined) {
     console.warn("[flashHighlight] element is null/undefined")
     return
   }
-  if (typeof el.animate !== "function") {
-    console.warn("[flashHighlight] el.animate is not a function", el)
-    return
-  }
 
-  const rect = el.getBoundingClientRect()
-  console.log("[flashHighlight] target rect:", rect, "tag:", el.tagName, "class:", el.className)
-
-  // Inject a positioned overlay as a *child* of the target element. Living
-  // inside the target means it inherits the same containing block — we
-  // sidestep all the position:fixed/ancestor-transform issues that ate the
-  // previous attempts. The overlay covers the target via `inset: 0`.
+  // Inject a positioned overlay as a child of the target element. Sitting
+  // inside the target means the overlay shares its containing block and
+  // moves with it through any scrolling — no position:fixed weirdness, no
+  // ancestor-transform issues.
   const overlay = document.createElement("div")
   overlay.style.cssText = [
     "position: absolute",
-    "inset: 0",
+    "inset: -2px",
     "pointer-events: none",
-    "background: oklch(0.85 0.22 95 / 0.75)",
+    "background: oklch(0.85 0.22 95 / 0.55)",
     "outline: 3px solid oklch(0.55 0.25 95)",
     "outline-offset: 0",
     "border-radius: 4px",
     "z-index: 2147483640",
+    "opacity: 1",
+    "transition: opacity 1200ms ease-out",
   ].join("; ")
 
-  // The target needs `position: relative` (or any non-static) for `inset: 0`
-  // on the overlay to size against it. Capture the original and restore.
+  // The target needs `position: relative` (or any non-static) for inset to
+  // size against it. Capture the original to restore on cleanup.
   const previousPosition = el.style.position
   const computed =
     typeof window !== "undefined" ? window.getComputedStyle(el).position : "static"
   if (computed === "static") el.style.position = "relative"
 
   el.appendChild(overlay)
+  const rect = el.getBoundingClientRect()
+  console.log("[flashHighlight] overlay inserted, parent rect:", rect)
 
-  const animation = overlay.animate(
-    [{ opacity: 1 }, { opacity: 1, offset: 0.35 }, { opacity: 0 }],
-    { duration: 900, easing: "ease-out", fill: "forwards" },
-  )
+  // Hold full opacity for ~800ms, then fade to 0 via CSS transition (1200ms).
+  // Total visible window ≈ 2s.
+  window.setTimeout(() => {
+    overlay.style.opacity = "0"
+    console.log("[flashHighlight] fading")
+  }, 800)
 
   const cleanup = () => {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay)
     if (computed === "static") el.style.position = previousPosition
+    console.log("[flashHighlight] cleaned up")
   }
-  animation.addEventListener("finish", cleanup, { once: true })
-  animation.addEventListener("cancel", cleanup, { once: true })
-  // Safety net in case neither event fires.
-  window.setTimeout(cleanup, 1200)
-
-  console.log("[flashHighlight] overlay inserted, animation started")
+  overlay.addEventListener("transitionend", cleanup, { once: true })
+  // Safety net: opacity transition ends ~2000ms after insertion. Pad to 2400.
+  window.setTimeout(cleanup, 2400)
 }
 

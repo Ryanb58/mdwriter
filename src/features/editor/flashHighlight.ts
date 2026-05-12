@@ -17,49 +17,69 @@ export function flashHighlight(el: HTMLElement | null | undefined) {
     return
   }
 
-  // Inject a positioned overlay as a child of the target element. Sitting
-  // inside the target means the overlay shares its containing block and
-  // moves with it through any scrolling — no position:fixed weirdness, no
-  // ancestor-transform issues.
+  const rect = el.getBoundingClientRect()
+  const cs = typeof window !== "undefined" ? window.getComputedStyle(el) : null
+  console.log("[flashHighlight] rect:", rect, {
+    position: cs?.position,
+    display: cs?.display,
+    overflow: cs?.overflow,
+    zIndex: cs?.zIndex,
+    visibility: cs?.visibility,
+  })
+
+  // Belt-and-suspenders: apply styles to BOTH the element itself (outline
+  // + background) AND a child overlay. If anything in this DOM tree is
+  // hiding one approach, the other should still come through.
+
+  // 1) Inline outline + background on the target. Outlines paint outside the
+  //    border box and are drawn at the compositor level — even children with
+  //    their own backgrounds can't hide them.
+  const prevOutline = el.style.outline
+  const prevOutlineOffset = el.style.outlineOffset
+  const prevBackground = el.style.background
+  el.style.outline = "4px solid #f59e0b"
+  el.style.outlineOffset = "0px"
+  el.style.background = "rgba(252, 211, 77, 0.55)"
+
+  // 2) Also append an absolute-positioned overlay as a *direct* sibling-in
+  //    -body so document.body's stacking context (which has no transforms)
+  //    is the containing block. Position via document coordinates.
   const overlay = document.createElement("div")
+  overlay.id = "search-jump-flash-overlay"
   overlay.style.cssText = [
     "position: absolute",
-    "inset: -2px",
+    `left: ${rect.left + window.scrollX - 2}px`,
+    `top: ${rect.top + window.scrollY - 2}px`,
+    `width: ${rect.width + 4}px`,
+    `height: ${rect.height + 4}px`,
     "pointer-events: none",
-    "background: oklch(0.85 0.22 95 / 0.55)",
-    "outline: 3px solid oklch(0.55 0.25 95)",
-    "outline-offset: 0",
+    "background: rgba(252, 211, 77, 0.45)",
+    "border: 3px solid #f59e0b",
     "border-radius: 4px",
-    "z-index: 2147483640",
+    "z-index: 2147483647",
     "opacity: 1",
     "transition: opacity 1200ms ease-out",
   ].join("; ")
+  document.body.appendChild(overlay)
+  console.log("[flashHighlight] applied outline+bg to el and appended body overlay")
 
-  // The target needs `position: relative` (or any non-static) for inset to
-  // size against it. Capture the original to restore on cleanup.
-  const previousPosition = el.style.position
-  const computed =
-    typeof window !== "undefined" ? window.getComputedStyle(el).position : "static"
-  if (computed === "static") el.style.position = "relative"
-
-  el.appendChild(overlay)
-  const rect = el.getBoundingClientRect()
-  console.log("[flashHighlight] overlay inserted, parent rect:", rect)
-
-  // Hold full opacity for ~800ms, then fade to 0 via CSS transition (1200ms).
-  // Total visible window ≈ 2s.
+  // Hold full visibility ~800ms, then fade ~1200ms = ~2s total.
   window.setTimeout(() => {
     overlay.style.opacity = "0"
+    el.style.transition = "outline-color 1200ms ease-out, background-color 1200ms ease-out"
+    el.style.outlineColor = "transparent"
+    el.style.background = "transparent"
     console.log("[flashHighlight] fading")
   }, 800)
 
   const cleanup = () => {
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay)
-    if (computed === "static") el.style.position = previousPosition
+    el.style.outline = prevOutline
+    el.style.outlineOffset = prevOutlineOffset
+    el.style.background = prevBackground
+    el.style.transition = ""
     console.log("[flashHighlight] cleaned up")
   }
-  overlay.addEventListener("transitionend", cleanup, { once: true })
-  // Safety net: opacity transition ends ~2000ms after insertion. Pad to 2400.
-  window.setTimeout(cleanup, 2400)
+  window.setTimeout(cleanup, 2200)
 }
 

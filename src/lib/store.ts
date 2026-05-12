@@ -18,6 +18,14 @@ export type Theme = "light" | "dark" | "system"
 
 export type RightPaneTab = "properties" | "ai"
 
+/**
+ * One-shot scroll target consumed by the raw editor right after a doc loads.
+ * Set by features that open a file at a specific location (vault search,
+ * future "go to backlink", etc). The raw editor scrolls to `line` and clears
+ * this back to null — pending scrolls are *not* persisted.
+ */
+export type PendingScroll = { path: string; line: number }
+
 export type ImagesLocation = "vault-assets" | "same-folder"
 
 export type Settings = {
@@ -61,6 +69,7 @@ export type AppStore = {
   settingsOpen: boolean
   settings: Settings
   renamingPath: string | null
+  pendingScroll: PendingScroll | null
 
   setRoot(path: string | null): void
   setTree(tree: TreeNode | null): void
@@ -76,6 +85,7 @@ export type AppStore = {
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
+  setPendingScroll(target: PendingScroll | null): void
 
   // AI session
   aiAgent: AgentId
@@ -126,6 +136,7 @@ export const useStore = create<AppStore>()(
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
+      pendingScroll: null,
 
       aiAgent: "claude-code" as AgentId,
       aiAvailable: [],
@@ -165,6 +176,7 @@ export const useStore = create<AppStore>()(
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
       setRenamingPath: (path) => set({ renamingPath: path }),
+      setPendingScroll: (target) => set({ pendingScroll: target }),
 
       setAiAgent: (id) => set({ aiAgent: id }),
       setAiAvailable: (rows) => set({ aiAvailable: rows }),

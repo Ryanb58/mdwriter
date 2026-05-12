@@ -19,6 +19,7 @@ export function SearchMode({
 }) {
   const rootPath = useStore((s) => s.rootPath)
   const setSelected = useStore((s) => s.setSelected)
+  const setPendingScroll = useStore((s) => s.setPendingScroll)
   const [query, setQuery] = useState(initialQuery)
   const [result, setResult] = useState<SearchResult | null>(null)
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle")
@@ -76,6 +77,10 @@ export function SearchMode({
   const flat = useMemo(() => groups.flatMap((g) => g.hits), [groups])
 
   function openHit(hit: SearchHit) {
+    // Set the scroll target before selection so it's already present by the
+    // time useOpenFile resolves and the editor mounts — usePendingScrollMode
+    // and RawEditor's scroll effect will consume it once the doc paths align.
+    setPendingScroll({ path: hit.path, line: hit.line })
     setSelected(hit.path)
     close()
   }

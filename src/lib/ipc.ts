@@ -16,6 +16,29 @@ export type TreeOptions = {
   hideGitignored?: boolean
 }
 
+export type SearchHit = {
+  path: string
+  /** 1-indexed line number within the file. */
+  line: number
+  /** Byte offset of the match start within `snippet`. */
+  colStart: number
+  /** Byte offset of the match end within `snippet`. */
+  colEnd: number
+  /** Trimmed line with leading/trailing `…` when the original was long. */
+  snippet: string
+}
+
+export type SearchResult = {
+  hits: SearchHit[]
+  truncated: boolean
+  filesScanned: number
+}
+
+export type SearchOptions = {
+  caseSensitive?: boolean
+  hideGitignored?: boolean
+}
+
 export type AgentId = "claude-code" | "codex" | "open-code" | "pi" | "gemini"
 
 export type AgentAvailability = {
@@ -69,6 +92,28 @@ export const ipc = {
     })
     return invoke<void>("import_file", { path, bytesB64 })
   },
+  searchVault: (root: string, query: string, options?: SearchOptions) =>
+    invoke<{
+      hits: Array<{
+        path: string
+        line: number
+        col_start: number
+        col_end: number
+        snippet: string
+      }>
+      truncated: boolean
+      files_scanned: number
+    }>("search_vault", { root, query, options: options ?? null }).then((r) => ({
+      hits: r.hits.map((h) => ({
+        path: h.path,
+        line: h.line,
+        colStart: h.col_start,
+        colEnd: h.col_end,
+        snippet: h.snippet,
+      })),
+      truncated: r.truncated,
+      filesScanned: r.files_scanned,
+    } satisfies SearchResult)),
   startWatcher: (root: string) => invoke<void>("start_watcher", { root }),
   stopWatcher: () => invoke<void>("stop_watcher"),
   ensureVaultAgentsMd: (vaultPath: string) =>

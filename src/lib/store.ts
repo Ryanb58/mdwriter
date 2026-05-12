@@ -18,6 +18,25 @@ export type Theme = "light" | "dark" | "system"
 
 export type RightPaneTab = "properties" | "ai"
 
+/**
+ * One-shot scroll target consumed by whichever editor is mounted after a doc
+ * loads. Set by features that open a file at a specific location (vault
+ * search, future "go to backlink", etc). The active editor consumes it and
+ * clears it back to null — pending scrolls are *not* persisted.
+ *
+ * Both editors walk `matchText` occurrences in document order and stop at
+ * `occurrence` (0-indexed) — this disambiguates when the same text appears
+ * many times in a file. `line` is carried for the raw editor as a primary
+ * positioning hint when an occurrence walk can't be completed (e.g. doc was
+ * edited since the search ran).
+ */
+export type PendingScroll = {
+  path: string
+  line: number
+  matchText: string
+  occurrence: number
+}
+
 export type ImagesLocation = "vault-assets" | "same-folder"
 
 export type Settings = {
@@ -61,6 +80,7 @@ export type AppStore = {
   settingsOpen: boolean
   settings: Settings
   renamingPath: string | null
+  pendingScroll: PendingScroll | null
 
   setRoot(path: string | null): void
   setTree(tree: TreeNode | null): void
@@ -76,6 +96,7 @@ export type AppStore = {
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
+  setPendingScroll(target: PendingScroll | null): void
 
   // AI session
   aiAgent: AgentId
@@ -126,6 +147,7 @@ export const useStore = create<AppStore>()(
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
+      pendingScroll: null,
 
       aiAgent: "claude-code" as AgentId,
       aiAvailable: [],
@@ -165,6 +187,7 @@ export const useStore = create<AppStore>()(
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
       setRenamingPath: (path) => set({ renamingPath: path }),
+      setPendingScroll: (target) => set({ pendingScroll: target }),
 
       setAiAgent: (id) => set({ aiAgent: id }),
       setAiAvailable: (rows) => set({ aiAvailable: rows }),

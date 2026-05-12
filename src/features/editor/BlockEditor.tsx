@@ -23,6 +23,8 @@ import {
 import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
+import { findNthBlockMatch } from "./blockTextSearch"
+import { flashHighlight } from "./flashHighlight"
 
 export function BlockEditor({
   initialMarkdown,
@@ -34,6 +36,8 @@ export function BlockEditor({
   docKey: string
 }) {
   const initializedKey = useRef<string | null>(null)
+  // True while the init effect is awaiting the async parse — see usage below.
+  const parsing = useRef(false)
   const lastEmitted = useRef<string>("")
   const theme = useResolvedTheme()
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -86,17 +90,66 @@ export function BlockEditor({
     ),
   )
 
+  function tryConsumePendingScroll() {
+    const { pendingScroll, openDoc, setPendingScroll } = useStore.getState()
+    if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) return
+    const docBlocks = editor.document as Parameters<typeof findNthBlockMatch>[0]
+    // Fall back to the first block when the match isn't in any block — the
+    // matchText may live in frontmatter (which BlockNote strips on parse)
+    // or in a block type our text extractor doesn't reach.
+    let target = findNthBlockMatch(docBlocks, pendingScroll.matchText, pendingScroll.occurrence)
+    if (!target) {
+      const first = (docBlocks as Array<{ id?: string }> | null | undefined)?.[0]
+      if (!first?.id) {
+        setPendingScroll(null)
+        return
+      }
+      target = { block: first as never, localIndex: 0 }
+    }
+    try {
+      editor.setTextCursorPosition(target.block as never, "start")
+    } catch {
+      // Block may have been removed in a race; clearing pendingScroll below
+      // still lets the next hit succeed.
+    }
+    const id = (target.block as { id?: string }).id
+    setPendingScroll(null)
+    if (!id) return
+    waitForBlockNode(hostRef, id, (node) => {
+      // Instant (not smooth) scroll so the flash paints at the settled
+      // viewport position rather than chasing an in-flight smooth scroll.
+      node.scrollIntoView({ block: "center", behavior: "auto" })
+      requestAnimationFrame(() => flashHighlight(node))
+    })
+  }
+
   useEffect(() => {
     if (initializedKey.current === docKey) return
     initializedKey.current = docKey
+    parsing.current = true
     ;(async () => {
       const pre = preprocessWikilinks(initialMarkdown)
       const parsed = (await editor.tryParseMarkdownToBlocks(pre)) as PartialBlock[]
       const hydrated = hydrateWikilinkBlocks(parsed)
       editor.replaceBlocks(editor.document, hydrated.length ? hydrated : [{ type: "paragraph" }])
       lastEmitted.current = initialMarkdown
+      parsing.current = false
+      tryConsumePendingScroll()
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey, initialMarkdown, editor])
+
+  // `parsing` guards against racing the init effect — when switching files,
+  // the new blocks aren't in `editor.document` until the async parse above
+  // resolves, so firing earlier would walk the previous file's tree.
+  const pendingScroll = useStore((s) => s.pendingScroll)
+  useEffect(() => {
+    if (!pendingScroll) return
+    if (initializedKey.current !== docKey) return
+    if (parsing.current) return
+    tryConsumePendingScroll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingScroll, docKey])
 
   // WKWebView reports clipboard images as types=["Files"] with empty
   // items/files. BlockNote's paste plugin never fires uploadFile, so
@@ -207,6 +260,28 @@ export function BlockEditor({
       </BlockNoteView>
     </div>
   )
+}
+
+// Even after `replaceBlocks`, BlockNote may not have rendered the new block
+// nodes by the time we look them up. Poll a few frames for the DOM to catch
+// up before giving up.
+const MAX_BLOCK_NODE_POLL_FRAMES = 10
+function waitForBlockNode(
+  hostRef: React.RefObject<HTMLDivElement | null>,
+  id: string,
+  cb: (node: HTMLElement) => void,
+  attempt = 0,
+) {
+  const host = hostRef.current
+  if (host) {
+    const node = host.querySelector(`[data-id="${CSS.escape(id)}"]`)
+    if (node instanceof HTMLElement) {
+      cb(node)
+      return
+    }
+  }
+  if (attempt >= MAX_BLOCK_NODE_POLL_FRAMES) return
+  requestAnimationFrame(() => waitForBlockNode(hostRef, id, cb, attempt + 1))
 }
 
 type WikilinkMenuItem = {

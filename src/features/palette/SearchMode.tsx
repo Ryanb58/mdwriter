@@ -78,11 +78,15 @@ export function SearchMode({
 
   function openHit(hit: SearchHit) {
     // Set the scroll target before selection so it's already present by the
-    // time useOpenFile resolves and the editor mounts. Whichever editor mode
-    // the user is in handles the rest: raw mode scrolls to `line`, block
-    // mode looks up the first block containing `matchText`.
+    // time useOpenFile resolves and the editor mounts. Each editor mode
+    // walks `matchText` occurrences and stops at `occurrence` to land on the
+    // exact hit the user clicked — even when the same text appears many
+    // times in the file. The Rust search emits hits in document order, so
+    // the hit's index within its file group is its occurrence index.
     const matchText = hit.snippet.slice(hit.colStart, hit.colEnd)
-    setPendingScroll({ path: hit.path, line: hit.line, matchText })
+    const fileGroup = groups.find((g) => g.path === hit.path)
+    const occurrence = fileGroup ? Math.max(0, fileGroup.hits.indexOf(hit)) : 0
+    setPendingScroll({ path: hit.path, line: hit.line, matchText, occurrence })
     setSelected(hit.path)
     close()
   }

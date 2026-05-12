@@ -45,23 +45,59 @@ export function extractBlockText(block: AnyBlock | null | undefined): string {
 }
 
 /**
- * Depth-first search for the first block whose plain text contains `needle`
- * (case-insensitive). Returns null if nothing matches.
+ * Walk blocks in document order, counting case-insensitive occurrences of
+ * `needle`. Returns the block containing the `occurrence`-th match (0-indexed)
+ * and its `localIndex` — which match within that block to highlight.
+ *
+ * When the doc has been edited since the search ran and the requested
+ * occurrence no longer exists, falls back to the last available match so the
+ * user still lands somewhere reasonable. Returns null only when there are no
+ * matches at all.
  */
-export function findBlockContaining<T extends AnyBlock>(
+export function findNthBlockMatch<T extends AnyBlock>(
   blocks: readonly T[] | undefined | null,
   needle: string,
-): T | null {
+  occurrence: number,
+): { block: T; localIndex: number } | null {
+  if (!blocks || !needle) return null
   const n = needle.toLowerCase()
   if (!n) return null
-  if (!blocks) return null
-  for (const b of blocks) {
-    const text = extractBlockText(b).toLowerCase()
-    if (text.includes(n)) return b
-    if (Array.isArray(b.children) && b.children.length > 0) {
-      const inner = findBlockContaining(b.children as T[], needle)
-      if (inner) return inner
+  const target = Math.max(0, Math.floor(occurrence))
+
+  let cumulative = 0
+  let lastMatch: { block: T; localIndex: number } | null = null
+
+  function walk(list: readonly T[]): { block: T; localIndex: number } | null {
+    for (const b of list) {
+      const text = extractBlockText(b).toLowerCase()
+      const inBlock = countOccurrences(text, n)
+      if (inBlock > 0) {
+        // The Nth global match might be inside this block.
+        const local = target - cumulative
+        if (local >= 0 && local < inBlock) {
+          return { block: b, localIndex: local }
+        }
+        lastMatch = { block: b, localIndex: inBlock - 1 }
+        cumulative += inBlock
+      }
+      if (Array.isArray(b.children) && b.children.length > 0) {
+        const inner = walk(b.children as unknown as readonly T[])
+        if (inner) return inner
+      }
     }
+    return null
   }
-  return null
+
+  return walk(blocks) ?? lastMatch
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0
+  let count = 0
+  let i = 0
+  while ((i = haystack.indexOf(needle, i)) >= 0) {
+    count++
+    i += needle.length
+  }
+  return count
 }

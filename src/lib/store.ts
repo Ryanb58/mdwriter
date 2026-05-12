@@ -47,6 +47,14 @@ export type AppStore = {
   tree: TreeNode | null
   recentFolders: string[]
   selectedPath: string | null
+  // Full set of selected tree rows (multi-select). Invariant: when
+  // selectedPath is non-null it is also a member of selectedPaths;
+  // when selectedPaths is empty, selectedPath is null.
+  selectedPaths: Set<string>
+  // Folder paths that are currently expanded in the tree. Lifted into
+  // the store so shift-range selection and drag-hover auto-expand can
+  // both reason about visibility.
+  expandedFolders: Set<string>
   openDoc: OpenDoc | null
   editorMode: EditorMode
   rightPane: RightPaneTab | null
@@ -58,6 +66,8 @@ export type AppStore = {
   setTree(tree: TreeNode | null): void
   setRecent(list: string[]): void
   setSelected(path: string | null): void
+  setSelectedPaths(paths: Set<string>, anchor: string | null): void
+  toggleFolderExpanded(path: string, expanded?: boolean): void
   setOpenDoc(doc: OpenDoc | null): void
   patchOpenDoc(patch: Partial<OpenDoc>): void
   setEditorMode(mode: EditorMode): void
@@ -108,6 +118,8 @@ export const useStore = create<AppStore>()(
       tree: null,
       recentFolders: [],
       selectedPath: null,
+      selectedPaths: new Set<string>(),
+      expandedFolders: new Set<string>(),
       openDoc: null,
       editorMode: "block",
       rightPane: "properties",
@@ -123,7 +135,25 @@ export const useStore = create<AppStore>()(
       setRoot: (path) => set({ rootPath: path }),
       setTree: (tree) => set({ tree }),
       setRecent: (list) => set({ recentFolders: list }),
-      setSelected: (path) => set({ selectedPath: path }),
+      setSelected: (path) =>
+        set({
+          selectedPath: path,
+          selectedPaths: path ? new Set([path]) : new Set(),
+        }),
+      setSelectedPaths: (paths, anchor) =>
+        set({
+          selectedPaths: paths,
+          // Keep the invariant: anchor must live in the set (or both empty).
+          selectedPath: anchor && paths.has(anchor) ? anchor : null,
+        }),
+      toggleFolderExpanded: (path, expanded) =>
+        set((s) => {
+          const next = new Set(s.expandedFolders)
+          const want = expanded ?? !next.has(path)
+          if (want) next.add(path)
+          else next.delete(path)
+          return { expandedFolders: next }
+        }),
       setOpenDoc: (doc) => set({ openDoc: doc, editorMode: "block" }),
       patchOpenDoc: (patch) =>
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),

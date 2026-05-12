@@ -25,7 +25,7 @@ export async function openFolder(
   // Switching vaults: drop any open file so the editor doesn't carry stale
   // state from the previous vault. useAutoSave's cleanup flushes pending
   // writes when openDoc.path changes, so unsaved edits aren't lost.
-  useStore.setState({ selectedPath: null, openDoc: null })
+  useStore.setState({ selectedPath: null, selectedPaths: new Set(), expandedFolders: new Set(), openDoc: null })
 
   await ipc.stopWatcher().catch(() => {})
   const opts = treeOptionsFromSettings(useStore.getState().settings)

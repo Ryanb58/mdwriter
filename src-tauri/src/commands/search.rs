@@ -1,6 +1,7 @@
 use crate::errors::{AppError, Result};
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 #[derive(Serialize, Debug)]
@@ -33,6 +34,9 @@ const MAX_HITS: usize = 500;
 const MAX_HITS_PER_FILE: usize = 50;
 // Snippets longer than this are trimmed around the match.
 const SNIPPET_WINDOW: usize = 160;
+// Skip files larger than this; a 5 MiB markdown file is almost always
+// machine-generated and shouldn't block the search on every keystroke.
+const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
 
 #[tauri::command]
 pub fn search_vault(
@@ -84,31 +88,40 @@ pub fn search_vault(
         if !is_markdown(path) {
             continue;
         }
+        // Skip oversized files before the read syscall — avoids slurping a
+        // 100 MB log accidentally named `.md`.
+        if dent
+            .metadata()
+            .map(|m| m.len() > MAX_FILE_BYTES)
+            .unwrap_or(false)
+        {
+            continue;
+        }
         files_scanned += 1;
 
-        let contents = match std::fs::read_to_string(path) {
-            Ok(s) => s,
-            // Skip binaries / unreadable files silently — search should never fail
-            // because one file is unreadable.
+        // Stream the file line-by-line so we can break out the moment a hit
+        // cap fires — never holds more than a single line in memory.
+        let file = match std::fs::File::open(path) {
+            Ok(f) => f,
             Err(_) => continue,
         };
-
+        let reader = BufReader::new(file);
         let mut hits_in_file = 0usize;
-        for (i, line) in contents.lines().enumerate() {
+        for (i, line_res) in reader.lines().enumerate() {
+            let line = match line_res {
+                Ok(s) => s,
+                Err(_) => break,
+            };
             let haystack_owned;
             let haystack: &str = if opts.case_sensitive {
-                line
+                &line
             } else {
                 haystack_owned = line.to_lowercase();
                 &haystack_owned
             };
-            // `to_lowercase` can change byte length, so we re-find on the
-            // original line using the lowercased prefix length as a starting
-            // point — close enough for snippeting, exact for the trimmed
-            // case-sensitive path.
             if let Some(byte_idx) = haystack.find(&needle) {
                 let (snippet, col_start, col_end) =
-                    make_snippet(line, byte_idx, needle.len());
+                    make_snippet(&line, byte_idx, needle.len());
                 hits.push(SearchHit {
                     path: path.to_path_buf(),
                     line: (i + 1) as u32,
@@ -132,10 +145,10 @@ pub fn search_vault(
 }
 
 fn is_markdown(p: &std::path::Path) -> bool {
-    matches!(
-        p.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref(),
-        Some("md") | Some("markdown")
-    )
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
+        .unwrap_or(false)
 }
 
 // Build a snippet centered around the match. Returns the snippet text

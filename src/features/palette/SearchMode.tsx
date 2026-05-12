@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { MagnifyingGlass, FileText, Warning } from "@phosphor-icons/react"
 import { ipc, type SearchHit, type SearchResult } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
+import { basename } from "../../lib/paths"
+import { debounce } from "../../lib/debounce"
 
 const DEBOUNCE_MS = 180
 const MIN_QUERY = 2
@@ -25,39 +27,45 @@ export function SearchMode({
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle")
   const [error, setError] = useState<string | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
-  // Latest in-flight search token — used to discard stale results when the
-  // user types faster than the debounce.
+  // Latest in-flight search token — used to discard stale results when a
+  // newer query has been dispatched while an `await` is still resolving.
   const tokenRef = useRef(0)
   const listRef = useRef<HTMLDivElement>(null)
+
+  const runSearch = useMemo(
+    () =>
+      debounce(async (root: string, q: string) => {
+        const token = ++tokenRef.current
+        try {
+          const r = await ipc.searchVault(root, q)
+          if (token !== tokenRef.current) return
+          setResult(r)
+          setStatus("idle")
+          setError(null)
+          setActiveIdx(0)
+        } catch (e) {
+          if (token !== tokenRef.current) return
+          setStatus("error")
+          setError(String(e))
+        }
+      }, DEBOUNCE_MS),
+    [],
+  )
 
   useEffect(() => {
     if (!rootPath) return
     const trimmed = query.trim()
     if (trimmed.length < MIN_QUERY) {
+      runSearch.cancel()
       setResult(null)
       setStatus("idle")
       return
     }
-    const token = ++tokenRef.current
     setStatus("loading")
-    const handle = window.setTimeout(async () => {
-      try {
-        const r = await ipc.searchVault(rootPath, trimmed)
-        if (token !== tokenRef.current) return
-        setResult(r)
-        setStatus("idle")
-        setError(null)
-        setActiveIdx(0)
-      } catch (e) {
-        if (token !== tokenRef.current) return
-        setStatus("error")
-        setError(String(e))
-      }
-    }, DEBOUNCE_MS)
-    return () => window.clearTimeout(handle)
-  }, [query, rootPath])
+    runSearch.call(rootPath, trimmed)
+    return () => runSearch.cancel()
+  }, [query, rootPath, runSearch])
 
-  // Flatten hits into a navigable list while preserving file grouping for display.
   const groups = useMemo<Group[]>(() => {
     if (!result) return []
     const byPath = new Map<string, SearchHit[]>()
@@ -68,21 +76,23 @@ export function SearchMode({
     }
     return [...byPath.entries()].map(([path, hits]) => ({
       path,
-      rel: relPath(path, rootPath),
-      name: fileName(path),
+      rel: relativePath(path, rootPath),
+      name: basename(path),
       hits,
     }))
   }, [result, rootPath])
 
-  const flat = useMemo(() => groups.flatMap((g) => g.hits), [groups])
+  // Flat list for keyboard nav + a hit→index map so FileGroup doesn't run an
+  // O(n) `flat.indexOf(h)` on every render of every row (which compounded to
+  // O(hits²) at large result sizes).
+  const { flat, flatIndex } = useMemo(() => {
+    const flat = groups.flatMap((g) => g.hits)
+    const flatIndex = new Map<SearchHit, number>()
+    flat.forEach((h, i) => flatIndex.set(h, i))
+    return { flat, flatIndex }
+  }, [groups])
 
   function openHit(hit: SearchHit) {
-    // Set the scroll target before selection so it's already present by the
-    // time useOpenFile resolves and the editor mounts. Each editor mode
-    // walks `matchText` occurrences and stops at `occurrence` to land on the
-    // exact hit the user clicked — even when the same text appears many
-    // times in the file. The Rust search emits hits in document order, so
-    // the hit's index within its file group is its occurrence index.
     const matchText = hit.snippet.slice(hit.colStart, hit.colEnd)
     const fileGroup = groups.find((g) => g.path === hit.path)
     const occurrence = fileGroup ? Math.max(0, fileGroup.hits.indexOf(hit)) : 0
@@ -105,7 +115,6 @@ export function SearchMode({
     }
   }
 
-  // Keep active row in view as the user arrows through results.
   useEffect(() => {
     const list = listRef.current
     if (!list) return
@@ -164,7 +173,7 @@ export function SearchMode({
             <FileGroup
               key={g.path}
               group={g}
-              flat={flat}
+              flatIndex={flatIndex}
               activeIdx={activeIdx}
               onHover={setActiveIdx}
               onSelect={openHit}
@@ -196,13 +205,13 @@ export function SearchMode({
 
 function FileGroup({
   group,
-  flat,
+  flatIndex,
   activeIdx,
   onHover,
   onSelect,
 }: {
   group: Group
-  flat: SearchHit[]
+  flatIndex: Map<SearchHit, number>
   activeIdx: number
   onHover: (i: number) => void
   onSelect: (h: SearchHit) => void
@@ -215,7 +224,7 @@ function FileGroup({
         <span className="ml-auto">{group.hits.length}</span>
       </div>
       {group.hits.map((h) => {
-        const idx = flat.indexOf(h)
+        const idx = flatIndex.get(h) ?? -1
         const active = idx === activeIdx
         return (
           <div
@@ -251,8 +260,8 @@ function SnippetText({
   start: number
   end: number
 }) {
-  // Defensive clamp — server is the source of truth but we don't want a stray
-  // off-by-one to throw inside React's render.
+  // Server is the source of truth on offsets, but a stray off-by-one here
+  // would throw `String.slice` — clamp defensively.
   const s = Math.max(0, Math.min(snippet.length, start))
   const e = Math.max(s, Math.min(snippet.length, end))
   return (
@@ -270,13 +279,7 @@ function EmptyState({ message }: { message: string }) {
   )
 }
 
-function fileName(path: string): string {
-  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))
-  return idx < 0 ? path : path.slice(idx + 1)
-}
-
-function relPath(path: string, root: string | null): string {
-  if (!root) return path
-  if (!path.startsWith(root)) return path
+function relativePath(path: string, root: string | null): string {
+  if (!root || !path.startsWith(root)) return path
   return path.slice(root.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
 }

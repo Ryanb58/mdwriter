@@ -36,10 +36,7 @@ export function BlockEditor({
   docKey: string
 }) {
   const initializedKey = useRef<string | null>(null)
-  // True while the init effect is awaiting `tryParseMarkdownToBlocks` /
-  // `replaceBlocks` for a new docKey. Standalone pendingScroll effects must
-  // wait for this to flip back to false before walking `editor.document` —
-  // otherwise they see the *old* doc's blocks.
+  // True while the init effect is awaiting the async parse — see usage below.
   const parsing = useRef(false)
   const lastEmitted = useRef<string>("")
   const theme = useResolvedTheme()
@@ -93,27 +90,17 @@ export function BlockEditor({
     ),
   )
 
-  // Closure shared by the init effect (fresh load) and the standalone
-  // pendingScroll effect (same doc, new hit). Walks blocks for the Nth
-  // occurrence of `matchText`, scrolls that block's DOM node into view, and
-  // briefly highlights it. Clears the pending target whether or not the
-  // highlight could be drawn — the doc may have changed since the search ran.
   function tryConsumePendingScroll() {
     const { pendingScroll, openDoc, setPendingScroll } = useStore.getState()
     if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) return
-    let target = findNthBlockMatch(
-      editor.document as Parameters<typeof findNthBlockMatch>[0],
-      pendingScroll.matchText,
-      pendingScroll.occurrence,
-    )
+    const docBlocks = editor.document as Parameters<typeof findNthBlockMatch>[0]
+    // Fall back to the first block when the match isn't in any block — the
+    // matchText may live in frontmatter (which BlockNote strips on parse)
+    // or in a block type our text extractor doesn't reach.
+    let target = findNthBlockMatch(docBlocks, pendingScroll.matchText, pendingScroll.occurrence)
     if (!target) {
-      // Match not in any block — likely frontmatter (BlockNote strips YAML
-      // when parsing) or a block content type we don't extract text from.
-      // Fall back to the first block so the user still lands somewhere and
-      // sees a flash, rather than a silent no-op.
-      const docBlocks = editor.document as Array<{ id?: string }>
-      const first = docBlocks?.[0]
-      if (!first || !first.id) {
+      const first = (docBlocks as Array<{ id?: string }> | null | undefined)?.[0]
+      if (!first?.id) {
         setPendingScroll(null)
         return
       }
@@ -122,20 +109,15 @@ export function BlockEditor({
     try {
       editor.setTextCursorPosition(target.block as never, "start")
     } catch {
-      // Block may have been removed in a race; clearing the pending target
+      // Block may have been removed in a race; clearing pendingScroll below
       // still lets the next hit succeed.
     }
     const id = (target.block as { id?: string }).id
     setPendingScroll(null)
     if (!id) return
-    // ProseMirror commits DOM updates synchronously on dispatch, but a
-    // freshly-replaced editor (init path) may not have rendered nodes yet
-    // when this closure runs. Poll up to a handful of frames for the block
-    // element to appear, then scroll + flash.
     waitForBlockNode(hostRef, id, (node) => {
-      // Instant scroll (not smooth) so the highlight paints at the settled
-      // position — a smooth scroll spans hundreds of milliseconds during
-      // which the flash would already be fading on an off-screen element.
+      // Instant (not smooth) scroll so the flash paints at the settled
+      // viewport position rather than chasing an in-flight smooth scroll.
       node.scrollIntoView({ block: "center", behavior: "auto" })
       requestAnimationFrame(() => flashHighlight(node))
     })
@@ -154,17 +136,12 @@ export function BlockEditor({
       parsing.current = false
       tryConsumePendingScroll()
     })()
-    // tryConsumePendingScroll is closed over the latest store snapshot via
-    // getState — intentionally not in deps so this effect only re-runs on
-    // doc change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey, initialMarkdown, editor])
 
-  // Pending scroll fired after the doc is already loaded (e.g., user clicks
-  // another search hit in the same file). The `parsing` guard prevents this
-  // from racing the init effect — when we're switching files, the init
-  // effect's async parse has set `editor.document` to the *new* blocks only
-  // after it finishes; firing earlier would walk the previous file's tree.
+  // `parsing` guards against racing the init effect — when switching files,
+  // the new blocks aren't in `editor.document` until the async parse above
+  // resolves, so firing earlier would walk the previous file's tree.
   const pendingScroll = useStore((s) => s.pendingScroll)
   useEffect(() => {
     if (!pendingScroll) return
@@ -285,19 +262,10 @@ export function BlockEditor({
   )
 }
 
-// CSS.escape is widely supported but JSDOM (used by vitest) may lack it.
-function cssEscape(s: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(s)
-  }
-  return s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`)
-}
-
-// Find the block element with `data-id="<id>"` inside the BlockEditor host.
-// ProseMirror commits DOM updates synchronously on dispatch, but after the
-// init effect's `replaceBlocks` the new nodes may not exist in the DOM yet
-// when this closure runs. Poll a few frames before giving up — `cb` only
-// fires once a match is located.
+// Even after `replaceBlocks`, BlockNote may not have rendered the new block
+// nodes by the time we look them up. Poll a few frames for the DOM to catch
+// up before giving up.
+const MAX_BLOCK_NODE_POLL_FRAMES = 10
 function waitForBlockNode(
   hostRef: React.RefObject<HTMLDivElement | null>,
   id: string,
@@ -306,13 +274,13 @@ function waitForBlockNode(
 ) {
   const host = hostRef.current
   if (host) {
-    const node = host.querySelector(`[data-id="${cssEscape(id)}"]`)
+    const node = host.querySelector(`[data-id="${CSS.escape(id)}"]`)
     if (node instanceof HTMLElement) {
       cb(node)
       return
     }
   }
-  if (attempt >= 10) return
+  if (attempt >= MAX_BLOCK_NODE_POLL_FRAMES) return
   requestAnimationFrame(() => waitForBlockNode(hostRef, id, cb, attempt + 1))
 }
 

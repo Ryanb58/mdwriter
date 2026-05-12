@@ -187,8 +187,7 @@ export const useStore = create<AppStore>()(
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
       setRenamingPath: (path) => set({ renamingPath: path }),
-      setPendingScroll: (target) =>
-        set((s) => (s.pendingScroll === target ? s : { pendingScroll: target })),
+      setPendingScroll: (target) => set({ pendingScroll: target }),
 
       setAiAgent: (id) => set({ aiAgent: id }),
       setAiAvailable: (rows) => set({ aiAvailable: rows }),

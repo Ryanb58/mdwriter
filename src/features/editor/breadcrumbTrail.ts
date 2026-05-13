@@ -13,16 +13,16 @@ export type BreadcrumbTrail = {
  * the vault label, each subfolder segment (with the absolute path we can
  * use to reveal it in the tree), and the file name.
  *
- * Returns `folders: []` when `docPath` lives outside `rootPath` — we
- * still render the trail as text, but there's nothing meaningful to
- * click because the segments wouldn't resolve to tree rows.
+ * Returns `folders: []` when `docPath` lives outside `rootPath`. Without
+ * a vault-relative anchor we can't address tree rows, so the UI shows
+ * just the vault label and filename for that defensive case.
  */
 export function buildBreadcrumbTrail(
   rootPath: string | null,
   docPath: string,
 ): BreadcrumbTrail {
   const root = rootPath ?? ""
-  const insideVault = !!root && docPath.startsWith(root)
+  const insideVault = isUnder(root, docPath)
   const rel = insideVault
     ? docPath.slice(root.length).replace(/^[\\/]+/, "")
     : docPath
@@ -39,4 +39,13 @@ export function buildBreadcrumbTrail(
     : []
 
   return { vaultName, folders, fileName }
+}
+
+// Prefix check that respects path boundaries so root="/vault" does not
+// swallow docPath="/vault2/file.md".
+function isUnder(root: string, docPath: string): boolean {
+  if (!root || !docPath.startsWith(root) || docPath === root) return false
+  if (root.endsWith("/") || root.endsWith("\\")) return true
+  const next = docPath[root.length]
+  return next === "/" || next === "\\"
 }

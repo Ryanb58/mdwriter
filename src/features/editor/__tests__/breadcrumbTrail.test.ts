@@ -41,6 +41,18 @@ describe("buildBreadcrumbTrail", () => {
     expect(t.fileName).toBe("note.md")
   })
 
+  it("does not treat a sibling vault with a prefix-matching name as inside", () => {
+    // /vault2/... must not look like it lives under /vault.
+    const t = buildBreadcrumbTrail("/vault", "/vault2/notes/file.md")
+    expect(t.folders).toEqual([])
+    expect(t.fileName).toBe("file.md")
+  })
+
+  it("does not treat the root itself as a doc inside the vault", () => {
+    const t = buildBreadcrumbTrail("/vault", "/vault")
+    expect(t.folders).toEqual([])
+  })
+
   it("handles a null root path gracefully", () => {
     const t = buildBreadcrumbTrail(null, "/wherever/note.md")
     expect(t.vaultName).toBe("")

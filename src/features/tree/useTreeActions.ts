@@ -1,6 +1,6 @@
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
-import { joinPath, parent } from "../../lib/paths"
+import { joinPath, parent, basename } from "../../lib/paths"
 import { pruneSubpaths, isUnderAny } from "./pruneSubpaths"
 
 export async function refreshTree() {
@@ -76,7 +76,11 @@ export function useTreeActions() {
       useStore.getState().toggleFolderExpanded(parentDir, true)
     },
     async rename(from: string, newBasename: string) {
-      const to = joinPath(parent(from), newBasename)
+      const oldName = basename(from)
+      const dot = oldName.lastIndexOf(".")
+      const oldExt = dot > 0 ? oldName.slice(dot) : ""
+      const normalized = newBasename.includes(".") || !oldExt ? newBasename : newBasename + oldExt
+      const to = joinPath(parent(from), normalized)
       await ipc.renamePath(from, to)
       await refreshTree()
       const s = useStore.getState()

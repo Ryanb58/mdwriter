@@ -7,7 +7,7 @@ import type { TreeNode as TN } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { useTreeActions } from "./useTreeActions"
 import { TreeContextMenu, type ContextActionGroup } from "./TreeContextMenu"
-import { parent, basename } from "../../lib/paths"
+import { parent } from "../../lib/paths"
 import { handleRowClick } from "./selection"
 import { useRowDnd } from "./useTreeDnd"
 
@@ -21,26 +21,31 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
   const toggleFolderExpanded = useStore((s) => s.toggleFolderExpanded)
   const renamingPath = useStore((s) => s.renamingPath)
   const actions = useTreeActions()
-  const expanded = node.kind === "dir" && expandedFolders.has(node.path)
+  const isDir = node.kind === "dir"
+  const expanded = isDir && expandedFolders.has(node.path)
   const inSelection = selectedPaths.has(node.path)
   const dnd = useRowDnd(node)
+
+  // Strip .md/.markdown from display and rename-input; extension is re-appended in useTreeActions.rename
+  const displayName = !isDir && /\.(md|markdown)$/i.test(node.name)
+    ? node.name.replace(/\.(md|markdown)$/i, "")
+    : node.name
 
   // Global F2 — when this row is the selected file, the keyboard handler in
   // useTreeShortcuts sets `renamingPath` to its path; we react to that here.
   useEffect(() => {
     if (renamingPath === node.path && !renaming) {
-      setDraftName(basename(node.path))
+      setDraftName(displayName)
       setRenaming(true)
       useStore.getState().setRenamingPath(null)
     }
-  }, [renamingPath, node.path, renaming])
+  }, [renamingPath, node.path, renaming, displayName])
 
   function commitRename() {
-    if (draftName && draftName !== node.name) actions.rename(node.path, draftName).catch(console.error)
+    if (draftName && draftName !== displayName) actions.rename(node.path, draftName).catch(console.error)
     setRenaming(false)
   }
 
-  const isDir = node.kind === "dir"
   const parentDir = isDir ? node.path : parent(node.path)
 
   const menuGroups: ContextActionGroup[] = [
@@ -61,7 +66,7 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
     [
       {
         label: "Rename",
-        onClick: () => { setDraftName(basename(node.path)); setRenaming(true) },
+        onClick: () => { setDraftName(displayName); setRenaming(true) },
         icon: <PencilSimple size={14} />,
         shortcut: "F2",
       },
@@ -93,11 +98,6 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
   const isAnchor = selectedPath === node.path
   const fileSelected = !isDir && inSelection
   const dirSelected = isDir && inSelection
-
-  // Strip extension from display name for files (cleaner)
-  const displayName = !isDir && /\.(md|markdown)$/i.test(node.name)
-    ? node.name.replace(/\.(md|markdown)$/i, "")
-    : node.name
 
   return (
     <div>
@@ -134,7 +134,7 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
         onDoubleClick={(e) => {
           e.preventDefault()
           if (renaming) return
-          setDraftName(basename(node.path))
+          setDraftName(displayName)
           setRenaming(true)
         }}
       >

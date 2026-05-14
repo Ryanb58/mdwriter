@@ -4,9 +4,9 @@ import { useOpenFile } from "./useOpenFile"
 import { useAutoSave } from "./useAutoSave"
 import { useEditorMode } from "./useEditorMode"
 import { useAutoRename } from "./useAutoRename"
-import { basename } from "../../lib/paths"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
+import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
 import { Sidebar, Warning, TextAa, Code, Robot } from "@phosphor-icons/react"
 
 // CodeMirror only loads when the user enters raw mode.
@@ -47,14 +47,9 @@ export function EditorPane() {
     )
   }
 
-  // Breadcrumb: vault name → ...subdirs → filename
-  const root = rootPath ?? ""
-  const rel = doc.path.startsWith(root) ? doc.path.slice(root.length).replace(/^[\\/]+/, "") : doc.path
-  const segments = rel.split(/[\\/]/).filter(Boolean)
-  const fileName = segments.pop() ?? basename(doc.path)
-  const vaultName = root ? basename(root) : ""
-  const trailSegments = vaultName ? [vaultName, ...segments] : segments
-  const folderTrail = trailSegments.join(" / ")
+  // Breadcrumb: vault name → ...subdirs → filename. Subdir segments are
+  // clickable — they reveal the folder in the tree sidebar.
+  const { vaultName, folders, fileName } = buildBreadcrumbTrail(rootPath, doc.path)
 
   // Switch to a target mode without toggling. The toggleMode hook handles the
   // necessary frontmatter ↔ rawMarkdown conversion.
@@ -67,9 +62,7 @@ export function EditorPane() {
     <div className="flex flex-col h-full bg-bg">
       <div className="flex items-center justify-between border-b border-border px-5 py-2.5">
         <div className="flex items-baseline gap-2 min-w-0">
-          {folderTrail && (
-            <span className="text-[12px] text-text-subtle truncate">{folderTrail} /</span>
-          )}
+          <FolderBreadcrumb vaultName={vaultName} folders={folders} />
           <EditableFileName fileName={fileName} />
         </div>
         <div className="flex items-center gap-3 flex-none">
@@ -125,6 +118,45 @@ export function EditorPane() {
         )}
       </div>
     </div>
+  )
+}
+
+function FolderBreadcrumb({
+  vaultName, folders,
+}: { vaultName: string; folders: BreadcrumbFolder[] }) {
+  if (!vaultName && folders.length === 0) return null
+
+  function revealInTree(index: number) {
+    const target = folders[index]
+    if (!target) return
+    const { toggleFolderExpanded, setSelected } = useStore.getState()
+    // Expand every ancestor up to and including the clicked folder so the
+    // row is actually visible after we select it.
+    for (let i = 0; i <= index; i++) {
+      toggleFolderExpanded(folders[i].path, true)
+    }
+    setSelected(target.path)
+  }
+
+  return (
+    <span className="text-[12px] text-text-subtle truncate min-w-0">
+      {vaultName && <span>{vaultName}</span>}
+      {vaultName && folders.length > 0 && <span aria-hidden> / </span>}
+      {folders.map((seg, i) => (
+        <span key={seg.path}>
+          <button
+            type="button"
+            onClick={() => revealInTree(i)}
+            title={`Reveal "${seg.name}" in sidebar`}
+            className="hover:text-text hover:underline rounded"
+          >
+            {seg.name}
+          </button>
+          {i < folders.length - 1 && <span aria-hidden> / </span>}
+        </span>
+      ))}
+      <span aria-hidden> /</span>
+    </span>
   )
 }
 

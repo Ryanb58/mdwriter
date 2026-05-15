@@ -74,6 +74,8 @@ export function useTreeActions() {
       }
       await refreshTree()
       useStore.getState().toggleFolderExpanded(parentDir, true)
+      useStore.getState().setSelected(candidate)
+      useStore.getState().setRenamingPath(candidate)
     },
     async rename(from: string, newBasename: string) {
       const oldName = basename(from)

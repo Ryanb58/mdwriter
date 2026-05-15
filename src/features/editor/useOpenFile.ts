@@ -12,7 +12,10 @@ export function useOpenFile() {
     // If the selected row is a directory, leave the current openDoc alone —
     // tree selection (highlight) is independent of which file is open.
     const node = findNode(useStore.getState().tree, selectedPath)
-    if (node && node.kind === "dir") return
+    if (node?.kind === "dir") return
+    // If the path isn't in the tree and doesn't look like a markdown file
+    // (e.g. a folder whose tree entry isn't reflected yet), skip the read.
+    if (!node && !/\.(md|markdown)$/i.test(selectedPath)) return
     let cancelled = false
     ;(async () => {
       try {

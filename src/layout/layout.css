@@ -204,6 +204,42 @@
   opacity: 0;
 }
 
+/* ─── resize handles (docked, open panels only) ────────────────────────── */
+
+.layout-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 20;
+  cursor: col-resize;
+  background-color: transparent;
+  transition:
+    left var(--layout-width-dur) var(--layout-easing),
+    right var(--layout-width-dur) var(--layout-easing),
+    background-color 120ms;
+}
+
+.layout-resize-handle[data-side="left"] {
+  left: calc(var(--layout-left-panel, 0px) - 3px);
+}
+.layout-resize-handle[data-side="right"] {
+  right: calc(var(--layout-right-panel, 0px) - 3px);
+}
+
+.layout-resize-handle:hover,
+.layout-resize-handle:active {
+  background-color: color-mix(in oklch, var(--color-accent) 50%, transparent);
+}
+
+/* While dragging, freeze all width/track transitions so the panel tracks the
+   cursor without lag. */
+.layout-shell[data-resizing="true"] .layout-body,
+.layout-shell[data-resizing="true"] .layout-panel,
+.layout-shell[data-resizing="true"] .layout-resize-handle {
+  transition: none !important;
+}
+
 /* ─── backdrop (overlay / sheet) ───────────────────────────────────────── */
 
 .layout-backdrop {

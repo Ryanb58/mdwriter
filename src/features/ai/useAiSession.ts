@@ -93,7 +93,9 @@ export async function sendPrompt(text: string) {
   const selection = sel && sel.attached && sel.text
     ? { text: sel.text, sourceNote: relForCurrentNote(sel.sourcePath, root) }
     : null
-  const wrapped = buildPrompt({ currentNote, userText: trimmed, selection })
+  const activeChat = store.activeChatId ? store.chats[store.activeChatId] : null
+  const systemPrompt = activeChat?.systemPrompt ?? null
+  const wrapped = buildPrompt({ currentNote, userText: trimmed, selection, systemPrompt })
 
   try {
     await ipc.startAiSession(store.aiAgent, wrapped, root)

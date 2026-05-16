@@ -139,4 +139,29 @@ export const ipc = {
   startAiSession: (agent: AgentId, prompt: string, vaultPath: string) =>
     invoke<void>("start_ai_session", { agent, prompt, vaultPath }),
   stopAiSession: () => invoke<void>("stop_ai_session"),
+  listChats: (vaultPath: string) =>
+    invoke<Array<{ id: string; title: string; updated_at: number; created_at: number }>>(
+      "list_chats",
+      { vaultPath },
+    ).then((rows) =>
+      rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        updatedAt: r.updated_at,
+        createdAt: r.created_at,
+      })),
+    ),
+  readChat: (vaultPath: string, id: string) =>
+    invoke<unknown>("read_chat", { vaultPath, id }),
+  writeChat: (vaultPath: string, id: string, data: unknown) =>
+    invoke<void>("write_chat", { vaultPath, id, data }),
+  deleteChat: (vaultPath: string, id: string) =>
+    invoke<void>("delete_chat", { vaultPath, id }),
+}
+
+export type ChatSummary = {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
 }

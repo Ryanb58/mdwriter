@@ -72,4 +72,24 @@ describe("buildPrompt", () => {
     })
     expect(out).toBe("hi")
   })
+
+  it("prepends chat instructions when provided", () => {
+    const out = buildPrompt({
+      currentNote: null,
+      userText: "answer please",
+      systemPrompt: "Respond in haiku.",
+    })
+    expect(out).toContain("[chat instructions]")
+    expect(out).toContain("Respond in haiku.")
+    expect(out.indexOf("instructions")).toBeLessThan(out.indexOf("answer please"))
+  })
+
+  it("ignores whitespace-only instructions", () => {
+    const out = buildPrompt({
+      currentNote: null,
+      userText: "hi",
+      systemPrompt: "   ",
+    })
+    expect(out).toBe("hi")
+  })
 })

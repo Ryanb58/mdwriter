@@ -7,9 +7,12 @@ import { useAutoRename } from "./useAutoRename"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
-import { Sidebar, Warning, TextAa, Code, Robot } from "@phosphor-icons/react"
+import { Sidebar, Warning, TextAa, Code, Robot, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { useLayout } from "../../layout/LayoutShell"
 import { isOverlayMode } from "../../layout/constants"
+import { openPalette } from "../palette/openPalette"
+import { createNewFile } from "../tree/useTreeActions"
+import { targetParentDir } from "../tree/targetDir"
 
 // CodeMirror only loads when the user enters raw mode.
 const RawEditor = lazy(() =>
@@ -49,17 +52,7 @@ export function EditorPane() {
   }
 
   if (!doc) {
-    return (
-      <div className="flex h-full items-center justify-center text-text-muted">
-        <div className="text-center">
-          <p className="text-sm mb-2">Select a file or create a new one.</p>
-          <p className="text-xs text-text-subtle">
-            <kbd className="font-mono px-1.5 py-0.5 rounded border border-border bg-surface">⌘P</kbd>
-            <span className="mx-2">to open</span>
-          </p>
-        </div>
-      </div>
-    )
+    return <EmptyEditorState />
   }
 
   // Breadcrumb: vault name → ...subdirs → filename. Subdir segments are
@@ -133,6 +126,77 @@ export function EditorPane() {
         )}
       </div>
     </div>
+  )
+}
+
+function EmptyEditorState() {
+  const tree = useStore((s) => s.tree)
+  const selectedPath = useStore((s) => s.selectedPath)
+  const rootPath = useStore((s) => s.rootPath)
+
+  async function newNote() {
+    const target = targetParentDir(tree, selectedPath, rootPath)
+    if (!target) return
+    try {
+      await createNewFile(target)
+    } catch (e) {
+      console.error("new note failed", e)
+    }
+  }
+
+  return (
+    <div className="flex h-full items-center justify-center bg-bg">
+      <div className="w-full max-w-2xl px-8">
+        <p className="text-[12px] text-text-subtle text-center mb-6">
+          Nothing open. Pick where to start.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <QuickAction
+            icon={<NotePencil size={20} />}
+            label="New note"
+            hint="⌘N"
+            onClick={newNote}
+          />
+          <QuickAction
+            icon={<FolderOpen size={20} />}
+            label="Open recent"
+            hint="⌘P"
+            onClick={() => openPalette("file")}
+          />
+          <QuickAction
+            icon={<MagnifyingGlass size={20} />}
+            label="Search"
+            hint="⌘⇧F"
+            onClick={() => openPalette("search")}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function QuickAction({
+  icon, label, hint, onClick,
+}: {
+  icon: React.ReactNode
+  label: string
+  hint: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex flex-col items-start gap-3 rounded-lg border border-border bg-surface px-4 py-4 text-left transition-colors hover:border-border-strong hover:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    >
+      <span className="text-text-subtle group-hover:text-text transition-colors">{icon}</span>
+      <span className="flex items-baseline justify-between w-full gap-2">
+        <span className="text-[13px] font-medium text-text">{label}</span>
+        <kbd className="font-mono text-[10px] text-text-subtle border border-border rounded px-1.5 py-0.5 group-hover:border-border-strong">
+          {hint}
+        </kbd>
+      </span>
+    </button>
   )
 }
 

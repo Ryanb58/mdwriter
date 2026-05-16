@@ -20,6 +20,8 @@ import { UpdateBanner } from "./features/updates/UpdateBanner"
 import { usePasteDiagnostic } from "./lib/pasteDiagnostic"
 import "./App.css"
 
+const MIN_EDITOR_WIDTH = 300
+
 export default function App() {
   useStartupRestore()
   useExternalChanges()
@@ -99,16 +101,24 @@ export default function App() {
           )}
           {!leftPaneCollapsed && (
             <ResizeHandle
-              onMouseDown={(e) => startResize(e, leftPaneWidth, setLeftPaneWidth, 160, 520, 1)}
+              onMouseDown={(e) => {
+                const containerW = containerRef.current?.clientWidth ?? 9999
+                const maxLeft = Math.max(160, containerW - (rightPane ? rightPaneWidth : 0) - MIN_EDITOR_WIDTH)
+                startResize(e, leftPaneWidth, setLeftPaneWidth, 160, maxLeft, 1)
+              }}
             />
           )}
-          <main className="flex-1 min-w-0 flex flex-col">
+          <main className="flex-1 min-w-[300px] flex flex-col">
             <EditorPane />
           </main>
           {rightPane && (
             <>
             <ResizeHandle
-              onMouseDown={(e) => startResize(e, rightPaneWidth, setRightPaneWidth, 200, 640, -1)}
+              onMouseDown={(e) => {
+                const containerW = containerRef.current?.clientWidth ?? 9999
+                const maxRight = Math.max(200, containerW - (leftPaneCollapsed ? 0 : leftPaneWidth) - MIN_EDITOR_WIDTH)
+                startResize(e, rightPaneWidth, setRightPaneWidth, 200, maxRight, -1)
+              }}
             />
             <aside className="flex-none bg-surface flex flex-col min-h-0" style={{ width: rightPaneWidth }}>
               <div className="flex items-center border-b border-border h-9 px-1 flex-none">

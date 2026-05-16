@@ -40,25 +40,38 @@ async function trashImpl(paths: readonly string[]) {
   if (Object.keys(patch).length > 0) useStore.setState(patch)
 }
 
+// Tauri command errors arrive as `{ kind, message }`. The Rust create_*
+// commands surface filename collisions as `already exists: <path>`; only
+// that case is safe to retry — other errors (permissions, missing parent,
+// disk full) must propagate so the caller sees the real failure.
+function isAlreadyExistsError(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false
+  const msg = (e as { message?: unknown }).message
+  return typeof msg === "string" && msg.startsWith("already exists:")
+}
+
+export async function createNewFile(parentDir: string) {
+  let n = 1
+  let candidate = joinPath(parentDir, "untitled.md")
+  while (true) {
+    try {
+      await ipc.createFile(candidate)
+      break
+    } catch (e) {
+      if (!isAlreadyExistsError(e)) throw e
+      n += 1
+      candidate = joinPath(parentDir, `untitled ${n}.md`)
+      if (n > 50) throw new Error("Too many untitled files")
+    }
+  }
+  await refreshTree()
+  useStore.getState().toggleFolderExpanded(parentDir, true)
+  useStore.getState().setSelected(candidate)
+}
+
 export function useTreeActions() {
   return {
-    async newFile(parentDir: string) {
-      let n = 1
-      let candidate = joinPath(parentDir, "untitled.md")
-      while (true) {
-        try {
-          await ipc.createFile(candidate)
-          break
-        } catch {
-          n += 1
-          candidate = joinPath(parentDir, `untitled ${n}.md`)
-          if (n > 50) throw new Error("Too many untitled files")
-        }
-      }
-      await refreshTree()
-      useStore.getState().toggleFolderExpanded(parentDir, true)
-      useStore.getState().setSelected(candidate)
-    },
+    newFile: createNewFile,
     async newFolder(parentDir: string) {
       let n = 1
       let candidate = joinPath(parentDir, "untitled folder")
@@ -66,7 +79,8 @@ export function useTreeActions() {
         try {
           await ipc.createDir(candidate)
           break
-        } catch {
+        } catch (e) {
+          if (!isAlreadyExistsError(e)) throw e
           n += 1
           candidate = joinPath(parentDir, `untitled folder ${n}`)
           if (n > 50) throw new Error("Too many untitled folders")

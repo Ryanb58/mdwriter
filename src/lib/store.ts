@@ -110,6 +110,12 @@ export type AppStore = {
   setAiAgent(id: AgentId): void
   aiAvailable: AgentAvailability[]
   setAiAvailable(rows: AgentAvailability[]): void
+  /**
+   * Mirror of the active chat's `messages`. Kept as a top-level field so
+   * existing selectors and helpers don't have to thread chat lookups.
+   * The chats map remains the source of truth — every mutation here also
+   * patches `chats[activeChatId].messages` and bumps `updatedAt`.
+   */
   aiMessages: AiMessage[]
   appendAiMessage(msg: AiMessage): void
   setAiMessages(msgs: AiMessage[]): void
@@ -117,6 +123,15 @@ export type AppStore = {
   clearAiMessages(): void
   aiRunning: boolean
   setAiRunning(v: boolean): void
+  /** Vault-scoped chats keyed by id. Loaded by `useChatPersistence`. */
+  chats: Record<string, Chat>
+  activeChatId: string | null
+  setChats(chats: Record<string, Chat>): void
+  setActiveChat(id: string | null): void
+  createChat(opts?: { activate?: boolean }): string
+  renameChat(id: string, title: string): void
+  setChatSystemPrompt(id: string, prompt: string): void
+  deleteChat(id: string): void
   /**
    * One-shot draft injected from outside the composer (e.g. "Edit and resend"
    * on a past user message). MessageInput consumes and clears it.
@@ -157,6 +172,81 @@ export type AiMessage =
   | AssistantMessage
   | { role: "system"; text: string }
 
+export type Chat = {
+  id: string
+  title: string
+  agent: AgentId
+  messages: AiMessage[]
+  /** Per-thread system prompt prepended by `buildPrompt`. Empty = none. */
+  systemPrompt: string
+  createdAt: number
+  updatedAt: number
+}
+
+const TITLE_FROM_MESSAGE_LEN = 60
+
+/**
+ * Derive a short chat title from the user's first message. Stops at the
+ * first newline so multi-paragraph prompts don't make a title with line
+ * breaks in it. Empty input falls back to "New chat".
+ */
+export function deriveChatTitle(firstUserMessage: string): string {
+  const trimmed = firstUserMessage.trim().split("\n")[0]?.trim() ?? ""
+  if (!trimmed) return "New chat"
+  return trimmed.length > TITLE_FROM_MESSAGE_LEN
+    ? trimmed.slice(0, TITLE_FROM_MESSAGE_LEN).trimEnd() + "…"
+    : trimmed
+}
+
+function makeChatId(): string {
+  return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
+
+function pickMostRecent(chats: Record<string, Chat>): string | null {
+  const ids = Object.keys(chats)
+  if (ids.length === 0) return null
+  ids.sort((a, b) => chats[b].updatedAt - chats[a].updatedAt)
+  return ids[0]
+}
+
+/**
+ * Update the active chat's `messages` (and optionally `title`) and mirror
+ * the new messages onto the top-level `aiMessages` field. Auto-creates a
+ * chat when none exists so the first user turn doesn't have to call
+ * `createChat` itself.
+ */
+function withActiveChat(
+  s: AppStore,
+  updater: (chat: Chat, msgs: AiMessage[]) => Partial<Pick<Chat, "messages" | "title">>,
+): Partial<AppStore> {
+  let id = s.activeChatId
+  let chats = s.chats
+  if (!id || !chats[id]) {
+    id = makeChatId()
+    const now = Date.now()
+    const fresh: Chat = {
+      id,
+      title: "",
+      agent: s.aiAgent,
+      messages: [],
+      systemPrompt: "",
+      createdAt: now,
+      updatedAt: now,
+    }
+    chats = { ...chats, [id]: fresh }
+  }
+  const chat = chats[id]
+  const update = updater(chat, chat.messages)
+  const messages = update.messages ?? chat.messages
+  const title = update.title !== undefined ? update.title : chat.title
+  const nextChat: Chat = { ...chat, messages, title, updatedAt: Date.now() }
+  return {
+    chats: { ...chats, [id]: nextChat },
+    activeChatId: id,
+    aiMessages: messages,
+  }
+}
+
 export const useStore = create<AppStore>()(
   persist(
     (set) => ({
@@ -181,6 +271,8 @@ export const useStore = create<AppStore>()(
       aiRunning: false,
       aiDraftRequest: null,
       editorSelection: null,
+      chats: {},
+      activeChatId: null,
 
       setRoot: (path) => set({ rootPath: path }),
       setTree: (tree) => set({ tree }),
@@ -216,20 +308,117 @@ export const useStore = create<AppStore>()(
       setRenamingPath: (path) => set({ renamingPath: path }),
       setPendingScroll: (target) => set({ pendingScroll: target }),
 
-      setAiAgent: (id) => set({ aiAgent: id }),
-      setAiAvailable: (rows) => set({ aiAvailable: rows }),
-      appendAiMessage: (msg) => set((s) => ({ aiMessages: [...s.aiMessages, msg] })),
-      setAiMessages: (msgs) => set({ aiMessages: msgs }),
-      patchLastAssistantMessage: (patch) =>
+      setAiAgent: (id) =>
         set((s) => {
-          const idx = s.aiMessages.findLastIndex((m) => m.role === "assistant")
-          if (idx < 0) return {}
-          const next = s.aiMessages.slice()
-          next[idx] = patch(next[idx] as AssistantMessage)
-          return { aiMessages: next }
+          const next: Partial<AppStore> = { aiAgent: id }
+          // Stamp the live agent onto the active chat so per-thread agent
+          // choice is preserved on reload.
+          if (s.activeChatId && s.chats[s.activeChatId]) {
+            const chats = { ...s.chats }
+            chats[s.activeChatId] = { ...chats[s.activeChatId], agent: id, updatedAt: Date.now() }
+            next.chats = chats
+          }
+          return next
         }),
-      clearAiMessages: () => set({ aiMessages: [] }),
+      setAiAvailable: (rows) => set({ aiAvailable: rows }),
+      appendAiMessage: (msg) =>
+        set((s) => withActiveChat(s, (chat, msgs) => {
+          const messages = [...msgs, msg]
+          const title = chat.title || (msg.role === "user" ? deriveChatTitle(msg.text) : chat.title)
+          return { messages, title }
+        })),
+      setAiMessages: (msgs) =>
+        set((s) => withActiveChat(s, () => ({ messages: msgs }))),
+      patchLastAssistantMessage: (patch) =>
+        set((s) => withActiveChat(s, (_chat, msgs) => {
+          const idx = msgs.findLastIndex((m) => m.role === "assistant")
+          if (idx < 0) return {}
+          const next = msgs.slice()
+          next[idx] = patch(next[idx] as AssistantMessage)
+          return { messages: next }
+        })),
+      clearAiMessages: () =>
+        set((s) => withActiveChat(s, () => ({ messages: [] }))),
       setAiRunning: (v) => set({ aiRunning: v }),
+      setChats: (chats) =>
+        set((s) => {
+          // If the active chat was dropped (e.g. external delete), pick the
+          // most-recently-updated remaining chat. None left → activeChatId is
+          // cleared and `aiMessages` empties so the panel shows its empty state.
+          const stillActive = s.activeChatId && chats[s.activeChatId]
+          if (stillActive) {
+            return { chats, aiMessages: chats[s.activeChatId!].messages }
+          }
+          const nextActive = pickMostRecent(chats)
+          return {
+            chats,
+            activeChatId: nextActive,
+            aiMessages: nextActive ? chats[nextActive].messages : [],
+            aiAgent: nextActive ? chats[nextActive].agent : s.aiAgent,
+          }
+        }),
+      setActiveChat: (id) =>
+        set((s) => {
+          if (id == null) return { activeChatId: null, aiMessages: [] }
+          const chat = s.chats[id]
+          if (!chat) return {}
+          return {
+            activeChatId: id,
+            aiMessages: chat.messages,
+            aiAgent: chat.agent,
+          }
+        }),
+      createChat: (opts) => {
+        const id = makeChatId()
+        const now = Date.now()
+        set((s) => {
+          const chat: Chat = {
+            id,
+            title: "",
+            agent: s.aiAgent,
+            messages: [],
+            systemPrompt: "",
+            createdAt: now,
+            updatedAt: now,
+          }
+          const chats = { ...s.chats, [id]: chat }
+          if (opts?.activate ?? true) {
+            return { chats, activeChatId: id, aiMessages: [] }
+          }
+          return { chats }
+        })
+        return id
+      },
+      renameChat: (id, title) =>
+        set((s) => {
+          const chat = s.chats[id]
+          if (!chat) return {}
+          const chats = { ...s.chats, [id]: { ...chat, title, updatedAt: Date.now() } }
+          return { chats }
+        }),
+      setChatSystemPrompt: (id, prompt) =>
+        set((s) => {
+          const chat = s.chats[id]
+          if (!chat) return {}
+          const chats = { ...s.chats, [id]: { ...chat, systemPrompt: prompt, updatedAt: Date.now() } }
+          return { chats }
+        }),
+      deleteChat: (id) =>
+        set((s) => {
+          if (!s.chats[id]) return {}
+          const { [id]: _gone, ...rest } = s.chats
+          void _gone
+          if (s.activeChatId !== id) {
+            return { chats: rest }
+          }
+          const nextActive = pickMostRecent(rest)
+          return {
+            chats: rest,
+            activeChatId: nextActive,
+            aiMessages: nextActive ? rest[nextActive].messages : [],
+            aiAgent: nextActive ? rest[nextActive].agent : s.aiAgent,
+          }
+        }),
       requestAiDraft: (text) => set({ aiDraftRequest: { text, nonce: Date.now() } }),
       consumeAiDraftRequest: () => set({ aiDraftRequest: null }),
       setEditorSelection: (s) =>

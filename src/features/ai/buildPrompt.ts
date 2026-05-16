@@ -12,6 +12,8 @@ export type PromptContext = {
   userText: string
   /** Highlighted text the user attached as additional context. */
   selection?: { text: string; sourceNote: string | null } | null
+  /** Per-thread system prompt the user authored in the chat's Instructions. */
+  systemPrompt?: string | null
 }
 
 /** Find every `[[name]]` reference in the prompt, in order, deduped. */
@@ -33,6 +35,14 @@ export function buildPrompt(ctx: PromptContext): string {
   const lines: string[] = []
   const refs = extractWikilinks(ctx.userText)
   const sel = ctx.selection && ctx.selection.text ? ctx.selection : null
+  const systemPrompt = ctx.systemPrompt?.trim() || null
+
+  if (systemPrompt) {
+    lines.push("[chat instructions]")
+    lines.push(systemPrompt)
+    lines.push("[/chat instructions]")
+    lines.push("")
+  }
 
   if (ctx.currentNote || refs.length > 0 || sel) {
     lines.push("[mdwriter context]")

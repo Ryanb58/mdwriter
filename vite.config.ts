@@ -48,6 +48,17 @@ export default defineConfig(async () => ({
           ) {
             return "editor-vendor";
           }
+          if (
+            id.includes("react-markdown") ||
+            id.includes("remark-") ||
+            id.includes("rehype-") ||
+            id.includes("highlight.js") ||
+            id.includes("micromark") ||
+            id.includes("mdast-") ||
+            id.includes("hast-")
+          ) {
+            return "markdown-vendor";
+          }
         },
       },
     },

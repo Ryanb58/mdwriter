@@ -1,4 +1,4 @@
-export type PaletteMode = "file" | "ask" | "search"
+export type PaletteMode = "file" | "ask" | "search" | "recent"
 
 const EVENT_NAME = "mdwriter:open-palette"
 

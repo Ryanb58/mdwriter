@@ -15,8 +15,26 @@ export function MessageInput() {
   const [trigger, setTrigger] = useState<WikilinkTrigger | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const running = useStore((s) => s.aiRunning)
+  const draftRequest = useStore((s) => s.aiDraftRequest)
+  const consumeAiDraftRequest = useStore((s) => s.consumeAiDraftRequest)
   const notes = useVaultNotes()
   const taRef = useRef<HTMLTextAreaElement>(null)
+
+  // Honor externally-injected drafts ("Edit and resend"). The nonce is
+  // captured in the effect dep so back-to-back requests with the same text
+  // still re-seed the input.
+  useEffect(() => {
+    if (!draftRequest) return
+    setDraft(draftRequest.text)
+    consumeAiDraftRequest()
+    requestAnimationFrame(() => {
+      const el = taRef.current
+      if (!el) return
+      el.focus()
+      const end = el.value.length
+      el.setSelectionRange(end, end)
+    })
+  }, [draftRequest, consumeAiDraftRequest])
 
   // Auto-grow textarea up to a sensible max.
   useEffect(() => {

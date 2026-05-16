@@ -104,10 +104,18 @@ export type AppStore = {
   setAiAvailable(rows: AgentAvailability[]): void
   aiMessages: AiMessage[]
   appendAiMessage(msg: AiMessage): void
+  setAiMessages(msgs: AiMessage[]): void
   patchLastAssistantMessage(patch: (m: AssistantMessage) => AssistantMessage): void
   clearAiMessages(): void
   aiRunning: boolean
   setAiRunning(v: boolean): void
+  /**
+   * One-shot draft injected from outside the composer (e.g. "Edit and resend"
+   * on a past user message). MessageInput consumes and clears it.
+   */
+  aiDraftRequest: { text: string; nonce: number } | null
+  requestAiDraft(text: string): void
+  consumeAiDraftRequest(): void
 }
 
 export type ToolCall = {
@@ -152,6 +160,7 @@ export const useStore = create<AppStore>()(
       aiAvailable: [],
       aiMessages: [],
       aiRunning: false,
+      aiDraftRequest: null,
 
       setRoot: (path) => set({ rootPath: path }),
       setTree: (tree) => set({ tree }),
@@ -189,6 +198,7 @@ export const useStore = create<AppStore>()(
       setAiAgent: (id) => set({ aiAgent: id }),
       setAiAvailable: (rows) => set({ aiAvailable: rows }),
       appendAiMessage: (msg) => set((s) => ({ aiMessages: [...s.aiMessages, msg] })),
+      setAiMessages: (msgs) => set({ aiMessages: msgs }),
       patchLastAssistantMessage: (patch) =>
         set((s) => {
           const idx = s.aiMessages.findLastIndex((m) => m.role === "assistant")
@@ -199,6 +209,8 @@ export const useStore = create<AppStore>()(
         }),
       clearAiMessages: () => set({ aiMessages: [] }),
       setAiRunning: (v) => set({ aiRunning: v }),
+      requestAiDraft: (text) => set({ aiDraftRequest: { text, nonce: Date.now() } }),
+      consumeAiDraftRequest: () => set({ aiDraftRequest: null }),
     }),
     {
       name: "mdwriter:store",

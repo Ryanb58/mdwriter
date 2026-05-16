@@ -107,6 +107,56 @@ export async function cancelSession() {
   useStore.getState().setAiRunning(false)
 }
 
+/**
+ * Trim history back to (but excluding) `messageIdx`, then re-run the user turn
+ * that preceded it. Used by "Regenerate" on assistant messages.
+ */
+export async function regenerateFrom(messageIdx: number) {
+  const store = useStore.getState()
+  if (store.aiRunning) return
+  const msgs = store.aiMessages
+  const target = msgs[messageIdx]
+  if (!target || target.role !== "assistant") return
+  // Find the most recent user message before this assistant message.
+  let userIdx = -1
+  for (let i = messageIdx - 1; i >= 0; i--) {
+    if (msgs[i].role === "user") { userIdx = i; break }
+  }
+  if (userIdx === -1) return
+  const userText = (msgs[userIdx] as { text: string }).text
+  // Drop the assistant message (and anything after it).
+  store.setAiMessages(msgs.slice(0, messageIdx))
+  await sendPrompt(userText)
+}
+
+/**
+ * Drop everything from `userMessageIdx` onward and seed the composer with
+ * that user's text via `aiDraftRequest`. Used by "Edit and resend".
+ */
+export function editAndResetFrom(userMessageIdx: number) {
+  const store = useStore.getState()
+  if (store.aiRunning) return
+  const msgs = store.aiMessages
+  const target = msgs[userMessageIdx]
+  if (!target || target.role !== "user") return
+  store.setAiMessages(msgs.slice(0, userMessageIdx))
+  store.requestAiDraft(target.text)
+}
+
+/**
+ * Trim the assistant message at `assistantIdx` and everything after it.
+ * Used by "Branch from here" — the prior user turn becomes the trailing
+ * context; the composer is left empty for the user to type a new direction.
+ */
+export function branchFrom(assistantIdx: number) {
+  const store = useStore.getState()
+  if (store.aiRunning) return
+  const msgs = store.aiMessages
+  const target = msgs[assistantIdx]
+  if (!target || target.role !== "assistant") return
+  store.setAiMessages(msgs.slice(0, assistantIdx))
+}
+
 function relForCurrentNote(absPath: string | null, root: string | null): string | null {
   if (!absPath || !root) return null
   if (!absPath.startsWith(root)) return null

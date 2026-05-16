@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useStore, type AssistantMessage } from "../../lib/store"
+import { MarkdownView } from "./MarkdownView"
+import { MessageActions } from "./MessageActions"
 import { ToolActionCard } from "./ToolActionCard"
 
 export function ChatView() {
@@ -29,9 +31,10 @@ export function ChatView() {
       {messages.map((msg, i) => {
         if (msg.role === "user") {
           return (
-            <div key={i} className="text-[13px]">
+            <div key={i} className="group text-[13px]">
               <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle mb-1">You</div>
               <div className="text-text whitespace-pre-wrap break-words">{msg.text}</div>
+              <MessageActions messageIdx={i} message={msg} />
             </div>
           )
         }
@@ -42,16 +45,23 @@ export function ChatView() {
             </div>
           )
         }
-        return <AssistantBlock key={i} msg={msg} isLast={i === messages.length - 1} running={running} />
+        return <AssistantBlock key={i} idx={i} msg={msg} isLast={i === messages.length - 1} running={running} />
       })}
     </div>
   )
 }
 
-function AssistantBlock({ msg, isLast, running }: { msg: AssistantMessage; isLast: boolean; running: boolean }) {
+function AssistantBlock({
+  idx, msg, isLast, running,
+}: {
+  idx: number
+  msg: AssistantMessage
+  isLast: boolean
+  running: boolean
+}) {
   const showSpinner = isLast && running && !msg.finished && msg.text === "" && msg.tools.length === 0
   return (
-    <div className="text-[13px]">
+    <div className="group text-[13px]">
       <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle mb-1">Assistant</div>
       {msg.tools.map((t) => (
         <ToolActionCard key={t.id} tool={t} />
@@ -59,8 +69,11 @@ function AssistantBlock({ msg, isLast, running }: { msg: AssistantMessage; isLas
       {showSpinner && (
         <div className="text-text-subtle text-[12px]">Thinking…</div>
       )}
-      {msg.text && (
-        <div className="text-text whitespace-pre-wrap break-words leading-relaxed">{msg.text}</div>
+      {msg.text && <MarkdownView text={msg.text} />}
+      {/* Only show actions once the message has *something* — copy of an empty
+          message isn't useful, and regenerate while streaming is unsafe. */}
+      {(msg.finished || msg.text.length > 0) && (
+        <MessageActions messageIdx={idx} message={msg} />
       )}
     </div>
   )

@@ -9,7 +9,20 @@ use std::path::{Path, PathBuf};
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum TreeNode {
     Dir { name: String, path: PathBuf, children: Vec<TreeNode> },
-    File { name: String, path: PathBuf },
+    File {
+        name: String,
+        path: PathBuf,
+        /// Last-modified time as Unix seconds. `None` if the filesystem
+        /// can't report it (rare) or the value is before the epoch.
+        #[serde(rename = "mtime", skip_serializing_if = "Option::is_none")]
+        mtime: Option<i64>,
+    },
+}
+
+fn file_mtime_secs(path: &Path) -> Option<i64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let dur = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(dur.as_secs()).ok()
 }
 
 #[derive(Deserialize, Debug, Default, Clone, Copy)]
@@ -49,7 +62,8 @@ fn build_tree(
         .unwrap_or_else(|| path.display().to_string());
 
     if path.is_file() {
-        return Ok(TreeNode::File { name, path: path.to_path_buf() });
+        let mtime = file_mtime_secs(path);
+        return Ok(TreeNode::File { name, path: path.to_path_buf(), mtime });
     }
 
     let mut children: Vec<TreeNode> = Vec::new();
@@ -70,9 +84,11 @@ fn build_tree(
                 children.push(subtree);
             }
         } else if is_visible_file(&entry_path, opts) {
+            let mtime = file_mtime_secs(&entry_path);
             children.push(TreeNode::File {
                 name: entry_name,
                 path: entry_path,
+                mtime,
             });
         }
     }
@@ -380,6 +396,24 @@ mod tests {
         let tree = list_tree(dir.path().to_path_buf(), Some(opts)).unwrap();
         let TreeNode::Dir { children, .. } = tree else { panic!() };
         assert_eq!(children.len(), 2);
+    }
+
+    #[test]
+    fn list_tree_populates_mtime_for_files() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.md"), "").unwrap();
+        let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
+        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        let TreeNode::File { mtime, .. } = &children[0] else { panic!() };
+        let secs = mtime.expect("mtime should be present on a newly-written file");
+        // Sanity: within the last hour of "now" — confirms we read the real
+        // filesystem mtime rather than a default/zero value.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert!(secs <= now);
+        assert!(secs > now - 3600);
     }
 
     #[test]

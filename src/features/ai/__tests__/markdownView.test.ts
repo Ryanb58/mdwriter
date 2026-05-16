@@ -37,6 +37,10 @@ describe("preprocessLinks", () => {
     expect(preprocessLinks("[[]]")).toBe("[[]]")
   })
 
+  it("leaves whitespace-only wikilinks untouched", () => {
+    expect(preprocessLinks("text [[   ]] more")).toBe("text [[   ]] more")
+  })
+
   it("links paths followed by trailing punctuation", () => {
     expect(preprocessLinks("see sub/path.md, it's fine")).toContain(
       "[sub/path.md](mdwriter:sub%2Fpath.md)",

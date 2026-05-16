@@ -4,11 +4,13 @@
 //! shape — we just round-trip opaque JSON. This keeps the wire contract narrow
 //! and lets the TS type evolve without a Rust rebuild.
 //!
-//! The list endpoint sorts newest-first by `updated_at` so a typical UI ("most
-//! recent at the top") doesn't have to re-sort.
+//! The list endpoint sorts newest-first by `updatedAt` so a typical UI ("most
+//! recent at the top") doesn't have to re-sort. The chat's id is always the
+//! filename stem — the on-disk `id` field is treated as untrusted metadata.
 
 use crate::errors::{AppError, Result};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 const CHATS_SUBDIR: &str = ".mdwriter/chats";
@@ -36,22 +38,24 @@ fn chat_path(vault: &Path, id: &str) -> Result<PathBuf> {
 pub struct ChatSummary {
     pub id: String,
     pub title: String,
+    #[serde(rename = "updatedAt")]
     pub updated_at: i64,
+    #[serde(rename = "createdAt")]
     pub created_at: i64,
 }
 
-/// JSON envelope written to disk. The `data` field is the frontend's `Chat`
-/// object verbatim — we don't model it on the Rust side.
-#[derive(Debug, Serialize, Deserialize)]
+/// On-disk shape we care about for listing. The frontend stores chats with
+/// camelCase keys (matching the TS `Chat` type), so we rename to match; the
+/// snake_case alias is kept so older test fixtures and any future migration
+/// path still parse.
+#[derive(Debug, Deserialize)]
 struct ChatFile {
-    id: String,
+    #[serde(default)]
     title: String,
-    #[serde(default)]
+    #[serde(default, rename = "createdAt", alias = "created_at")]
     created_at: i64,
-    #[serde(default)]
+    #[serde(default, rename = "updatedAt", alias = "updated_at")]
     updated_at: i64,
-    #[serde(flatten)]
-    extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[tauri::command]
@@ -68,10 +72,16 @@ pub fn list_chats(vault_path: String) -> Result<Vec<ChatSummary>> {
         if p.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
+        // Always derive the id from the filename — that's the same string
+        // `read_chat` and `delete_chat` accept, so a mismatched JSON `id`
+        // can't strand the chat from later operations.
+        let Some(id) = p.file_stem().and_then(|s| s.to_str()).map(str::to_string) else {
+            continue;
+        };
         let Ok(text) = std::fs::read_to_string(&p) else { continue };
         let Ok(parsed) = serde_json::from_str::<ChatFile>(&text) else { continue };
         summaries.push(ChatSummary {
-            id: parsed.id,
+            id,
             title: parsed.title,
             updated_at: parsed.updated_at,
             created_at: parsed.created_at,
@@ -95,12 +105,24 @@ pub fn write_chat(vault_path: String, id: String, data: serde_json::Value) -> Re
     let dir = chats_dir(Path::new(&vault_path));
     std::fs::create_dir_all(&dir)?;
     let path = chat_path(Path::new(&vault_path), &id)?;
-    // Atomic write: temp file → persist. Same approach as the doc save path
-    // in fs.rs — avoids leaving a half-written chat on a crash.
-    let tmp_path = path.with_extension("json.tmp");
-    let json = serde_json::to_string_pretty(&data).map_err(|e| AppError::Io(e.to_string()))?;
-    std::fs::write(&tmp_path, json)?;
-    std::fs::rename(&tmp_path, &path)?;
+    write_json_atomic(&path, &data)
+}
+
+/// Atomic write that overwrites the destination — matches the pattern in
+/// `commands/fs.rs::write_bytes_atomic_clobber`. `tempfile`'s `persist`
+/// handles the cross-platform clobber semantics (POSIX rename swaps; Windows
+/// uses `ReplaceFile`-equivalent), so this works on every supported OS.
+fn write_json_atomic(path: &Path, data: &serde_json::Value) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::InvalidPath(path.display().to_string()))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| AppError::Io(format!("tempfile: {e}")))?;
+    let json = serde_json::to_string_pretty(data).map_err(|e| AppError::Io(e.to_string()))?;
+    tmp.write_all(json.as_bytes())?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path)
+        .map_err(|e| AppError::Io(format!("persist: {}", e.error)))?;
     Ok(())
 }
 
@@ -130,11 +152,12 @@ mod tests {
     fn write_then_read_round_trips() {
         let tmp = tempdir().unwrap();
         let vault = tmp.path().to_string_lossy().to_string();
+        // Use the on-disk camelCase shape produced by the frontend.
         let data = serde_json::json!({
             "id": "abc",
             "title": "hello",
-            "created_at": 1,
-            "updated_at": 2,
+            "createdAt": 1,
+            "updatedAt": 2,
             "messages": ["m1"],
         });
         write_chat(vault.clone(), "abc".into(), data.clone()).unwrap();
@@ -156,18 +179,64 @@ mod tests {
         write_chat(
             vault.clone(),
             "older".into(),
-            serde_json::json!({ "id": "older", "title": "Older", "updated_at": 100, "created_at": 1 }),
+            serde_json::json!({ "id": "older", "title": "Older", "updatedAt": 100, "createdAt": 1 }),
         )
         .unwrap();
         write_chat(
             vault.clone(),
             "newer".into(),
-            serde_json::json!({ "id": "newer", "title": "Newer", "updated_at": 500, "created_at": 2 }),
+            serde_json::json!({ "id": "newer", "title": "Newer", "updatedAt": 500, "createdAt": 2 }),
         )
         .unwrap();
         let list = list_chats(vault).unwrap();
         assert_eq!(list[0].id, "newer");
         assert_eq!(list[1].id, "older");
+    }
+
+    #[test]
+    fn list_uses_filename_for_id_when_json_mismatches() {
+        let tmp = tempdir().unwrap();
+        let vault = tmp.path().to_string_lossy().to_string();
+        // JSON id deliberately disagrees with the filename — we trust the
+        // filename so callers' subsequent read/delete calls still work.
+        write_chat(
+            vault.clone(),
+            "correct-id".into(),
+            serde_json::json!({ "id": "different-id", "title": "X", "updatedAt": 1, "createdAt": 0 }),
+        )
+        .unwrap();
+        let list = list_chats(vault).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "correct-id");
+    }
+
+    #[test]
+    fn list_accepts_legacy_snake_case_timestamps() {
+        let tmp = tempdir().unwrap();
+        let vault = tmp.path().to_string_lossy().to_string();
+        write_chat(
+            vault.clone(),
+            "legacy".into(),
+            serde_json::json!({ "id": "legacy", "title": "L", "updated_at": 42, "created_at": 1 }),
+        )
+        .unwrap();
+        let list = list_chats(vault).unwrap();
+        assert_eq!(list[0].updated_at, 42);
+    }
+
+    #[test]
+    fn write_overwrites_existing_file() {
+        // The Windows rename-fails-when-exists hazard, demonstrated to the
+        // best of our ability on POSIX too: two writes to the same id must
+        // both succeed and leave the second value on disk.
+        let tmp = tempdir().unwrap();
+        let vault = tmp.path().to_string_lossy().to_string();
+        write_chat(vault.clone(), "x".into(), serde_json::json!({ "id": "x", "title": "first" }))
+            .unwrap();
+        write_chat(vault.clone(), "x".into(), serde_json::json!({ "id": "x", "title": "second" }))
+            .unwrap();
+        let value = read_chat(vault, "x".into()).unwrap();
+        assert_eq!(value.get("title").and_then(|v| v.as_str()), Some("second"));
     }
 
     #[test]

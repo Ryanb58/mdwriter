@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   PILL_CLASS,
+  insertLineBreakAtCaret,
+  insertTextAtCaret,
   readEditorState,
   renderTextToEditor,
   setCaretAtTextOffset,
@@ -111,6 +113,41 @@ describe("setCaretAtTextOffset", () => {
     setCaretAtTextOffset(div, 13)
     const { caret } = readEditorState(div)
     expect(caret).toBe(15)
+    cleanup(div)
+  })
+})
+
+describe("insertTextAtCaret", () => {
+  it("inserts a text node at the caret and advances it past the insertion", () => {
+    const div = mount()
+    renderTextToEditor(div, "hello world")
+    setCaretAtTextOffset(div, 5) // between "hello" and " world"
+    insertTextAtCaret(", there")
+    const { text, caret } = readEditorState(div)
+    expect(text).toBe("hello, there world")
+    expect(caret).toBe("hello, there".length)
+    cleanup(div)
+  })
+
+  it("is a no-op for empty input", () => {
+    const div = mount()
+    renderTextToEditor(div, "abc")
+    setCaretAtTextOffset(div, 3)
+    insertTextAtCaret("")
+    expect(readEditorState(div).text).toBe("abc")
+    cleanup(div)
+  })
+})
+
+describe("insertLineBreakAtCaret", () => {
+  it("inserts a <br> and leaves the caret on the line below", () => {
+    const div = mount()
+    renderTextToEditor(div, "one")
+    setCaretAtTextOffset(div, 3)
+    insertLineBreakAtCaret()
+    const { text } = readEditorState(div)
+    expect(text).toBe("one\n")
+    expect(div.querySelectorAll("br")).toHaveLength(1)
     cleanup(div)
   })
 })

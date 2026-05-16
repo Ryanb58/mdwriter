@@ -54,8 +54,9 @@ function appendTextWithBreaks(root: HTMLElement, text: string): void {
  * Serialize the editor's DOM back to (text, caret). Pills count as their
  * `[[Name]]` text length, `<br>` counts as a newline, text nodes contribute
  * their content verbatim. `caret` is the text offset of the current
- * selection's focus; -1 means the selection is not in this editor (e.g. on
- * a button outside it).
+ * selection's focus; when no selection sits in this editor (e.g. focus on a
+ * button outside it), the caret is reported as the total text length so
+ * callers don't have to special-case a sentinel.
  */
 export function readEditorState(root: HTMLElement): { text: string; caret: number } {
   const sel = window.getSelection()
@@ -232,4 +233,43 @@ export function pillBeforeCaret(root: HTMLElement): HTMLElement | null {
 
 function isPill(node: Node | null): boolean {
   return node instanceof HTMLElement && node.classList.contains(PILL_CLASS)
+}
+
+/**
+ * Insert plain text at the current collapsed caret (or replace the current
+ * range). Uses the Range/Selection APIs rather than the deprecated
+ * `document.execCommand("insertText")`.
+ */
+export function insertTextAtCaret(text: string): void {
+  if (!text) return
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return
+  const range = sel.getRangeAt(0)
+  range.deleteContents()
+  const node = document.createTextNode(text)
+  range.insertNode(node)
+  const next = document.createRange()
+  next.setStartAfter(node)
+  next.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(next)
+}
+
+/**
+ * Insert a soft line break (`<br>`) at the current caret. Replaces the
+ * deprecated `document.execCommand("insertLineBreak")` with a deterministic
+ * Range-based implementation.
+ */
+export function insertLineBreakAtCaret(): void {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return
+  const range = sel.getRangeAt(0)
+  range.deleteContents()
+  const br = document.createElement("br")
+  range.insertNode(br)
+  const next = document.createRange()
+  next.setStartAfter(br)
+  next.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(next)
 }

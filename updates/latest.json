@@ -1,19 +1,19 @@
 {
-  "version": "2026.5.12",
-  "notes": "See https://github.com/Ryanb58/mdwriter/releases/tag/v2026-05-12.eef017b for the full changelog.",
-  "pub_date": "2026-05-12T15:49:31Z",
+  "version": "2026.5.16",
+  "notes": "See https://github.com/Ryanb58/mdwriter/releases/tag/v2026-05-16.462c162 for the full changelog.",
+  "pub_date": "2026-05-16T19:48:50Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmJaMWsxUXZQTWZ3RCtFRDVCRWpZcHEzdDFVclVuNXEvUVg4UCtpdUlUM2FpOFp5aENOQlpvbTc1RUFhMkM5eHlMbTZlRUc5ZGxZUUdab1pSR3FWWmdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NjAwNTA1CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpSYkk4c2RmRVoxc3hCL2pRU0tGV2xCN29HVVRYc0UyaUltaHJoenhmRSt2emNoQXZScGJ0WXUxYzNVM0w0eGRIcGMzRVQxSXFTRWVxWkdwYWhuSndEZz09Cg==\n",
-      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.12_macOS_Silicon.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlR1Zk80TnJrMEtwT1U3UjlCcmxidDhvRXpVQ3RqTU9yNDdraXRoRHNuUkN5b29UbUlXT25FVFBpYWs3WnZlN1J0TGF6SGkyRE16Wk81WUdaY0w1RVFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTYwNzU3CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negp1RE0zS3BnS3h4N3JlUE9MNjI5R282V0MrNFRvME1kUzZSZjdRK3AxM3M2RWdSVm00N0hsaE00T2xWWHFMdkxLYldUTzdRNkJLU0pSYnJNamtMRlVEdz09Cg==\n",
+      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.16_macOS_Silicon.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmQ2Y0ZuWDlqMUpkTGtXRDc1RFpxQUQ3UUIzLzJLc2RmUElmNnBOVUFRWDVLVVBYSDN6TkpoZlRFL093NFVFUzkwdnNhK244Z0xxdnVSdTNRT2toZkFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NjAwNTA1CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpzUUREQ2k1Y3hwNUpaWkVyUjE3bkIzUml0YjRQWWdjUFFOcWtpTW5HZndQaXpqTkJlNlowdnlobzFaN3o1elFiNzBIcVpQTWtnR280YkxLd25VNjNDdz09Cg==\n",
-      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.12_macOS_Intel.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlo1cFJoVVBZMFZpNmZGU3pEZmsxS09XTHZ3WEI3Y1pJakpBMExOWnpnQ3l3dGhCbEZmMitObHkrNHhVeWNSZ0VMUktIR1M5S0ZyMVYvbVpHSWMrQndZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTYwNzgzCWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpTVkREcGVvRk9ySGMwUjk5bjB1M3FpVzNCSTZnVFNDRGhmUHNUU2RHa3VjRmZ4Qjd5dFF5NUVhSHJHL3FUMnlWbUpZb0JvQVFGMmZuS0xKNnhKSGlCZz09Cg==\n",
+      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.16_macOS_Intel.app.tar.gz"
     },
     "windows-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQllzVEtkSzB3M1htZFhJeTF2K1VsYXRjdGprMDZteUhYaXJ6eDRadDdyUXZzWHc2UlJubjE1RVRvRDhOcTJQbmluWFUzOXhNZUUvYndCaEYwZlgwaFFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTIxNjE0CWZpbGU6bWR3cml0ZXJfMjAyNi41LjExX3g2NC1zZXR1cC5leGUKdnJIREtkaXhBYW5CcktqRVR6ZXV0N01icU9FVzc2a2lQYzBrSmpzbnVMSEt6L1Zyb3V0VTFQTXVZNEhBOENMd1BjU3hVbVBPdU1ONWhiT09TTndpREE9PQo=\n",
-      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.12_x64-setup.exe"
+      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.16_x64-setup.exe"
     }
   }
 }

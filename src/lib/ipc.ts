@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core"
 
 export type TreeNode =
   | { kind: "dir"; name: string; path: string; children: TreeNode[] }
-  | { kind: "file"; name: string; path: string }
+  | { kind: "file"; name: string; path: string; mtime?: number }
 
 export type ParsedDoc = {
   frontmatter: unknown

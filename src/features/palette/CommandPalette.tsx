@@ -12,6 +12,7 @@ import {
 } from "../ai/wikilinkDetect"
 import { WikilinkPopover, useWikilinkResults } from "../ai/WikilinkPopover"
 import { SearchMode } from "./SearchMode"
+import { onOpenPalette } from "./openPalette"
 
 type Mode = "file" | "ask" | "search"
 
@@ -54,6 +55,14 @@ export function CommandPalette() {
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
   }, [open])
+
+  useEffect(() => {
+    return onOpenPalette((mode) => {
+      setInitialMode(mode)
+      setQuery("")
+      setOpen(true)
+    })
+  }, [])
 
   if (!open) return null
 
@@ -109,8 +118,14 @@ function FileMode({
   close: () => void
 }) {
   const notes = useVaultNotes()
+  // cmdk ranks items by query match when there's a query, and falls back to
+  // DOM order otherwise. Sorting by mtime desc means the empty-query view
+  // surfaces the user's most-recently-touched notes first.
   const files = useMemo(
-    () => notes.map((n) => ({ name: n.name + ".md", path: n.path, rel: n.rel })),
+    () =>
+      notes
+        .map((n) => ({ name: n.name + ".md", path: n.path, rel: n.rel, mtime: n.mtime }))
+        .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0)),
     [notes],
   )
 
@@ -125,7 +140,7 @@ function FileMode({
           autoFocus
           value={query}
           onValueChange={onQueryChange}
-          placeholder="Open file…   type a space to ask the agent"
+          placeholder="Open recent…   type a space to ask the agent"
           className="flex-1 outline-none text-[14px] placeholder:text-text-subtle"
         />
         <kbd className="text-[10px] font-mono text-text-subtle border border-border rounded px-1.5 py-0.5">esc</kbd>

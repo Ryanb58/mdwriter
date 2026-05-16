@@ -10,6 +10,8 @@ export type VaultNote = {
   path: string
   /** Path relative to vault root (forward-slash separated). */
   rel: string
+  /** Last-modified time (Unix seconds), if the filesystem reported it. */
+  mtime?: number
 }
 
 /**
@@ -26,7 +28,12 @@ export function flattenNotes(node: TreeNode | null, rootPath: string | null): Va
       const rel = rootPath && n.path.startsWith(rootPath)
         ? n.path.slice(rootPath.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
         : n.path
-      out.push({ name: n.name.replace(/\.(md|markdown)$/i, ""), path: n.path, rel })
+      out.push({
+        name: n.name.replace(/\.(md|markdown)$/i, ""),
+        path: n.path,
+        rel,
+        mtime: n.mtime,
+      })
     } else {
       for (const c of n.children) walk(c)
     }

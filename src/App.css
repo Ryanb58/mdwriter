@@ -270,6 +270,10 @@ body {
    serialized draft length is 0 — using :empty would miss the case where the
    div contains a trailing <br>. */
 .ai-composer-input {
+  /* `position: relative` makes the absolutely-positioned placeholder pseudo
+     anchor to this element rather than depending on whichever ancestor
+     happens to be positioned — keeps the placeholder styling self-contained. */
+  position: relative;
   min-height: 1.5em;
   font-family: var(--font-ui);
   caret-color: var(--color-text);

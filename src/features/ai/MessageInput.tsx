@@ -13,6 +13,8 @@ import { ipc } from "../../lib/ipc"
 import { readClipboardImageAsPng } from "../../lib/imagePaste"
 import { detectSlashTrigger, matchSlashCommands, type SlashCommand } from "./slashCommands"
 import {
+  insertLineBreakAtCaret,
+  insertTextAtCaret,
   makePill,
   pillBeforeCaret,
   readEditorState,
@@ -142,7 +144,7 @@ export function MessageInput() {
     const text = cd.getData("text/plain")
     if (text) {
       e.preventDefault()
-      document.execCommand("insertText", false, text)
+      insertTextAtCaret(text)
       syncFromDOM()
     }
   }
@@ -230,7 +232,7 @@ export function MessageInput() {
     // default behaviour drop a `<div>` (which would break our text serializer).
     if (e.key === "Enter" && e.shiftKey) {
       e.preventDefault()
-      document.execCommand("insertLineBreak")
+      insertLineBreakAtCaret()
       syncFromDOM()
       return
     }

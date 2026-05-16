@@ -127,8 +127,11 @@ export function preprocessLinks(input: string): string {
     const segment = input.slice(cursor, region.end)
     out.push(
       segment
-        .replace(wikilink, (_, name: string) => {
+        .replace(wikilink, (full: string, name: string) => {
           const clean = name.trim()
+          // Whitespace-only targets (`[[   ]]`) shouldn't become empty
+          // markdown links — leave the original run untouched.
+          if (!clean) return full
           return `[${clean}](mdwriter:${encodeURIComponent(clean)})`
         })
         // Bare path-looking tokens — `foo/bar.md`. Skip if already inside a

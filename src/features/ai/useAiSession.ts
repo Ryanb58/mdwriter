@@ -134,8 +134,10 @@ export async function regenerateFrom(messageIdx: number) {
   }
   if (userIdx === -1) return
   const userText = (msgs[userIdx] as { text: string }).text
-  // Drop the assistant message (and anything after it).
-  store.setAiMessages(msgs.slice(0, messageIdx))
+  // Trim back to *before* the user turn so `sendPrompt`'s append doesn't
+  // produce a duplicate user message in the history — it'll re-add both
+  // the user turn and the new assistant turn from scratch.
+  store.setAiMessages(msgs.slice(0, userIdx))
   await sendPrompt(userText)
 }
 

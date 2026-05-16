@@ -1,5 +1,4 @@
-import { useRef, useEffect } from "react"
-import { X } from "@phosphor-icons/react"
+import { Robot, Sidebar as SidebarIcon, FolderOpen } from "@phosphor-icons/react"
 import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
@@ -18,9 +17,8 @@ import { useExternalChanges } from "./features/watcher/useExternalChanges"
 import { useUpdates } from "./features/updates/useUpdates"
 import { UpdateBanner } from "./features/updates/UpdateBanner"
 import { usePasteDiagnostic } from "./lib/pasteDiagnostic"
+import { LayoutShell, useLayout } from "./layout/LayoutShell"
 import "./App.css"
-
-const MIN_EDITOR_WIDTH = 300
 
 export default function App() {
   useStartupRestore()
@@ -31,53 +29,6 @@ export default function App() {
   useAiSession()
   const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
-  const rightPane = useStore((s) => s.rightPane)
-  const setRightPane = useStore((s) => s.setRightPane)
-  const leftPaneCollapsed = useStore((s) => s.leftPaneCollapsed)
-  const setLeftPaneCollapsed = useStore((s) => s.setLeftPaneCollapsed)
-  const leftPaneWidth = useStore((s) => s.leftPaneWidth)
-  const rightPaneWidth = useStore((s) => s.rightPaneWidth)
-  const setLeftPaneWidth = useStore((s) => s.setLeftPaneWidth)
-  const setRightPaneWidth = useStore((s) => s.setRightPaneWidth)
-
-  // Refs so the ResizeObserver callback sees current values without re-subscribing.
-  const containerRef = useRef<HTMLDivElement>(null)
-  const autoCollapsedRef = useRef({ left: false, right: false })
-  const leftCollapsedRef = useRef(leftPaneCollapsed)
-  leftCollapsedRef.current = leftPaneCollapsed
-  const rightPaneRef = useRef(rightPane)
-  rightPaneRef.current = rightPane
-  const lastRightPaneTabRef = useRef<"properties" | "ai">("properties")
-  if (rightPane !== null) lastRightPaneTabRef.current = rightPane
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const observer = new ResizeObserver(([entry]) => {
-      const w = entry.contentRect.width
-      if (w < 560) {
-        if (!leftCollapsedRef.current) {
-          setLeftPaneCollapsed(true)
-          autoCollapsedRef.current.left = true
-        }
-        if (rightPaneRef.current !== null) {
-          setRightPane(null)
-          autoCollapsedRef.current.right = true
-        }
-      } else if (w >= 680) {
-        if (autoCollapsedRef.current.left) {
-          setLeftPaneCollapsed(false)
-          autoCollapsedRef.current.left = false
-        }
-        if (autoCollapsedRef.current.right) {
-          setRightPane(lastRightPaneTabRef.current)
-          autoCollapsedRef.current.right = false
-        }
-      }
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [setLeftPaneCollapsed, setRightPane])
 
   if (!rootPath) {
     return (
@@ -93,63 +44,16 @@ export default function App() {
   return (
     <>
       <div className="flex flex-col h-screen bg-bg text-text">
-        <div ref={containerRef} className="flex flex-1 min-h-0">
-          {!leftPaneCollapsed && (
-            <aside className="flex-none bg-surface overflow-hidden" style={{ width: leftPaneWidth }}>
-              <TreePane />
-            </aside>
-          )}
-          {!leftPaneCollapsed && (
-            <ResizeHandle
-              onMouseDown={(e) => {
-                const containerW = containerRef.current?.clientWidth ?? 9999
-                const maxLeft = Math.max(160, containerW - (rightPane ? rightPaneWidth : 0) - MIN_EDITOR_WIDTH)
-                startResize(e, leftPaneWidth, setLeftPaneWidth, 160, maxLeft, 1)
-              }}
-            />
-          )}
-          <main className="flex-1 min-w-[300px] flex flex-col">
-            <EditorPane />
-          </main>
-          {rightPane && (
-            <>
-            <ResizeHandle
-              onMouseDown={(e) => {
-                const containerW = containerRef.current?.clientWidth ?? 9999
-                const maxRight = Math.max(200, containerW - (leftPaneCollapsed ? 0 : leftPaneWidth) - MIN_EDITOR_WIDTH)
-                startResize(e, rightPaneWidth, setRightPaneWidth, 200, maxRight, -1)
-              }}
-            />
-            <aside className="flex-none bg-surface flex flex-col min-h-0" style={{ width: rightPaneWidth }}>
-              <div className="flex items-center border-b border-border h-9 px-1 flex-none">
-                <RightPaneTabBtn active={rightPane === "properties"} onClick={() => setRightPane("properties")}>
-                  Properties
-                </RightPaneTabBtn>
-                <RightPaneTabBtn active={rightPane === "ai"} onClick={() => setRightPane("ai")}>
-                  Assistant
-                </RightPaneTabBtn>
-                <button
-                  onClick={() => setRightPane(null)}
-                  className="ml-auto mr-1 p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
-                  title="Close panel"
-                  aria-label="Close panel"
-                >
-                  <X size={12} weight="bold" />
-                </button>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                {rightPane === "properties" ? (
-                  <div className="h-full overflow-y-auto">
-                    <PropertiesPane />
-                  </div>
-                ) : (
-                  <AiPanel />
-                )}
-              </div>
-            </aside>
-            </>
-          )}
-        </div>
+        <LayoutShell
+          leftLabel="File panel"
+          rightLabel="Sidebar"
+          left={<TreePane />}
+          leftRail={<LeftRail />}
+          right={<RightPanel />}
+          rightRail={<RightRail />}
+        >
+          <EditorPane />
+        </LayoutShell>
         <StatusBar />
       </div>
       <CommandPalette />
@@ -160,42 +64,74 @@ export default function App() {
   )
 }
 
-function startResize(
-  e: React.MouseEvent,
-  startWidth: number,
-  setter: (w: number) => void,
-  min: number,
-  max: number,
-  sign: 1 | -1,
-) {
-  e.preventDefault()
-  const startX = e.clientX
-  document.body.style.userSelect = "none"
-  document.body.style.cursor = "col-resize"
-  const onMove = (me: MouseEvent) =>
-    setter(Math.max(min, Math.min(max, startWidth + sign * (me.clientX - startX))))
-  const onUp = () => {
-    document.body.style.userSelect = ""
-    document.body.style.cursor = ""
-    document.removeEventListener("mousemove", onMove)
-    document.removeEventListener("mouseup", onUp)
-  }
-  document.addEventListener("mousemove", onMove)
-  document.addEventListener("mouseup", onUp)
-}
-
-function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void }) {
+function LeftRail() {
+  const { togglePanel } = useLayout()
   return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      className="w-[4px] flex-none cursor-col-resize bg-border hover:bg-accent/50 transition-colors duration-150"
-      onMouseDown={onMouseDown}
-    />
+    <button
+      type="button"
+      onClick={() => togglePanel("left")}
+      title="Expand file panel"
+      aria-label="Expand file panel"
+      className="w-12 h-9 mt-2 mx-auto flex items-center justify-center rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
+    >
+      <FolderOpen size={16} />
+    </button>
   )
 }
 
-function RightPaneTabBtn({
+function RightPanel() {
+  const tab = useStore((s) => s.rightPaneTab)
+  const setTab = useStore((s) => s.setRightPaneTab)
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div role="tablist" className="flex items-center border-b border-border h-9 px-1 flex-none">
+        <TabBtn active={tab === "properties"} onClick={() => setTab("properties")}>
+          Properties
+        </TabBtn>
+        <TabBtn active={tab === "ai"} onClick={() => setTab("ai")}>
+          Assistant
+        </TabBtn>
+      </div>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {tab === "properties" ? (
+          <div className="h-full overflow-y-auto">
+            <PropertiesPane />
+          </div>
+        ) : (
+          <AiPanel />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RightRail() {
+  const { setPanelState } = useLayout()
+  const tab = useStore((s) => s.rightPaneTab)
+  const setTab = useStore((s) => s.setRightPaneTab)
+
+  const choose = (next: "properties" | "ai") => {
+    setTab(next)
+    setPanelState("right", "open")
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-1 pt-2">
+      <RailBtn
+        active={tab === "properties"}
+        onClick={() => choose("properties")}
+        label="Properties"
+      >
+        <SidebarIcon size={16} />
+      </RailBtn>
+      <RailBtn active={tab === "ai"} onClick={() => choose("ai")} label="Assistant">
+        <Robot size={16} />
+      </RailBtn>
+    </div>
+  )
+}
+
+function TabBtn({
   active, onClick, children,
 }: {
   active: boolean
@@ -220,3 +156,28 @@ function RightPaneTabBtn({
   )
 }
 
+function RailBtn({
+  active, onClick, label, children,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={[
+        "w-9 h-9 flex items-center justify-center rounded transition-colors",
+        active
+          ? "text-text bg-elevated"
+          : "text-text-subtle hover:text-text hover:bg-elevated/60",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  )
+}

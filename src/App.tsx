@@ -30,6 +30,10 @@ export default function App() {
   const rootPath = useStore((s) => s.rootPath)
   const rightPane = useStore((s) => s.rightPane)
   const setRightPane = useStore((s) => s.setRightPane)
+  const leftPaneWidth = useStore((s) => s.leftPaneWidth)
+  const rightPaneWidth = useStore((s) => s.rightPaneWidth)
+  const setLeftPaneWidth = useStore((s) => s.setLeftPaneWidth)
+  const setRightPaneWidth = useStore((s) => s.setRightPaneWidth)
 
   if (!rootPath) {
     return (
@@ -46,14 +50,21 @@ export default function App() {
     <>
       <div className="flex flex-col h-screen bg-bg text-text">
         <div className="flex flex-1 min-h-0">
-          <aside className="w-[240px] flex-none border-r border-border bg-surface">
+          <aside className="flex-none bg-surface" style={{ width: leftPaneWidth }}>
             <TreePane />
           </aside>
+          <ResizeHandle
+            onMouseDown={(e) => startResize(e, leftPaneWidth, setLeftPaneWidth, 160, 520, 1)}
+          />
           <main className="flex-1 min-w-0 flex flex-col">
             <EditorPane />
           </main>
           {rightPane && (
-            <aside className="w-[340px] flex-none border-l border-border bg-surface flex flex-col min-h-0">
+            <>
+            <ResizeHandle
+              onMouseDown={(e) => startResize(e, rightPaneWidth, setRightPaneWidth, 200, 640, -1)}
+            />
+            <aside className="flex-none bg-surface flex flex-col min-h-0" style={{ width: rightPaneWidth }}>
               <div className="flex items-center border-b border-border h-9 px-1 flex-none">
                 <RightPaneTabBtn active={rightPane === "properties"} onClick={() => setRightPane("properties")}>
                   Properties
@@ -80,6 +91,7 @@ export default function App() {
                 )}
               </div>
             </aside>
+            </>
           )}
         </div>
         <StatusBar />
@@ -89,6 +101,41 @@ export default function App() {
       <DndModals />
       <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
     </>
+  )
+}
+
+function startResize(
+  e: React.MouseEvent,
+  startWidth: number,
+  setter: (w: number) => void,
+  min: number,
+  max: number,
+  sign: 1 | -1,
+) {
+  e.preventDefault()
+  const startX = e.clientX
+  document.body.style.userSelect = "none"
+  document.body.style.cursor = "col-resize"
+  const onMove = (me: MouseEvent) =>
+    setter(Math.max(min, Math.min(max, startWidth + sign * (me.clientX - startX))))
+  const onUp = () => {
+    document.body.style.userSelect = ""
+    document.body.style.cursor = ""
+    document.removeEventListener("mousemove", onMove)
+    document.removeEventListener("mouseup", onUp)
+  }
+  document.addEventListener("mousemove", onMove)
+  document.addEventListener("mouseup", onUp)
+}
+
+function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void }) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      className="w-[4px] flex-none cursor-col-resize bg-border hover:bg-accent/50 transition-colors duration-150"
+      onMouseDown={onMouseDown}
+    />
   )
 }
 

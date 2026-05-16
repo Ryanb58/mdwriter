@@ -77,6 +77,8 @@ export type AppStore = {
   openDoc: OpenDoc | null
   editorMode: EditorMode
   rightPane: RightPaneTab | null
+  leftPaneWidth: number
+  rightPaneWidth: number
   settingsOpen: boolean
   settings: Settings
   renamingPath: string | null
@@ -93,6 +95,8 @@ export type AppStore = {
   setEditorMode(mode: EditorMode): void
   setRightPane(tab: RightPaneTab | null): void
   toggleRightPane(tab: RightPaneTab): void
+  setLeftPaneWidth(w: number): void
+  setRightPaneWidth(w: number): void
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
@@ -144,6 +148,8 @@ export const useStore = create<AppStore>()(
       openDoc: null,
       editorMode: "block",
       rightPane: "properties",
+      leftPaneWidth: 240,
+      rightPaneWidth: 340,
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
@@ -183,6 +189,8 @@ export const useStore = create<AppStore>()(
       setRightPane: (tab) => set({ rightPane: tab }),
       toggleRightPane: (tab) =>
         set((s) => ({ rightPane: s.rightPane === tab ? null : tab })),
+      setLeftPaneWidth: (w) => set({ leftPaneWidth: w }),
+      setRightPaneWidth: (w) => set({ rightPaneWidth: w }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
@@ -212,6 +220,8 @@ export const useStore = create<AppStore>()(
         settings: s.settings,
         rightPane: s.rightPane,
         aiAgent: s.aiAgent,
+        leftPaneWidth: s.leftPaneWidth,
+        rightPaneWidth: s.rightPaneWidth,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppStore> & {

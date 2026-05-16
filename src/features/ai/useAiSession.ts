@@ -86,9 +86,14 @@ export async function sendPrompt(text: string) {
   store.setAiRunning(true)
 
   // The user sees their raw prompt in history, but the agent gets a wrapped
-  // version with the currently-open note and wikilink hints.
+  // version with the currently-open note, wikilink hints, and any text
+  // explicitly attached as a selection chip in the composer.
   const currentNote = relForCurrentNote(store.openDoc?.path ?? store.selectedPath ?? null, root)
-  const wrapped = buildPrompt({ currentNote, userText: trimmed })
+  const sel = store.editorSelection
+  const selection = sel && sel.attached && sel.text
+    ? { text: sel.text, sourceNote: relForCurrentNote(sel.sourcePath, root) }
+    : null
+  const wrapped = buildPrompt({ currentNote, userText: trimmed, selection })
 
   try {
     await ipc.startAiSession(store.aiAgent, wrapped, root)

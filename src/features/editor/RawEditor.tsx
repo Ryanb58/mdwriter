@@ -57,12 +57,17 @@ export function RawEditor({
           EditorView.theme({ "&": { height: "100%" } }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChange(u.state.doc.toString())
+            if (u.selectionSet || u.docChanged) reportSelection(u.view)
           }),
         ],
       }),
     })
     viewRef.current = view
-    return () => { view.destroy(); viewRef.current = null }
+    return () => {
+      view.destroy()
+      viewRef.current = null
+      useStore.getState().setEditorSelection(null)
+    }
   }, [])
 
   // sync external value changes (e.g. file switch)
@@ -98,6 +103,13 @@ export function RawEditor({
       />
     </>
   )
+}
+
+function reportSelection(view: EditorView) {
+  const { from, to } = view.state.selection.main
+  const text = from === to ? "" : view.state.sliceDoc(from, to)
+  const { openDoc, setEditorSelection } = useStore.getState()
+  setEditorSelection(text ? { text, sourcePath: openDoc?.path ?? null } : null)
 }
 
 function findLineElement(view: EditorView, pos: number): HTMLElement | null {

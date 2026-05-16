@@ -75,6 +75,14 @@ export type AppStore = {
   // both reason about visibility.
   expandedFolders: Set<string>
   openDoc: OpenDoc | null
+  /**
+   * Bumped whenever an outside caller (e.g. "Apply to note") mutates
+   * `openDoc.rawMarkdown` so editors that key off the doc identity re-init
+   * with the new content. User typing does *not* bump this — it's specifically
+   * an "external replace" signal.
+   */
+  docRev: number
+  bumpDocRev(): void
   editorMode: EditorMode
   rightPaneTab: RightPaneTab
   settingsOpen: boolean
@@ -116,6 +124,16 @@ export type AppStore = {
   aiDraftRequest: { text: string; nonce: number } | null
   requestAiDraft(text: string): void
   consumeAiDraftRequest(): void
+
+  /**
+   * Whatever the user has highlighted in the active editor right now. Both
+   * editor modes push into this — composer reads it to render a context
+   * chip. `attached` flips to false when the user dismisses the chip and
+   * back to true on the next non-empty selection.
+   */
+  editorSelection: { text: string; sourcePath: string | null; attached: boolean } | null
+  setEditorSelection(s: { text: string; sourcePath: string | null } | null): void
+  detachEditorSelection(): void
 }
 
 export type ToolCall = {
@@ -149,6 +167,7 @@ export const useStore = create<AppStore>()(
       selectedPaths: new Set<string>(),
       expandedFolders: new Set<string>(),
       openDoc: null,
+      docRev: 0,
       editorMode: "block",
       rightPaneTab: "properties",
       settingsOpen: false,
@@ -161,6 +180,7 @@ export const useStore = create<AppStore>()(
       aiMessages: [],
       aiRunning: false,
       aiDraftRequest: null,
+      editorSelection: null,
 
       setRoot: (path) => set({ rootPath: path }),
       setTree: (tree) => set({ tree }),
@@ -187,6 +207,7 @@ export const useStore = create<AppStore>()(
       setOpenDoc: (doc) => set({ openDoc: doc, editorMode: "block" }),
       patchOpenDoc: (patch) =>
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
+      bumpDocRev: () => set((s) => ({ docRev: s.docRev + 1 })),
       setEditorMode: (mode) => set({ editorMode: mode }),
       setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
@@ -211,6 +232,23 @@ export const useStore = create<AppStore>()(
       setAiRunning: (v) => set({ aiRunning: v }),
       requestAiDraft: (text) => set({ aiDraftRequest: { text, nonce: Date.now() } }),
       consumeAiDraftRequest: () => set({ aiDraftRequest: null }),
+      setEditorSelection: (s) =>
+        set((state) => {
+          if (!s || !s.text) return { editorSelection: null }
+          // Re-attach on the next non-empty selection so the user can recover
+          // from a previous dismissal by simply re-selecting.
+          const prev = state.editorSelection
+          const sameContent = prev && prev.text === s.text && prev.sourcePath === s.sourcePath
+          return {
+            editorSelection: {
+              text: s.text,
+              sourcePath: s.sourcePath,
+              attached: sameContent ? prev.attached : true,
+            },
+          }
+        }),
+      detachEditorSelection: () =>
+        set((s) => (s.editorSelection ? { editorSelection: { ...s.editorSelection, attached: false } } : {})),
     }),
     {
       name: "mdwriter:store",

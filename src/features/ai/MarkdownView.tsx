@@ -2,8 +2,10 @@ import { useState, useMemo, useCallback, isValidElement, type ReactNode } from "
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
-import { Check, Copy } from "@phosphor-icons/react"
+import { Check, Copy, ArrowsClockwise, Plus, Eye, FilePlus } from "@phosphor-icons/react"
 import { useStore } from "../../lib/store"
+import { applyToOpenDoc, type ApplyOp } from "./applyToNote"
+import { DiffModal } from "./DiffModal"
 import "highlight.js/styles/github-dark.css"
 
 /**
@@ -243,6 +245,7 @@ function findClosingRun(s: string, from: number, ch: string, run: number): numbe
 function CodeBlock({ children }: { children: ReactNode }) {
   const [copied, setCopied] = useState(false)
   const { text, language } = useMemo(() => extractCodeText(children), [children])
+  const isMarkdown = language === "markdown" || language === "md"
 
   const onCopy = async () => {
     try {
@@ -273,7 +276,87 @@ function CodeBlock({ children }: { children: ReactNode }) {
       >
         {copied ? <Check size={11} weight="bold" /> : <Copy size={11} />}
       </button>
+      {isMarkdown && <ApplyToolbar markdown={text} />}
     </div>
+  )
+}
+
+/**
+ * Bottom toolbar attached to assistant-authored markdown blocks. Lets the
+ * user merge the suggestion into their active document. The buttons are
+ * disabled when there's no open doc; "Replace selection" additionally
+ * requires an active selection in the editor.
+ */
+function ApplyToolbar({ markdown }: { markdown: string }) {
+  const hasDoc = useStore((s) => s.openDoc != null)
+  const hasSelection = useStore((s) => !!s.editorSelection?.text)
+  const [diff, setDiff] = useState<{ op: ApplyOp; label: string } | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
+
+  const run = (op: ApplyOp, label: string) => {
+    const result = applyToOpenDoc(op)
+    if (!result.ok) {
+      setFlash(result.reason)
+      setTimeout(() => setFlash(null), 2500)
+      return
+    }
+    setFlash(`${label} ✓`)
+    setTimeout(() => setFlash(null), 1500)
+  }
+
+  return (
+    <>
+      <div className="mt-1 flex items-center gap-1 text-[11px] text-text-subtle">
+        <ApplyBtn
+          icon={<ArrowsClockwise size={11} />}
+          label="Replace selection"
+          disabled={!hasDoc || !hasSelection}
+          onClick={() => run({ kind: "replace-selection", markdown }, "Replaced selection")}
+        />
+        <ApplyBtn
+          icon={<Plus size={11} weight="bold" />}
+          label="Append"
+          disabled={!hasDoc}
+          onClick={() => run({ kind: "append", markdown }, "Appended")}
+        />
+        <ApplyBtn
+          icon={<FilePlus size={11} />}
+          label="Replace note"
+          disabled={!hasDoc}
+          onClick={() => run({ kind: "replace-all", markdown }, "Replaced note")}
+        />
+        <ApplyBtn
+          icon={<Eye size={11} />}
+          label="Diff"
+          disabled={!hasDoc}
+          onClick={() => setDiff({ op: { kind: "replace-all", markdown }, label: "Replace note" })}
+        />
+        {flash && <span className="ml-2 text-text-muted">{flash}</span>}
+      </div>
+      {diff && <DiffModal op={diff.op} label={diff.label} onClose={() => setDiff(null)} />}
+    </>
+  )
+}
+
+function ApplyBtn({
+  icon, label, onClick, disabled,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-text-subtle hover:text-text hover:bg-elevated disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
   )
 }
 

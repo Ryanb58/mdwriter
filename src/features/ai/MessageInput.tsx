@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowUp, Stop } from "@phosphor-icons/react"
+import { ArrowUp, Stop, TextAa, X } from "@phosphor-icons/react"
 import { useStore } from "../../lib/store"
 import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { sendPrompt, cancelSession } from "./useAiSession"
@@ -132,6 +132,7 @@ export function MessageInput() {
 
   return (
     <div className="border-t border-border p-2.5">
+      <SelectionChip />
       <div className="relative rounded-md border border-border bg-elevated focus-within:border-accent transition-colors">
         <textarea
           ref={taRef}
@@ -180,6 +181,49 @@ export function MessageInput() {
       <div className="mt-1 px-1 text-[10px] text-text-subtle">
         <kbd className="font-mono">Enter</kbd> to send · <kbd className="font-mono">Shift+Enter</kbd> for newline · <kbd className="font-mono">@</kbd> or <kbd className="font-mono">[[</kbd> to reference
       </div>
+    </div>
+  )
+}
+
+/**
+ * Floats above the textarea when the user has text selected in either editor
+ * mode. The chip's X marks the selection as detached (`attached: false`); the
+ * next non-empty selection re-attaches automatically.
+ */
+function SelectionChip() {
+  const selection = useStore((s) => s.editorSelection)
+  const detach = useStore((s) => s.detachEditorSelection)
+  if (!selection || !selection.text || !selection.attached) return null
+
+  const lineCount = selection.text.split("\n").length
+  const charCount = selection.text.length
+  const preview = selection.text.length > 80
+    ? selection.text.slice(0, 80).replace(/\s+/g, " ") + "…"
+    : selection.text.replace(/\s+/g, " ")
+  const summary = lineCount > 1 ? `${lineCount} lines` : `${charCount} chars`
+  const sourceLabel = selection.sourcePath
+    ? selection.sourcePath.split(/[\\/]/).pop() ?? "selection"
+    : "selection"
+
+  return (
+    <div className="mb-1.5 flex items-start gap-1.5 rounded-md border border-border bg-elevated px-2 py-1.5 text-[11px]">
+      <TextAa size={11} className="text-text-subtle flex-none mt-[2px]" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 text-text-muted">
+          <span className="font-medium text-text">{sourceLabel}</span>
+          <span className="text-text-subtle">· {summary}</span>
+        </div>
+        <div className="text-text-subtle truncate font-mono text-[11px]">{preview}</div>
+      </div>
+      <button
+        type="button"
+        onClick={detach}
+        className="p-1 -m-1 rounded text-text-subtle hover:text-text hover:bg-surface flex-none"
+        title="Don't include selection"
+        aria-label="Don't include selection"
+      >
+        <X size={10} weight="bold" />
+      </button>
     </div>
   )
 }

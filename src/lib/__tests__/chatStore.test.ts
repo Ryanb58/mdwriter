@@ -115,6 +115,7 @@ function makeChat(id: string, updatedAt: number, title: string) {
     agent: "claude-code" as const,
     messages: [],
     systemPrompt: "",
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
     createdAt: 0,
     updatedAt,
   }

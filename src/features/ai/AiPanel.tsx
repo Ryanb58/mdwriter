@@ -32,11 +32,7 @@ export function AiPanel() {
           <AgentPicker variant="compact" />
         </div>
         <div className="flex items-center gap-1 flex-none">
-          {/* Token / usage slot — populated in Phase 4. */}
-          <span
-            id="ai-usage-slot"
-            className="text-[10px] tabular-nums text-text-subtle empty:hidden"
-          />
+          <UsageMeter />
           {activeChatId && (
             <button
               onClick={() => setEditingInstructions(true)}
@@ -80,4 +76,25 @@ export function AiPanel() {
       )}
     </div>
   )
+}
+
+function UsageMeter() {
+  const usage = useStore((s) => (s.activeChatId ? s.chats[s.activeChatId]?.usage : null))
+  if (!usage) return null
+  const total = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreationTokens
+  if (total === 0) return null
+  return (
+    <span
+      className="text-[10px] tabular-nums text-text-subtle px-1.5"
+      title={`Input ${usage.inputTokens.toLocaleString()} · Output ${usage.outputTokens.toLocaleString()} · Cache read ${usage.cacheReadTokens.toLocaleString()} · Cache write ${usage.cacheCreationTokens.toLocaleString()}`}
+    >
+      {formatTokens(total)} tok
+    </span>
+  )
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return n.toString()
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
+  return `${(n / 1_000_000).toFixed(1)}m`
 }

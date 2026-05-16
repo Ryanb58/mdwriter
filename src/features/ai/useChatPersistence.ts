@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { ipc } from "../../lib/ipc"
-import { useStore, type Chat } from "../../lib/store"
+import { useStore, EMPTY_USAGE, type Chat, type ChatUsage } from "../../lib/store"
 
 const WRITE_DEBOUNCE_MS = 400
 
@@ -142,7 +142,20 @@ function normalizeChat(raw: unknown): Chat | null {
     agent: (obj.agent as Chat["agent"]) ?? "claude-code",
     messages,
     systemPrompt: typeof obj.systemPrompt === "string" ? obj.systemPrompt : "",
+    usage: normalizeUsage(obj.usage),
     createdAt: typeof obj.createdAt === "number" ? obj.createdAt : now,
     updatedAt: typeof obj.updatedAt === "number" ? obj.updatedAt : now,
+  }
+}
+
+function normalizeUsage(raw: unknown): ChatUsage {
+  if (!raw || typeof raw !== "object") return { ...EMPTY_USAGE }
+  const obj = raw as Record<string, unknown>
+  const num = (k: string) => (typeof obj[k] === "number" ? (obj[k] as number) : 0)
+  return {
+    inputTokens: num("inputTokens"),
+    outputTokens: num("outputTokens"),
+    cacheReadTokens: num("cacheReadTokens"),
+    cacheCreationTokens: num("cacheCreationTokens"),
   }
 }

@@ -9,6 +9,7 @@ import { EditorPane } from "./features/editor/EditorPane"
 import { AiPanel } from "./features/ai/AiPanel"
 import { useAiSession } from "./features/ai/useAiSession"
 import { useChatPersistence } from "./features/ai/useChatPersistence"
+import { useAiShortcuts } from "./features/ai/useAiShortcuts"
 import { StatusBar } from "./features/statusbar/StatusBar"
 import { PropertiesPane } from "./features/properties/PropertiesPane"
 import { CommandPalette } from "./features/palette/CommandPalette"
@@ -29,6 +30,7 @@ export default function App() {
   usePasteDiagnostic()
   useAiSession()
   useChatPersistence()
+  useAiShortcuts()
   const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
 

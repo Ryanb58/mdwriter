@@ -63,10 +63,13 @@ export function useAiSession() {
             text: m.text + (m.text ? "\n\n" : "") + `**Error:** ${ev.message}`,
           }))
           break
-        case "done":
+        case "done": {
+          const turn = parseUsage(ev.usage)
+          if (turn) store.addChatUsage(turn)
           store.patchLastAssistantMessage((m) => ({ ...m, finished: true }))
           store.setAiRunning(false)
           break
+        }
       }
     })
     return () => { unlisten.then((u) => u()) }
@@ -168,4 +171,41 @@ function relForCurrentNote(absPath: string | null, root: string | null): string 
   if (!absPath || !root) return null
   if (!absPath.startsWith(root)) return null
   return absPath.slice(root.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
+}
+
+/**
+ * Pull token counts out of an opaque `usage` payload emitted by an agent
+ * adapter. Returns null when nothing token-shaped is present (e.g. the
+ * subprocess waiter's `{ exit_code }` Done that fires after Claude Code's
+ * own usage Done).
+ *
+ * Handles both Claude Code's snake_case fields and any future agent that
+ * emits camelCase.
+ */
+function parseUsage(usage: unknown): {
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+} | null {
+  if (!usage || typeof usage !== "object") return null
+  const u = usage as Record<string, unknown>
+  const num = (...keys: string[]): number | undefined => {
+    for (const k of keys) {
+      const v = u[k]
+      if (typeof v === "number" && Number.isFinite(v)) return v
+    }
+    return undefined
+  }
+  const input = num("input_tokens", "inputTokens")
+  const output = num("output_tokens", "outputTokens")
+  const cacheRead = num("cache_read_input_tokens", "cacheReadTokens")
+  const cacheCreate = num("cache_creation_input_tokens", "cacheCreationTokens")
+  if (input == null && output == null && cacheRead == null && cacheCreate == null) return null
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: cacheRead,
+    cacheCreationTokens: cacheCreate,
+  }
 }

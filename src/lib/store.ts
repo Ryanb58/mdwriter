@@ -132,6 +132,8 @@ export type AppStore = {
   renameChat(id: string, title: string): void
   setChatSystemPrompt(id: string, prompt: string): void
   deleteChat(id: string): void
+  /** Accumulate token usage onto the active chat. No-op when none is active. */
+  addChatUsage(turn: Partial<ChatUsage>): void
   /**
    * One-shot draft injected from outside the composer (e.g. "Edit and resend"
    * on a past user message). MessageInput consumes and clears it.
@@ -172,6 +174,13 @@ export type AiMessage =
   | AssistantMessage
   | { role: "system"; text: string }
 
+export type ChatUsage = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+}
+
 export type Chat = {
   id: string
   title: string
@@ -179,8 +188,30 @@ export type Chat = {
   messages: AiMessage[]
   /** Per-thread system prompt prepended by `buildPrompt`. Empty = none. */
   systemPrompt: string
+  /** Cumulative token usage across every assistant turn in this thread. */
+  usage: ChatUsage
   createdAt: number
   updatedAt: number
+}
+
+export const EMPTY_USAGE: ChatUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheCreationTokens: 0,
+}
+
+/**
+ * Add a turn's usage into a running total. Tolerates missing fields — Claude
+ * Code occasionally emits a "usage" object with only some keys populated.
+ */
+export function addUsage(prev: ChatUsage, turn: Partial<ChatUsage>): ChatUsage {
+  return {
+    inputTokens: prev.inputTokens + (turn.inputTokens ?? 0),
+    outputTokens: prev.outputTokens + (turn.outputTokens ?? 0),
+    cacheReadTokens: prev.cacheReadTokens + (turn.cacheReadTokens ?? 0),
+    cacheCreationTokens: prev.cacheCreationTokens + (turn.cacheCreationTokens ?? 0),
+  }
 }
 
 const TITLE_FROM_MESSAGE_LEN = 60
@@ -230,6 +261,7 @@ function withActiveChat(
       agent: s.aiAgent,
       messages: [],
       systemPrompt: "",
+      usage: { ...EMPTY_USAGE },
       createdAt: now,
       updatedAt: now,
     }
@@ -378,6 +410,7 @@ export const useStore = create<AppStore>()(
             agent: s.aiAgent,
             messages: [],
             systemPrompt: "",
+            usage: { ...EMPTY_USAGE },
             createdAt: now,
             updatedAt: now,
           }
@@ -417,6 +450,19 @@ export const useStore = create<AppStore>()(
             activeChatId: nextActive,
             aiMessages: nextActive ? rest[nextActive].messages : [],
             aiAgent: nextActive ? rest[nextActive].agent : s.aiAgent,
+          }
+        }),
+      addChatUsage: (turn) =>
+        set((s) => {
+          if (!s.activeChatId) return {}
+          const chat = s.chats[s.activeChatId]
+          if (!chat) return {}
+          const nextUsage = addUsage(chat.usage ?? EMPTY_USAGE, turn)
+          return {
+            chats: {
+              ...s.chats,
+              [s.activeChatId]: { ...chat, usage: nextUsage, updatedAt: Date.now() },
+            },
           }
         }),
       requestAiDraft: (text) => set({ aiDraftRequest: { text, nonce: Date.now() } }),

@@ -122,6 +122,10 @@ pub fn run() {
             commands::agents::detect_agents,
             commands::agents::start_ai_session,
             commands::agents::stop_ai_session,
+            commands::chats::list_chats,
+            commands::chats::read_chat,
+            commands::chats::write_chat,
+            commands::chats::delete_chat,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -29,6 +29,7 @@ export function EditorPane() {
   useAutoRename()
   const { toggle: toggleMode } = useEditorMode()
   const doc = useStore((s) => s.openDoc)
+  const docRev = useStore((s) => s.docRev)
   const editorView = useStore((s) => s.editorMode)
   const setEditorView = useStore((s) => s.setEditorMode)
   const patch = useStore((s) => s.patchOpenDoc)
@@ -112,7 +113,7 @@ export function EditorPane() {
       <div className="flex-1 overflow-hidden">
         {editorView === "block" ? (
           <BlockEditor
-            docKey={doc.path}
+            docKey={`${doc.path}#${docRev}`}
             initialMarkdown={doc.rawMarkdown}
             onChangeMarkdown={(md) => patch({ rawMarkdown: md, dirty: true })}
           />

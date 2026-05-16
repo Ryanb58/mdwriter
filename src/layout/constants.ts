@@ -7,10 +7,20 @@ export const BREAKPOINTS = {
 export const PANEL_DIMS = {
   LEFT_DEFAULT: 280,
   LEFT_MIN: 240,
-  LEFT_MAX: 360,
+  /**
+   * Absolute ceiling for the left panel's stored width. The effective max at
+   * runtime is computed in LayoutShell — at minimum half the viewport in
+   * docked mode, capped here so a stored width never grows unboundedly.
+   */
+  LEFT_MAX: 1600,
   RIGHT_DEFAULT: 320,
   RIGHT_MIN: 280,
-  RIGHT_MAX: 420,
+  /**
+   * Absolute ceiling for the right panel's stored width — see LEFT_MAX. The
+   * runtime cap is computed dynamically in LayoutShell so the panel can take
+   * half the viewport on wide screens.
+   */
+  RIGHT_MAX: 1600,
   RAIL: 48,
   MAIN_MIN: 640,
   TOOLBAR: 40,

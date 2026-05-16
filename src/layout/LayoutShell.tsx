@@ -77,7 +77,18 @@ export function LayoutShell({
     if (rightState === "open") setPanelState("right", "closed")
   }
 
-  const widths = computeWidths(mode, leftState, rightState, width, leftWidth, rightWidth)
+  // Both panes are resizable up to half the viewport in docked modes — the
+  // left pane for long file names / deep trees, the right pane for the AI
+  // panel's wider markdown layouts. Stored width may exceed the live
+  // viewport's allowance if the window was wider when last set; clamp at
+  // render so the panel doesn't push the editor entirely off-screen, but
+  // leave the stored value untouched.
+  const effectiveLeftMax = halfViewportMaxFor(mode, width, PANEL_DIMS.LEFT_DEFAULT, PANEL_DIMS.LEFT_MAX)
+  const effectiveRightMax = halfViewportMaxFor(mode, width, PANEL_DIMS.RIGHT_DEFAULT, PANEL_DIMS.RIGHT_MAX)
+  const renderedLeftWidth = Math.min(leftWidth, effectiveLeftMax)
+  const renderedRightWidth = Math.min(rightWidth, effectiveRightMax)
+
+  const widths = computeWidths(mode, leftState, rightState, width, renderedLeftWidth, renderedRightWidth)
 
   const styleVars: CSSProperties = {
     ["--layout-left-grid" as string]: `${widths.leftGrid}px`,
@@ -118,10 +129,10 @@ export function LayoutShell({
           {isDockedMode(mode) && leftState === "open" && (
             <ResizeHandle
               side="left"
-              startWidth={leftWidth}
+              startWidth={renderedLeftWidth}
               setWidth={setLeftWidth}
               min={PANEL_DIMS.LEFT_MIN}
-              max={PANEL_DIMS.LEFT_MAX}
+              max={effectiveLeftMax}
               onResizeStart={() => setIsResizing(true)}
               onResizeEnd={() => setIsResizing(false)}
             />
@@ -129,10 +140,10 @@ export function LayoutShell({
           {isDockedMode(mode) && rightState === "open" && (
             <ResizeHandle
               side="right"
-              startWidth={rightWidth}
+              startWidth={renderedRightWidth}
               setWidth={setRightWidth}
               min={PANEL_DIMS.RIGHT_MIN}
-              max={PANEL_DIMS.RIGHT_MAX}
+              max={effectiveRightMax}
               onResizeStart={() => setIsResizing(true)}
               onResizeEnd={() => setIsResizing(false)}
             />
@@ -153,6 +164,26 @@ export function LayoutShell({
       </div>
     </LayoutProvider>
   )
+}
+
+/**
+ * Effective drag-and-clamp upper bound for a side panel. Docked modes allow
+ * the panel to expand to half the viewport — generous enough for big file
+ * trees or wide AI conversations on large screens, without letting a
+ * persisted value blow past the stored ceiling. Overlay/sheet modes use the
+ * absolute ceiling because they're width-capped elsewhere.
+ */
+function halfViewportMaxFor(
+  mode: LayoutMode,
+  viewportW: number,
+  defaultW: number,
+  ceiling: number,
+): number {
+  if (!isDockedMode(mode)) return ceiling
+  // Before the ResizeObserver has fired, viewportW is 0 — fall back to the
+  // default width so the handle can still operate within sane limits.
+  const halfViewport = viewportW > 0 ? Math.floor(viewportW / 2) : defaultW
+  return Math.max(defaultW, Math.min(ceiling, halfViewport))
 }
 
 /**

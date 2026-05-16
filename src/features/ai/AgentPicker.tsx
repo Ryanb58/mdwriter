@@ -49,7 +49,7 @@ export function AgentPicker({ placement = "below", variant = "panel" }: Props = 
       </button>
       {open && (
         <div
-          className={`absolute ${menuClass} w-[280px] rounded-lg bg-elevated border border-border-strong overflow-hidden z-20`}
+          className={`absolute ${menuClass} w-[280px] rounded-lg bg-elevated border border-border-strong overflow-hidden z-[100]`}
           style={{ boxShadow: "0 12px 32px -8px oklch(0 0 0 / 0.55), 0 2px 4px oklch(0 0 0 / 0.3)" }}
         >
           <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle px-3 pt-2 pb-1">Agent</div>

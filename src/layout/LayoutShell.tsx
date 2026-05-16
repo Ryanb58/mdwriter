@@ -1,17 +1,20 @@
-import { useEffect, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
 import {
   PANEL_DIMS,
+  isDockedMode,
   isOverlayMode,
   type LayoutMode,
   type PanelState,
 } from "./constants"
 import { useLayoutMode } from "./useLayoutMode"
 import { usePanelStates } from "./usePanelStates"
+import { usePanelWidths } from "./usePanelWidths"
 import { useReducedMotion } from "./useReducedMotion"
 import { LayoutProvider } from "./LayoutContext"
 import { SidePanel } from "./SidePanel"
 import { Backdrop } from "./Backdrop"
 import { Toolbar } from "./Toolbar"
+import { ResizeHandle } from "./ResizeHandle"
 import { setLayoutController } from "./layoutControl"
 import "./layout.css"
 
@@ -45,7 +48,9 @@ export function LayoutShell({
 }: LayoutShellProps) {
   const { mode, width, ref } = useLayoutMode()
   const { leftState, rightState, setPanelState, togglePanel } = usePanelStates(mode)
+  const { leftWidth, rightWidth, setLeftWidth, setRightWidth } = usePanelWidths()
   const reducedMotion = useReducedMotion()
+  const [isResizing, setIsResizing] = useState(false)
 
   const isSheet = mode === "mobile-sheet"
   const overlay = isOverlayMode(mode)
@@ -72,7 +77,7 @@ export function LayoutShell({
     if (rightState === "open") setPanelState("right", "closed")
   }
 
-  const widths = computeWidths(mode, leftState, rightState, width)
+  const widths = computeWidths(mode, leftState, rightState, width, leftWidth, rightWidth)
 
   const styleVars: CSSProperties = {
     ["--layout-left-grid" as string]: `${widths.leftGrid}px`,
@@ -93,6 +98,7 @@ export function LayoutShell({
         className="layout-shell"
         data-mode={mode}
         data-reduced-motion={reducedMotion}
+        data-resizing={isResizing}
         style={styleVars}
       >
         <Toolbar center={toolbarCenter} />
@@ -109,6 +115,28 @@ export function LayoutShell({
             {renderSlot(left, leftState, mode)}
           </SidePanel>
           <main className="layout-main">{children}</main>
+          {isDockedMode(mode) && leftState === "open" && (
+            <ResizeHandle
+              side="left"
+              startWidth={leftWidth}
+              setWidth={setLeftWidth}
+              min={PANEL_DIMS.LEFT_MIN}
+              max={PANEL_DIMS.LEFT_MAX}
+              onResizeStart={() => setIsResizing(true)}
+              onResizeEnd={() => setIsResizing(false)}
+            />
+          )}
+          {isDockedMode(mode) && rightState === "open" && (
+            <ResizeHandle
+              side="right"
+              startWidth={rightWidth}
+              setWidth={setRightWidth}
+              min={PANEL_DIMS.RIGHT_MIN}
+              max={PANEL_DIMS.RIGHT_MAX}
+              onResizeStart={() => setIsResizing(true)}
+              onResizeEnd={() => setIsResizing(false)}
+            />
+          )}
           <SidePanel
             id="layout-panel-right"
             side="right"
@@ -137,11 +165,16 @@ export function LayoutShell({
  * smoothly: the grid track shrinks to 0 while the panel itself stays the
  * same visible width, just floating over main instead of pushing it.
  */
-function computeWidths(mode: LayoutMode, left: PanelState, right: PanelState, viewportW: number) {
-  const leftIntrinsic =
-    left === "rail" ? PANEL_DIMS.RAIL : PANEL_DIMS.LEFT_DEFAULT
-  const rightIntrinsic =
-    right === "rail" ? PANEL_DIMS.RAIL : PANEL_DIMS.RIGHT_DEFAULT
+function computeWidths(
+  mode: LayoutMode,
+  left: PanelState,
+  right: PanelState,
+  viewportW: number,
+  leftCustom: number,
+  rightCustom: number,
+) {
+  const leftIntrinsic = left === "rail" ? PANEL_DIMS.RAIL : leftCustom
+  const rightIntrinsic = right === "rail" ? PANEL_DIMS.RAIL : rightCustom
 
   if (mode === "mobile-sheet") {
     // Sheets fill the layout root width. Fall back to a sane default before
@@ -151,6 +184,7 @@ function computeWidths(mode: LayoutMode, left: PanelState, right: PanelState, vi
   }
 
   if (mode === "overlay") {
+    // Overlay drawers use their default width (resize handles are docked-only).
     return {
       leftGrid: 0,
       rightGrid: 0,

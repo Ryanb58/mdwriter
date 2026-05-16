@@ -40,25 +40,27 @@ async function trashImpl(paths: readonly string[]) {
   if (Object.keys(patch).length > 0) useStore.setState(patch)
 }
 
+export async function createNewFile(parentDir: string) {
+  let n = 1
+  let candidate = joinPath(parentDir, "untitled.md")
+  while (true) {
+    try {
+      await ipc.createFile(candidate)
+      break
+    } catch {
+      n += 1
+      candidate = joinPath(parentDir, `untitled ${n}.md`)
+      if (n > 50) throw new Error("Too many untitled files")
+    }
+  }
+  await refreshTree()
+  useStore.getState().toggleFolderExpanded(parentDir, true)
+  useStore.getState().setSelected(candidate)
+}
+
 export function useTreeActions() {
   return {
-    async newFile(parentDir: string) {
-      let n = 1
-      let candidate = joinPath(parentDir, "untitled.md")
-      while (true) {
-        try {
-          await ipc.createFile(candidate)
-          break
-        } catch {
-          n += 1
-          candidate = joinPath(parentDir, `untitled ${n}.md`)
-          if (n > 50) throw new Error("Too many untitled files")
-        }
-      }
-      await refreshTree()
-      useStore.getState().toggleFolderExpanded(parentDir, true)
-      useStore.getState().setSelected(candidate)
-    },
+    newFile: createNewFile,
     async newFolder(parentDir: string) {
       let n = 1
       let candidate = joinPath(parentDir, "untitled folder")

@@ -21,7 +21,8 @@ export function EmptyFolderState() {
         </button>
         <div className="mt-10 text-xs text-text-subtle">
           <span className="font-mono">⌘P</span> to jump between files ·
-          <span className="font-mono ml-2">⌘E</span> to view raw markdown
+          <span className="font-mono ml-2">⌘N</span> for a new note ·
+          <span className="font-mono ml-2">⌘E</span> for raw markdown
         </div>
       </div>
     </div>

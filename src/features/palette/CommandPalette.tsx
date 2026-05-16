@@ -12,6 +12,7 @@ import {
 } from "../ai/wikilinkDetect"
 import { WikilinkPopover, useWikilinkResults } from "../ai/WikilinkPopover"
 import { SearchMode } from "./SearchMode"
+import { onOpenPalette } from "./openPalette"
 
 type Mode = "file" | "ask" | "search"
 
@@ -54,6 +55,14 @@ export function CommandPalette() {
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
   }, [open])
+
+  useEffect(() => {
+    return onOpenPalette((mode) => {
+      setInitialMode(mode)
+      setQuery("")
+      setOpen(true)
+    })
+  }, [])
 
   if (!open) return null
 

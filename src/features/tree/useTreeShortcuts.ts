@@ -1,16 +1,19 @@
 import { useEffect } from "react"
 import { useStore } from "../../lib/store"
-import { useTreeActions } from "./useTreeActions"
+import { useTreeActions, createNewFile } from "./useTreeActions"
 import { basename } from "../../lib/paths"
 import { collapseSelectionToAnchor } from "./selection"
+import { targetParentDir } from "./targetDir"
 
 /**
  * Global keyboard shortcuts for the file tree:
  *   - F2: rename the selected file
  *   - Delete / Backspace: move the selected file to trash (with confirm)
+ *   - Cmd/Ctrl+N: create a new note (in the selected folder, or at root)
  *
- * The shortcuts only fire when no input/textarea/contenteditable is focused,
- * so they don't fight with editor keystrokes.
+ * The non-Cmd shortcuts only fire when no input/textarea/contenteditable is
+ * focused, so they don't fight with editor keystrokes. Cmd+N always fires —
+ * users expect it to work even while typing.
  */
 export function useTreeShortcuts() {
   const actions = useTreeActions()
@@ -32,6 +35,20 @@ export function useTreeShortcuts() {
     }
 
     function onKey(e: KeyboardEvent) {
+      // Cmd/Ctrl+N runs before the editable-target gate so it works while
+      // the editor is focused. Target dir is the open doc's folder, the
+      // selected folder, or the vault root.
+      const meta = e.metaKey || e.ctrlKey
+      if (meta && !e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) {
+        const s = useStore.getState()
+        const target = targetParentDir(s.tree, s.selectedPath, s.rootPath)
+        if (target) {
+          e.preventDefault()
+          createNewFile(target).catch(console.error)
+        }
+        return
+      }
+
       if (isEditableTarget(e.target)) return
 
       // Esc collapses multi-selection back to a single-row selection.

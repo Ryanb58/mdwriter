@@ -222,6 +222,23 @@ export function BlockEditor({
 
   useLinkActivation(hostRef)
 
+  // Push the current selection text into the store so the AI composer can
+  // surface it as a context chip. Empty selections clear the chip; an unmount
+  // (e.g. switching to raw mode) clears as well.
+  useEffect(() => {
+    const setSel = useStore.getState().setEditorSelection
+    const fire = () => {
+      const text = editor.getSelectedText()
+      const path = useStore.getState().openDoc?.path ?? null
+      setSel(text ? { text, sourcePath: path } : null)
+    }
+    const unsub = editor.onSelectionChange(fire)
+    return () => {
+      unsub()
+      useStore.getState().setEditorSelection(null)
+    }
+  }, [editor])
+
   return (
     <div ref={hostRef} className="h-full overflow-y-auto">
       <BlockNoteView

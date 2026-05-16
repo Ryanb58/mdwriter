@@ -63,10 +63,13 @@ export function useAiSession() {
             text: m.text + (m.text ? "\n\n" : "") + `**Error:** ${ev.message}`,
           }))
           break
-        case "done":
+        case "done": {
+          const turn = parseUsage(ev.usage)
+          if (turn) store.addChatUsage(turn)
           store.patchLastAssistantMessage((m) => ({ ...m, finished: true }))
           store.setAiRunning(false)
           break
+        }
       }
     })
     return () => { unlisten.then((u) => u()) }
@@ -86,9 +89,16 @@ export async function sendPrompt(text: string) {
   store.setAiRunning(true)
 
   // The user sees their raw prompt in history, but the agent gets a wrapped
-  // version with the currently-open note and wikilink hints.
+  // version with the currently-open note, wikilink hints, and any text
+  // explicitly attached as a selection chip in the composer.
   const currentNote = relForCurrentNote(store.openDoc?.path ?? store.selectedPath ?? null, root)
-  const wrapped = buildPrompt({ currentNote, userText: trimmed })
+  const sel = store.editorSelection
+  const selection = sel && sel.attached && sel.text
+    ? { text: sel.text, sourceNote: relForCurrentNote(sel.sourcePath, root) }
+    : null
+  const activeChat = store.activeChatId ? store.chats[store.activeChatId] : null
+  const systemPrompt = activeChat?.systemPrompt ?? null
+  const wrapped = buildPrompt({ currentNote, userText: trimmed, selection, systemPrompt })
 
   try {
     await ipc.startAiSession(store.aiAgent, wrapped, root)
@@ -107,8 +117,97 @@ export async function cancelSession() {
   useStore.getState().setAiRunning(false)
 }
 
+/**
+ * Trim history back to (but excluding) `messageIdx`, then re-run the user turn
+ * that preceded it. Used by "Regenerate" on assistant messages.
+ */
+export async function regenerateFrom(messageIdx: number) {
+  const store = useStore.getState()
+  if (store.aiRunning) return
+  const msgs = store.aiMessages
+  const target = msgs[messageIdx]
+  if (!target || target.role !== "assistant") return
+  // Find the most recent user message before this assistant message.
+  let userIdx = -1
+  for (let i = messageIdx - 1; i >= 0; i--) {
+    if (msgs[i].role === "user") { userIdx = i; break }
+  }
+  if (userIdx === -1) return
+  const userText = (msgs[userIdx] as { text: string }).text
+  // Trim back to *before* the user turn so `sendPrompt`'s append doesn't
+  // produce a duplicate user message in the history — it'll re-add both
+  // the user turn and the new assistant turn from scratch.
+  store.setAiMessages(msgs.slice(0, userIdx))
+  await sendPrompt(userText)
+}
+
+/**
+ * Drop everything from `userMessageIdx` onward and seed the composer with
+ * that user's text via `aiDraftRequest`. Used by "Edit and resend".
+ */
+export function editAndResetFrom(userMessageIdx: number) {
+  const store = useStore.getState()
+  if (store.aiRunning) return
+  const msgs = store.aiMessages
+  const target = msgs[userMessageIdx]
+  if (!target || target.role !== "user") return
+  store.setAiMessages(msgs.slice(0, userMessageIdx))
+  store.requestAiDraft(target.text)
+}
+
+/**
+ * Trim the assistant message at `assistantIdx` and everything after it.
+ * Used by "Branch from here" — the prior user turn becomes the trailing
+ * context; the composer is left empty for the user to type a new direction.
+ */
+export function branchFrom(assistantIdx: number) {
+  const store = useStore.getState()
+  if (store.aiRunning) return
+  const msgs = store.aiMessages
+  const target = msgs[assistantIdx]
+  if (!target || target.role !== "assistant") return
+  store.setAiMessages(msgs.slice(0, assistantIdx))
+}
+
 function relForCurrentNote(absPath: string | null, root: string | null): string | null {
   if (!absPath || !root) return null
   if (!absPath.startsWith(root)) return null
   return absPath.slice(root.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
+}
+
+/**
+ * Pull token counts out of an opaque `usage` payload emitted by an agent
+ * adapter. Returns null when nothing token-shaped is present (e.g. the
+ * subprocess waiter's `{ exit_code }` Done that fires after Claude Code's
+ * own usage Done).
+ *
+ * Handles both Claude Code's snake_case fields and any future agent that
+ * emits camelCase.
+ */
+function parseUsage(usage: unknown): {
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+} | null {
+  if (!usage || typeof usage !== "object") return null
+  const u = usage as Record<string, unknown>
+  const num = (...keys: string[]): number | undefined => {
+    for (const k of keys) {
+      const v = u[k]
+      if (typeof v === "number" && Number.isFinite(v)) return v
+    }
+    return undefined
+  }
+  const input = num("input_tokens", "inputTokens")
+  const output = num("output_tokens", "outputTokens")
+  const cacheRead = num("cache_read_input_tokens", "cacheReadTokens")
+  const cacheCreate = num("cache_creation_input_tokens", "cacheCreationTokens")
+  if (input == null && output == null && cacheRead == null && cacheCreate == null) return null
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: cacheRead,
+    cacheCreationTokens: cacheCreate,
+  }
 }

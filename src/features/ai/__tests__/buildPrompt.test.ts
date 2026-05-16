@@ -51,4 +51,45 @@ describe("buildPrompt", () => {
     expect(out).toContain("currently viewing: now.md")
     expect(out).toContain("`other.md`")
   })
+
+  it("attaches a selection block when provided", () => {
+    const out = buildPrompt({
+      currentNote: "now.md",
+      userText: "rewrite that",
+      selection: { text: "hello world", sourceNote: "now.md" },
+    })
+    expect(out).toContain("<selection>")
+    expect(out).toContain("hello world")
+    expect(out).toContain("</selection>")
+    expect(out).toContain("(from now.md)")
+  })
+
+  it("omits the selection block when text is empty", () => {
+    const out = buildPrompt({
+      currentNote: null,
+      userText: "hi",
+      selection: { text: "", sourceNote: null },
+    })
+    expect(out).toBe("hi")
+  })
+
+  it("prepends chat instructions when provided", () => {
+    const out = buildPrompt({
+      currentNote: null,
+      userText: "answer please",
+      systemPrompt: "Respond in haiku.",
+    })
+    expect(out).toContain("[chat instructions]")
+    expect(out).toContain("Respond in haiku.")
+    expect(out.indexOf("instructions")).toBeLessThan(out.indexOf("answer please"))
+  })
+
+  it("ignores whitespace-only instructions", () => {
+    const out = buildPrompt({
+      currentNote: null,
+      userText: "hi",
+      systemPrompt: "   ",
+    })
+    expect(out).toBe("hi")
+  })
 })

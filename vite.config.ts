@@ -39,12 +39,25 @@ export default defineConfig(async () => ({
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
+          // Editor + assistant markdown rendering share enough transitive
+          // deps (mdast / micromark / unist) that splitting them creates a
+          // circular vendor chunk warning. Keep them together — both are
+          // needed in the same UI session anyway.
           if (
             id.includes("@blocknote") ||
             id.includes("@codemirror") ||
             id.includes("@lezer") ||
             id.includes("prosemirror") ||
-            id.includes("yjs")
+            id.includes("yjs") ||
+            id.includes("react-markdown") ||
+            id.includes("remark-") ||
+            id.includes("rehype-") ||
+            id.includes("highlight.js") ||
+            id.includes("micromark") ||
+            id.includes("mdast-") ||
+            id.includes("hast-") ||
+            id.includes("unist-") ||
+            id.includes("unified")
           ) {
             return "editor-vendor";
           }

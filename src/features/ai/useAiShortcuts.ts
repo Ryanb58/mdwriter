@@ -33,7 +33,7 @@ export function useAiShortcuts() {
       openPanel("right")
       // Defer focus until the panel has had a render to mount the composer.
       requestAnimationFrame(() => {
-        const el = document.querySelector<HTMLTextAreaElement>("[data-mdwriter-ai-composer] textarea")
+        const el = document.querySelector<HTMLElement>("[data-mdwriter-ai-composer] .ai-composer-input")
         el?.focus()
       })
     }

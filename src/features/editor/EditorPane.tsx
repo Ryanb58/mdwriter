@@ -161,7 +161,7 @@ function EmptyEditorState() {
             icon={<FolderOpen size={20} />}
             label="Open recent"
             hint="⌘P"
-            onClick={() => openPalette("recent")}
+            onClick={() => openPalette("file")}
           />
           <QuickAction
             icon={<MagnifyingGlass size={20} />}

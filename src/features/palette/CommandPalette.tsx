@@ -14,7 +14,7 @@ import { WikilinkPopover, useWikilinkResults } from "../ai/WikilinkPopover"
 import { SearchMode } from "./SearchMode"
 import { onOpenPalette } from "./openPalette"
 
-type Mode = "file" | "ask" | "search" | "recent"
+type Mode = "file" | "ask" | "search"
 
 // Sentinel prefixes that switch into ask-mode from the regular palette.
 function detectModeFromQuery(query: string): { mode: Mode; rest: string } {
@@ -69,15 +69,12 @@ export function CommandPalette() {
   // When opened via Cmd+P, the user can pivot to ask-mode by typing `> ` or
   // a leading space. When opened via Cmd+K, we stay in ask-mode regardless.
   // Search mode is its own entrypoint (Cmd+Shift+F) and does not switch.
-  // Recent mode is file-mode with mtime-desc sort and does not pivot.
   const { mode: derivedMode, rest } =
     initialMode === "ask"
       ? { mode: "ask" as const, rest: query }
       : initialMode === "search"
         ? { mode: "search" as const, rest: query }
-        : initialMode === "recent"
-          ? { mode: "recent" as const, rest: query }
-          : detectModeFromQuery(query)
+        : detectModeFromQuery(query)
 
   return (
     <div
@@ -104,7 +101,6 @@ export function CommandPalette() {
             query={query}
             onQueryChange={setQuery}
             close={() => setOpen(false)}
-            sortBy={derivedMode === "recent" ? "recent" : "name"}
           />
         )}
       </div>
@@ -116,26 +112,22 @@ function FileMode({
   query,
   onQueryChange,
   close,
-  sortBy = "name",
 }: {
   query: string
   onQueryChange: (q: string) => void
   close: () => void
-  sortBy?: "name" | "recent"
 }) {
   const notes = useVaultNotes()
   // cmdk ranks items by query match when there's a query, and falls back to
-  // DOM order otherwise. Sorting by mtime desc here makes the empty-query view
-  // surface the user's most-recently-touched notes first.
-  const files = useMemo(() => {
-    const mapped = notes.map((n) => ({
-      name: n.name + ".md", path: n.path, rel: n.rel, mtime: n.mtime,
-    }))
-    if (sortBy === "recent") {
-      return mapped.slice().sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0))
-    }
-    return mapped
-  }, [notes, sortBy])
+  // DOM order otherwise. Sorting by mtime desc means the empty-query view
+  // surfaces the user's most-recently-touched notes first.
+  const files = useMemo(
+    () =>
+      notes
+        .map((n) => ({ name: n.name + ".md", path: n.path, rel: n.rel, mtime: n.mtime }))
+        .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0)),
+    [notes],
+  )
 
   return (
     <Command
@@ -148,7 +140,7 @@ function FileMode({
           autoFocus
           value={query}
           onValueChange={onQueryChange}
-          placeholder={sortBy === "recent" ? "Open recent…   type to filter" : "Open file…   type a space to ask the agent"}
+          placeholder="Open recent…   type a space to ask the agent"
           className="flex-1 outline-none text-[14px] placeholder:text-text-subtle"
         />
         <kbd className="text-[10px] font-mono text-text-subtle border border-border rounded px-1.5 py-0.5">esc</kbd>

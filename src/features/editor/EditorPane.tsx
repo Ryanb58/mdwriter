@@ -7,7 +7,7 @@ import { useAutoRename } from "./useAutoRename"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
-import { Sidebar, Warning, TextAa, Code, Robot } from "@phosphor-icons/react"
+import { Sidebar, SidebarSimple, Warning, TextAa, Code, Robot } from "@phosphor-icons/react"
 
 // CodeMirror only loads when the user enters raw mode.
 const RawEditor = lazy(() =>
@@ -32,16 +32,23 @@ export function EditorPane() {
   const propertiesActive = rightPane === "properties"
   const aiActive = rightPane === "ai"
   const rootPath = useStore((s) => s.rootPath)
+  const leftPaneCollapsed = useStore((s) => s.leftPaneCollapsed)
+  const setLeftPaneCollapsed = useStore((s) => s.setLeftPaneCollapsed)
 
   if (!doc) {
     return (
-      <div className="flex h-full items-center justify-center text-text-muted">
-        <div className="text-center">
-          <p className="text-sm mb-2">Select a file or create a new one.</p>
-          <p className="text-xs text-text-subtle">
-            <kbd className="font-mono px-1.5 py-0.5 rounded border border-border bg-surface">⌘P</kbd>
-            <span className="mx-2">to open</span>
-          </p>
+      <div className="flex flex-col h-full bg-bg">
+        <div className="flex items-center border-b border-border px-2 py-2.5 h-[45px]">
+          <LeftPaneToggle collapsed={leftPaneCollapsed} onToggle={() => setLeftPaneCollapsed(!leftPaneCollapsed)} />
+        </div>
+        <div className="flex-1 flex items-center justify-center text-text-muted">
+          <div className="text-center">
+            <p className="text-sm mb-2">Select a file or create a new one.</p>
+            <p className="text-xs text-text-subtle">
+              <kbd className="font-mono px-1.5 py-0.5 rounded border border-border bg-surface">⌘P</kbd>
+              <span className="mx-2">to open</span>
+            </p>
+          </div>
         </div>
       </div>
     )
@@ -60,8 +67,9 @@ export function EditorPane() {
 
   return (
     <div className="flex flex-col h-full bg-bg">
-      <div className="flex items-center justify-between border-b border-border px-5 py-2.5">
-        <div className="flex items-baseline gap-2 min-w-0">
+      <div className="flex items-center gap-2 border-b border-border px-2 py-2.5">
+        <LeftPaneToggle collapsed={leftPaneCollapsed} onToggle={() => setLeftPaneCollapsed(!leftPaneCollapsed)} />
+        <div className="flex items-baseline gap-2 min-w-0 flex-1">
           <FolderBreadcrumb vaultName={vaultName} folders={folders} />
           <EditableFileName fileName={fileName} />
         </div>
@@ -212,6 +220,24 @@ function EditableFileName({ fileName }: { fileName: string }) {
       className="text-[14px] font-medium text-text truncate cursor-text hover:bg-elevated rounded px-1 -mx-1 text-left"
     >
       {stem}
+    </button>
+  )
+}
+
+function LeftPaneToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`p-1 rounded transition-colors flex-none ${
+        !collapsed
+          ? "text-text bg-elevated"
+          : "text-text-subtle hover:text-text hover:bg-elevated"
+      }`}
+      title={collapsed ? "Show file tree" : "Hide file tree"}
+      aria-label={collapsed ? "Show file tree" : "Hide file tree"}
+    >
+      <SidebarSimple size={15} />
     </button>
   )
 }

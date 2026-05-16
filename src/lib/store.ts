@@ -77,6 +77,7 @@ export type AppStore = {
   openDoc: OpenDoc | null
   editorMode: EditorMode
   rightPane: RightPaneTab | null
+  leftPaneCollapsed: boolean
   leftPaneWidth: number
   rightPaneWidth: number
   settingsOpen: boolean
@@ -95,6 +96,7 @@ export type AppStore = {
   setEditorMode(mode: EditorMode): void
   setRightPane(tab: RightPaneTab | null): void
   toggleRightPane(tab: RightPaneTab): void
+  setLeftPaneCollapsed(v: boolean): void
   setLeftPaneWidth(w: number): void
   setRightPaneWidth(w: number): void
   setSettingsOpen(open: boolean): void
@@ -148,6 +150,7 @@ export const useStore = create<AppStore>()(
       openDoc: null,
       editorMode: "block",
       rightPane: "properties",
+      leftPaneCollapsed: false,
       leftPaneWidth: 240,
       rightPaneWidth: 340,
       settingsOpen: false,
@@ -189,6 +192,7 @@ export const useStore = create<AppStore>()(
       setRightPane: (tab) => set({ rightPane: tab }),
       toggleRightPane: (tab) =>
         set((s) => ({ rightPane: s.rightPane === tab ? null : tab })),
+      setLeftPaneCollapsed: (v) => set({ leftPaneCollapsed: v }),
       setLeftPaneWidth: (w) => set({ leftPaneWidth: w }),
       setRightPaneWidth: (w) => set({ rightPaneWidth: w }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
@@ -220,6 +224,7 @@ export const useStore = create<AppStore>()(
         settings: s.settings,
         rightPane: s.rightPane,
         aiAgent: s.aiAgent,
+        leftPaneCollapsed: s.leftPaneCollapsed,
         leftPaneWidth: s.leftPaneWidth,
         rightPaneWidth: s.rightPaneWidth,
       }),

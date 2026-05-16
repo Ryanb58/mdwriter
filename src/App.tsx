@@ -1,3 +1,4 @@
+import { useRef, useEffect } from "react"
 import { X } from "@phosphor-icons/react"
 import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
@@ -30,10 +31,51 @@ export default function App() {
   const rootPath = useStore((s) => s.rootPath)
   const rightPane = useStore((s) => s.rightPane)
   const setRightPane = useStore((s) => s.setRightPane)
+  const leftPaneCollapsed = useStore((s) => s.leftPaneCollapsed)
+  const setLeftPaneCollapsed = useStore((s) => s.setLeftPaneCollapsed)
   const leftPaneWidth = useStore((s) => s.leftPaneWidth)
   const rightPaneWidth = useStore((s) => s.rightPaneWidth)
   const setLeftPaneWidth = useStore((s) => s.setLeftPaneWidth)
   const setRightPaneWidth = useStore((s) => s.setRightPaneWidth)
+
+  // Refs so the ResizeObserver callback sees current values without re-subscribing.
+  const containerRef = useRef<HTMLDivElement>(null)
+  const autoCollapsedRef = useRef({ left: false, right: false })
+  const leftCollapsedRef = useRef(leftPaneCollapsed)
+  leftCollapsedRef.current = leftPaneCollapsed
+  const rightPaneRef = useRef(rightPane)
+  rightPaneRef.current = rightPane
+  const lastRightPaneTabRef = useRef<"properties" | "ai">("properties")
+  if (rightPane !== null) lastRightPaneTabRef.current = rightPane
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width
+      if (w < 560) {
+        if (!leftCollapsedRef.current) {
+          setLeftPaneCollapsed(true)
+          autoCollapsedRef.current.left = true
+        }
+        if (rightPaneRef.current !== null) {
+          setRightPane(null)
+          autoCollapsedRef.current.right = true
+        }
+      } else if (w >= 680) {
+        if (autoCollapsedRef.current.left) {
+          setLeftPaneCollapsed(false)
+          autoCollapsedRef.current.left = false
+        }
+        if (autoCollapsedRef.current.right) {
+          setRightPane(lastRightPaneTabRef.current)
+          autoCollapsedRef.current.right = false
+        }
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [setLeftPaneCollapsed, setRightPane])
 
   if (!rootPath) {
     return (
@@ -49,13 +91,17 @@ export default function App() {
   return (
     <>
       <div className="flex flex-col h-screen bg-bg text-text">
-        <div className="flex flex-1 min-h-0">
-          <aside className="flex-none bg-surface" style={{ width: leftPaneWidth }}>
-            <TreePane />
-          </aside>
-          <ResizeHandle
-            onMouseDown={(e) => startResize(e, leftPaneWidth, setLeftPaneWidth, 160, 520, 1)}
-          />
+        <div ref={containerRef} className="flex flex-1 min-h-0">
+          {!leftPaneCollapsed && (
+            <aside className="flex-none bg-surface overflow-hidden" style={{ width: leftPaneWidth }}>
+              <TreePane />
+            </aside>
+          )}
+          {!leftPaneCollapsed && (
+            <ResizeHandle
+              onMouseDown={(e) => startResize(e, leftPaneWidth, setLeftPaneWidth, 160, 520, 1)}
+            />
+          )}
           <main className="flex-1 min-w-0 flex flex-col">
             <EditorPane />
           </main>

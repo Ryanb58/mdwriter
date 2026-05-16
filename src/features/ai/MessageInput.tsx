@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState, useMemo } from "react"
+import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { ArrowUp, Stop, TextAa, X, Lightning } from "@phosphor-icons/react"
 import { useStore } from "../../lib/store"
 import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { sendPrompt, cancelSession } from "./useAiSession"
 import {
-  applyWikilinkSelection,
   detectMentionTrigger,
   type WikilinkTrigger,
 } from "./wikilinkDetect"
@@ -13,6 +12,15 @@ import { basename, joinPath } from "../../lib/paths"
 import { ipc } from "../../lib/ipc"
 import { readClipboardImageAsPng } from "../../lib/imagePaste"
 import { detectSlashTrigger, matchSlashCommands, type SlashCommand } from "./slashCommands"
+import {
+  makePill,
+  pillBeforeCaret,
+  readEditorState,
+  renderTextToEditor,
+  setCaretAtTextOffset,
+} from "./composerDOM"
+
+const MAX_HEIGHT_PX = 220
 
 export function MessageInput() {
   const [draft, setDraft] = useState("")
@@ -25,7 +33,7 @@ export function MessageInput() {
   const openDocPath = useStore((s) => s.openDoc?.path ?? null)
   const hasSelection = useStore((s) => !!s.editorSelection?.text)
   const notes = useVaultNotes()
-  const taRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
 
   const slashQuery = useMemo(() => detectSlashTrigger(draft), [draft])
   const slashMatches = useMemo(
@@ -33,31 +41,38 @@ export function MessageInput() {
     [slashQuery],
   )
 
-  // Honor externally-injected drafts ("Edit and resend"). The nonce is
-  // captured in the effect dep so back-to-back requests with the same text
-  // still re-seed the input.
+  /** Push a new draft string and rebuild the DOM (used for slash command,
+   *  edit-and-resend, picker selection — anything that changes structure). */
+  const replaceDraft = useCallback((next: string, nextCaret = next.length) => {
+    const root = editorRef.current
+    if (!root) return
+    renderTextToEditor(root, next)
+    setDraft(next)
+    setTrigger(detectMentionTrigger(next, nextCaret))
+    requestAnimationFrame(() => {
+      root.focus()
+      setCaretAtTextOffset(root, nextCaret)
+    })
+  }, [])
+
+  /** Read current editor state into React. The DOM is the source of truth; this
+   *  is the canonical write path for any user-driven change. */
+  const syncFromDOM = useCallback(() => {
+    const root = editorRef.current
+    if (!root) return
+    const { text, caret } = readEditorState(root)
+    setDraft(text)
+    setTrigger(detectMentionTrigger(text, caret))
+  }, [])
+
+  // Honor externally-injected drafts ("Edit and resend"). The nonce keys the
+  // effect so back-to-back requests with identical text still re-seed.
   useEffect(() => {
     if (!draftRequest) return
-    setDraft(draftRequest.text)
+    replaceDraft(draftRequest.text)
     consumeAiDraftRequest()
-    requestAnimationFrame(() => {
-      const el = taRef.current
-      if (!el) return
-      el.focus()
-      const end = el.value.length
-      el.setSelectionRange(end, end)
-    })
-  }, [draftRequest, consumeAiDraftRequest])
+  }, [draftRequest, consumeAiDraftRequest, replaceDraft])
 
-  // Auto-grow textarea up to a sensible max.
-  useEffect(() => {
-    const el = taRef.current
-    if (!el) return
-    el.style.height = "auto"
-    el.style.height = Math.min(el.scrollHeight, 220) + "px"
-  }, [draft])
-
-  // Reset highlight when the query changes so a new search starts at the top.
   useEffect(() => {
     setActiveIdx(0)
   }, [trigger?.query])
@@ -66,38 +81,26 @@ export function MessageInput() {
     setSlashActiveIdx(0)
   }, [slashQuery])
 
-  // Recompute the trigger from the current caret position. `[[` and `@` both
-  // open the picker; the chosen note is inserted as `[[name]]` either way.
-  function syncTrigger(value: string, caret: number) {
-    setTrigger(detectMentionTrigger(value, caret))
-  }
-
-  function onChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const value = e.target.value
-    setDraft(value)
-    syncTrigger(value, e.target.selectionStart ?? value.length)
-  }
-
-  // The textarea's caret can move without `value` changing (arrow keys, click).
-  function onSelect(e: React.SyntheticEvent<HTMLTextAreaElement>) {
-    const el = e.currentTarget
-    syncTrigger(el.value, el.selectionStart ?? el.value.length)
-  }
-
   const results = useWikilinkResults(notes, trigger?.query ?? "")
 
   function selectNote(note: VaultNote) {
     if (!trigger) return
-    const { value, caret } = applyWikilinkSelection(draft, trigger, note.name)
-    setDraft(value)
+    // Replace the trigger range with a pill node + trailing space. The
+    // textual model still uses `[[Name]]` so prompt building and persistence
+    // don't change.
+    const root = editorRef.current
+    if (!root) {
+      // Defensive fallback — should never hit in practice.
+      replaceDraft(
+        draft.slice(0, trigger.start) + `[[${note.name}]]` + draft.slice(trigger.end),
+      )
+      setTrigger(null)
+      return
+    }
+    insertPillAtTrigger(root, draft, trigger, note.name)
     setTrigger(null)
-    // Restore caret after React renders the new value.
-    requestAnimationFrame(() => {
-      const el = taRef.current
-      if (!el) return
-      el.focus()
-      el.setSelectionRange(caret, caret)
-    })
+    syncFromDOM()
+    requestAnimationFrame(() => root.focus())
   }
 
   function submit() {
@@ -105,14 +108,13 @@ export function MessageInput() {
     const t = draft.trim()
     if (!t) return
     sendPrompt(t)
-    setDraft("")
+    replaceDraft("")
     setTrigger(null)
   }
 
-  async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+  async function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
     const cd = e.clipboardData
     if (!cd) return
-    // Fast path: a real image item is present (Chromium-style clipboards).
     for (const item of Array.from(cd.items)) {
       if (item.kind === "file" && item.type.startsWith("image/")) {
         const file = item.getAsFile()
@@ -120,20 +122,28 @@ export function MessageInput() {
         e.preventDefault()
         const bytes = new Uint8Array(await file.arrayBuffer())
         const mime = file.type || "image/png"
-        attachImage(bytes, mime, taRef.current, setDraft)
+        await attachImage(bytes, mime, draft, replaceDraft)
         return
       }
     }
-    // WKWebView fallback: clipboard reports types=["Files"] with empty items.
-    // Same workaround the editor uses — read native RGBA and re-encode as PNG.
+    // WKWebView reports types=["Files"] with empty items/files for images.
     if (cd.items.length === 0 && cd.files.length === 0 && Array.from(cd.types).includes("Files")) {
       e.preventDefault()
       try {
         const bytes = await readClipboardImageAsPng()
-        if (bytes) attachImage(bytes, "image/png", taRef.current, setDraft)
+        if (bytes) await attachImage(bytes, "image/png", draft, replaceDraft)
       } catch (err) {
         console.error("[chat image paste] failed:", err)
       }
+      return
+    }
+    // Plain text paste — strip formatting from rich-text payloads so the
+    // contenteditable doesn't inherit unwanted markup.
+    const text = cd.getData("text/plain")
+    if (text) {
+      e.preventDefault()
+      document.execCommand("insertText", false, text)
+      syncFromDOM()
     }
   }
 
@@ -142,22 +152,24 @@ export function MessageInput() {
       currentNoteName: openDocPath ? basename(openDocPath) : null,
       hasSelection,
     }
-    const next = cmd.build(ctx)
-    setDraft(next)
-    setSlashActiveIdx(0)
-    requestAnimationFrame(() => {
-      const el = taRef.current
-      if (!el) return
-      el.focus()
-      const end = el.value.length
-      el.setSelectionRange(end, end)
-    })
+    replaceDraft(cmd.build(ctx))
   }
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    // Slash command popover takes precedence over the mention picker when both
-    // could theoretically open — in practice `/` at the start can't co-occur
-    // with a wikilink trigger.
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    // Backspace: if a pill sits right behind the caret, atomically remove it.
+    if (e.key === "Backspace") {
+      const root = editorRef.current
+      if (root) {
+        const pill = pillBeforeCaret(root)
+        if (pill) {
+          e.preventDefault()
+          pill.remove()
+          syncFromDOM()
+          return
+        }
+      }
+    }
+
     if (slashQuery != null && slashMatches.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
@@ -176,12 +188,11 @@ export function MessageInput() {
       }
       if (e.key === "Escape") {
         e.preventDefault()
-        setDraft("")
+        replaceDraft("")
         return
       }
     }
 
-    // Popover is open: arrows/Enter/Esc operate on it.
     if (trigger) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
@@ -193,12 +204,10 @@ export function MessageInput() {
         setActiveIdx((i) => (results.length === 0 ? 0 : (i - 1 + results.length) % results.length))
         return
       }
-      if (e.key === "Enter" && !e.shiftKey) {
-        if (results.length > 0) {
-          e.preventDefault()
-          selectNote(results[Math.min(activeIdx, results.length - 1)])
-          return
-        }
+      if (e.key === "Enter" && !e.shiftKey && results.length > 0) {
+        e.preventDefault()
+        selectNote(results[Math.min(activeIdx, results.length - 1)])
+        return
       }
       if (e.key === "Tab" && results.length > 0) {
         e.preventDefault()
@@ -215,25 +224,39 @@ export function MessageInput() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       submit()
+      return
+    }
+    // Shift+Enter: insert a real `<br>` rather than letting contenteditable's
+    // default behaviour drop a `<div>` (which would break our text serializer).
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault()
+      document.execCommand("insertLineBreak")
+      syncFromDOM()
+      return
     }
   }
+
+  const empty = draft.length === 0
 
   return (
     <div className="border-t border-border p-2.5" data-mdwriter-ai-composer>
       <SelectionChip />
       <div className="relative rounded-md border border-border bg-elevated focus-within:border-accent transition-colors">
-        <textarea
-          ref={taRef}
-          value={draft}
-          onChange={onChange}
-          onSelect={onSelect}
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          role="textbox"
+          aria-multiline="true"
+          aria-label="Message"
+          onInput={syncFromDOM}
           onKeyDown={onKeyDown}
           onPaste={handlePaste}
           onBlur={() => setTrigger(null)}
-          rows={1}
-          placeholder="Ask the agent…  type @ or [[ to reference a note · paste images"
-          className="w-full resize-none bg-transparent text-[13px] leading-relaxed px-2.5 py-2 pr-10 placeholder:text-text-subtle"
-          style={{ maxHeight: 220 }}
+          data-empty={empty}
+          data-placeholder="Ask the agent…  type @ or [[ to reference a note · paste images"
+          className="ai-composer-input w-full text-[13px] leading-relaxed px-2.5 py-2 pr-10 outline-none whitespace-pre-wrap break-words"
+          style={{ maxHeight: MAX_HEIGHT_PX, overflowY: "auto" }}
         />
         {trigger && (
           <WikilinkPopover
@@ -283,19 +306,122 @@ export function MessageInput() {
 }
 
 /**
- * Save a pasted image into `<vault>/.mdwriter/chat-attachments/` and splice a
- * markdown image reference into the composer at the caret. The relative path
- * is used so the agent (which runs from the vault root) can resolve it with
- * its Read tool.
- *
- * The function silently no-ops when there's no vault — the user is typing in
- * the empty-state shell.
+ * Replace the `trigger` span in the contenteditable with a pill node + a
+ * trailing space, then update React state by re-reading the DOM. Walks the
+ * tree manually so we don't lose pills that already exist in the draft.
+ */
+function insertPillAtTrigger(
+  root: HTMLDivElement,
+  draft: string,
+  trigger: WikilinkTrigger,
+  noteName: string,
+) {
+  const range = textRangeFor(root, trigger.start, trigger.end)
+  if (!range) return
+  range.deleteContents()
+  const pill = makePill(noteName)
+  range.insertNode(pill)
+  // Insert a single space after the pill so the user can keep typing without
+  // their next character bleeding into the pill's atomic span boundary.
+  const space = document.createTextNode(" ")
+  pill.after(space)
+  // Cursor right after the space.
+  const sel = window.getSelection()
+  if (sel) {
+    const r = document.createRange()
+    r.setStartAfter(space)
+    r.collapse(true)
+    sel.removeAllRanges()
+    sel.addRange(r)
+  }
+  void draft // referenced by callers for control flow; unused inside.
+}
+
+/**
+ * Build a DOM Range covering the [startOffset, endOffset) text range inside
+ * the editor. Walks the tree the same way `readEditorState` does, so
+ * offsets line up with the serialized text the trigger detector saw.
+ */
+function textRangeFor(root: HTMLElement, startOffset: number, endOffset: number): Range | null {
+  let acc = 0
+  let startSet = false
+  let endSet = false
+  const range = document.createRange()
+
+  function maybeSetStart(node: Node, offset: number) {
+    if (!startSet) {
+      range.setStart(node, offset)
+      startSet = true
+    }
+  }
+  function maybeSetEnd(node: Node, offset: number) {
+    if (!endSet) {
+      range.setEnd(node, offset)
+      endSet = true
+    }
+  }
+
+  function walk(node: Node): boolean {
+    if (startSet && endSet) return true
+    if (node.nodeType === Node.TEXT_NODE) {
+      const len = (node.textContent ?? "").length
+      if (!startSet && startOffset >= acc && startOffset <= acc + len) {
+        maybeSetStart(node, startOffset - acc)
+      }
+      if (!endSet && endOffset >= acc && endOffset <= acc + len) {
+        maybeSetEnd(node, endOffset - acc)
+      }
+      acc += len
+      return startSet && endSet
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return false
+    const el = node as HTMLElement
+    if (el.classList.contains("ai-pill")) {
+      const len = `[[${el.dataset.target ?? el.textContent ?? ""}]]`.length
+      const parent = el.parentNode!
+      const idx = Array.from(parent.childNodes).indexOf(el as ChildNode)
+      if (!startSet && startOffset >= acc && startOffset <= acc + len) {
+        maybeSetStart(parent, startOffset - acc < len / 2 ? idx : idx + 1)
+      }
+      if (!endSet && endOffset >= acc && endOffset <= acc + len) {
+        maybeSetEnd(parent, endOffset - acc < len / 2 ? idx : idx + 1)
+      }
+      acc += len
+      return startSet && endSet
+    }
+    if (el.tagName === "BR") {
+      const parent = el.parentNode!
+      const idx = Array.from(parent.childNodes).indexOf(el as ChildNode)
+      if (!startSet && startOffset === acc) maybeSetStart(parent, idx)
+      if (!endSet && endOffset === acc) maybeSetEnd(parent, idx)
+      acc += 1
+      if (!startSet && startOffset === acc) maybeSetStart(parent, idx + 1)
+      if (!endSet && endOffset === acc) maybeSetEnd(parent, idx + 1)
+      return startSet && endSet
+    }
+    for (const c of Array.from(el.childNodes)) {
+      if (walk(c)) return true
+    }
+    return false
+  }
+
+  walk(root)
+  if (!startSet) maybeSetStart(root, root.childNodes.length)
+  if (!endSet) maybeSetEnd(root, root.childNodes.length)
+  return range
+}
+
+/**
+ * Save a pasted image into `<vault>/.mdwriter/chat-attachments/` and append
+ * a markdown image reference to the draft. The relative path is used so the
+ * agent (which runs from the vault root) can resolve it with its Read tool.
+ * Silently no-ops when there's no vault.
  */
 async function attachImage(
   bytes: Uint8Array,
   mime: string,
-  ta: HTMLTextAreaElement | null,
-  setDraft: React.Dispatch<React.SetStateAction<string>>,
+  draft: string,
+  replaceDraft: (text: string, caret?: number) => void,
 ) {
   const root = useStore.getState().rootPath
   if (!root) return
@@ -314,23 +440,9 @@ async function attachImage(
     return
   }
   const ref = `![${name}](${rel})`
-  if (!ta) {
-    setDraft((d) => (d ? `${d}\n${ref}` : ref))
-    return
-  }
-  // Insert at the current caret position so pasting mid-prompt works.
-  const start = ta.selectionStart ?? ta.value.length
-  const end = ta.selectionEnd ?? ta.value.length
-  const before = ta.value.slice(0, start)
-  const after = ta.value.slice(end)
-  const insertion = before.endsWith("\n") || before === "" ? ref : `\n${ref}`
-  const next = before + insertion + after
-  setDraft(next)
-  const caret = (before + insertion).length
-  requestAnimationFrame(() => {
-    ta.focus()
-    ta.setSelectionRange(caret, caret)
-  })
+  const sep = draft && !draft.endsWith("\n") ? "\n" : ""
+  const next = `${draft}${sep}${ref}`
+  replaceDraft(next)
 }
 
 function SlashPopover({
@@ -353,8 +465,6 @@ function SlashPopover({
           <button
             key={cmd.name}
             type="button"
-            // onMouseDown rather than onClick so the textarea doesn't lose
-            // focus before the handler runs (which would dismiss us first).
             onMouseDown={(e) => { e.preventDefault(); onPick(cmd) }}
             onMouseEnter={() => onHover(i)}
             className={`w-full flex items-start gap-2.5 px-3 py-2 text-left ${

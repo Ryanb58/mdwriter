@@ -1,0 +1,261 @@
+/* ─── layout shell ──────────────────────────────────────────────────────── */
+
+.layout-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  min-height: 0;
+
+  --layout-toolbar-h: 40px;
+  --layout-rail-w: 48px;
+  --layout-main-min: 640px;
+  --layout-left-default: 280px;
+  --layout-right-default: 320px;
+
+  --layout-easing: cubic-bezier(0.4, 0, 0.2, 1);
+  --layout-width-dur: 220ms;
+  --layout-drawer-dur: 260ms;
+  --layout-fade-dur: 120ms;
+  --layout-backdrop-dur: 200ms;
+}
+
+.layout-shell[data-reduced-motion="true"] {
+  --layout-width-dur: 0ms;
+  --layout-drawer-dur: 0ms;
+  --layout-fade-dur: 0ms;
+  --layout-backdrop-dur: 0ms;
+}
+
+/* ─── toolbar ───────────────────────────────────────────────────────────── */
+
+.layout-toolbar {
+  height: var(--layout-toolbar-h);
+  flex: 0 0 var(--layout-toolbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  z-index: 30;
+  position: relative;
+}
+
+.layout-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.layout-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--color-text-subtle);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background-color 120ms, color 120ms;
+}
+.layout-toolbar-btn:hover {
+  background: var(--color-elevated);
+  color: var(--color-text);
+}
+.layout-toolbar-btn[aria-expanded="true"] {
+  background: var(--color-elevated);
+  color: var(--color-text);
+}
+.layout-toolbar-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ─── body (grid host) ──────────────────────────────────────────────────── */
+
+.layout-body {
+  flex: 1 1 auto;
+  position: relative;
+  display: grid;
+  grid-template-columns:
+    var(--layout-left-grid, 0px)
+    minmax(0, 1fr)
+    var(--layout-right-grid, 0px);
+  min-height: 0;
+  transition: grid-template-columns var(--layout-width-dur) var(--layout-easing);
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.layout-main {
+  grid-column: 2;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+}
+
+/* ─── side panels ───────────────────────────────────────────────────────── */
+
+.layout-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--color-surface);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-color: var(--color-border);
+  transition:
+    width var(--layout-width-dur) var(--layout-easing),
+    transform var(--layout-drawer-dur) var(--layout-easing),
+    visibility 0s var(--layout-drawer-dur);
+}
+
+.layout-panel[data-side="left"] {
+  left: 0;
+  width: var(--layout-left-panel, 0px);
+  border-right: 1px solid var(--color-border);
+}
+.layout-panel[data-side="right"] {
+  right: 0;
+  width: var(--layout-right-panel, 0px);
+  border-left: 1px solid var(--color-border);
+}
+
+/* When visible, visibility flips immediately so focus / a11y land on the panel. */
+.layout-panel:not([data-state="closed"]) {
+  visibility: visible;
+  transition:
+    width var(--layout-width-dur) var(--layout-easing),
+    transform var(--layout-drawer-dur) var(--layout-easing),
+    visibility 0s 0s;
+}
+
+/* Overlay / sheet drawers float above main and slide via transform */
+.layout-shell[data-mode="overlay"] .layout-panel,
+.layout-shell[data-mode="mobile-sheet"] .layout-panel {
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.layout-shell[data-mode="overlay"] .layout-panel[data-side="left"][data-state="closed"],
+.layout-shell[data-mode="mobile-sheet"] .layout-panel[data-side="left"][data-state="closed"] {
+  transform: translateX(-100%);
+  visibility: hidden;
+}
+.layout-shell[data-mode="overlay"] .layout-panel[data-side="right"][data-state="closed"],
+.layout-shell[data-mode="mobile-sheet"] .layout-panel[data-side="right"][data-state="closed"] {
+  transform: translateX(100%);
+  visibility: hidden;
+}
+
+/* ─── panel content / rail crossfade ───────────────────────────────────── */
+
+.layout-panel-content,
+.layout-panel-rail {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* default (open / drawer): main content visible, rail hidden */
+.layout-panel-content {
+  opacity: 1;
+  pointer-events: auto;
+  /* fade in on the *trailing* edge of a rail→open transition */
+  transition: opacity var(--layout-fade-dur) 100ms;
+}
+.layout-panel-rail {
+  width: var(--layout-rail-w);
+  opacity: 0;
+  pointer-events: none;
+  /* fade out on the leading edge of an open→rail transition */
+  transition: opacity var(--layout-fade-dur) 0ms;
+}
+
+.layout-panel[data-side="right"] .layout-panel-rail {
+  left: auto;
+  right: 0;
+}
+
+/* rail state inverts the crossfade timing */
+.layout-panel[data-state="rail"] .layout-panel-content {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--layout-fade-dur) 0ms;
+}
+.layout-panel[data-state="rail"] .layout-panel-rail {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity var(--layout-fade-dur) 100ms;
+}
+
+/* In closed (overlay) state the panel slides away — rail isn't shown. */
+.layout-panel[data-state="closed"] .layout-panel-rail {
+  opacity: 0;
+}
+
+/* ─── resize handles (docked, open panels only) ────────────────────────── */
+
+.layout-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 20;
+  cursor: col-resize;
+  background-color: transparent;
+  transition:
+    left var(--layout-width-dur) var(--layout-easing),
+    right var(--layout-width-dur) var(--layout-easing),
+    background-color 120ms;
+}
+
+.layout-resize-handle[data-side="left"] {
+  left: calc(var(--layout-left-panel, 0px) - 3px);
+}
+.layout-resize-handle[data-side="right"] {
+  right: calc(var(--layout-right-panel, 0px) - 3px);
+}
+
+.layout-resize-handle:hover,
+.layout-resize-handle:active {
+  background-color: color-mix(in oklch, var(--color-accent) 50%, transparent);
+}
+
+/* While dragging, freeze all width/track transitions so the panel tracks the
+   cursor without lag. */
+.layout-shell[data-resizing="true"] .layout-body,
+.layout-shell[data-resizing="true"] .layout-panel,
+.layout-shell[data-resizing="true"] .layout-resize-handle {
+  transition: none !important;
+}
+
+/* ─── backdrop (overlay / sheet) ───────────────────────────────────────── */
+
+.layout-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  pointer-events: none;
+  z-index: 40;
+  transition: background-color var(--layout-backdrop-dur) var(--layout-easing);
+}
+
+.layout-shell[data-mode="overlay"] .layout-backdrop[data-visible="true"] {
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+.layout-shell[data-mode="mobile-sheet"] .layout-backdrop[data-visible="true"] {
+  background: rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+}

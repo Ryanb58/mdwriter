@@ -76,7 +76,7 @@ export type AppStore = {
   expandedFolders: Set<string>
   openDoc: OpenDoc | null
   editorMode: EditorMode
-  rightPane: RightPaneTab | null
+  rightPaneTab: RightPaneTab
   settingsOpen: boolean
   settings: Settings
   renamingPath: string | null
@@ -91,8 +91,7 @@ export type AppStore = {
   setOpenDoc(doc: OpenDoc | null): void
   patchOpenDoc(patch: Partial<OpenDoc>): void
   setEditorMode(mode: EditorMode): void
-  setRightPane(tab: RightPaneTab | null): void
-  toggleRightPane(tab: RightPaneTab): void
+  setRightPaneTab(tab: RightPaneTab): void
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
@@ -143,7 +142,7 @@ export const useStore = create<AppStore>()(
       expandedFolders: new Set<string>(),
       openDoc: null,
       editorMode: "block",
-      rightPane: "properties",
+      rightPaneTab: "properties",
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
@@ -180,9 +179,7 @@ export const useStore = create<AppStore>()(
       patchOpenDoc: (patch) =>
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
       setEditorMode: (mode) => set({ editorMode: mode }),
-      setRightPane: (tab) => set({ rightPane: tab }),
-      toggleRightPane: (tab) =>
-        set((s) => ({ rightPane: s.rightPane === tab ? null : tab })),
+      setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
@@ -210,13 +207,14 @@ export const useStore = create<AppStore>()(
       // document are session-scoped and reload from disk on launch.
       partialize: (s) => ({
         settings: s.settings,
-        rightPane: s.rightPane,
+        rightPaneTab: s.rightPaneTab,
         aiAgent: s.aiAgent,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppStore> & {
           propertiesVisible?: boolean
           aiPanelVisible?: boolean
+          rightPane?: RightPaneTab | null
         }
         // Re-merge settings against DEFAULT_SETTINGS so any field added in a
         // later release picks up its default for users who persisted earlier.
@@ -228,16 +226,25 @@ export const useStore = create<AppStore>()(
         if (typeof settings.imageFilenameTemplate !== "string") {
           settings.imageFilenameTemplate = DEFAULT_SETTINGS.imageFilenameTemplate
         }
-        // Migrate legacy split flags to the unified right-pane tab.
-        let rightPane: RightPaneTab | null | undefined = p.rightPane
-        if (rightPane === undefined) {
-          if (p.aiPanelVisible) rightPane = "ai"
-          else if (p.propertiesVisible) rightPane = "properties"
-          else if (p.propertiesVisible === false && p.aiPanelVisible === false) rightPane = null
+        // Migrate legacy tab + visibility flags into rightPaneTab. Layout
+        // open/closed state is now owned by the layout module, so we only
+        // recover the tab choice here.
+        let rightPaneTab: RightPaneTab = current.rightPaneTab
+        if (p.rightPaneTab === "properties" || p.rightPaneTab === "ai") {
+          rightPaneTab = p.rightPaneTab
+        } else if (p.rightPane === "ai" || p.aiPanelVisible) {
+          rightPaneTab = "ai"
+        } else if (p.rightPane === "properties" || p.propertiesVisible) {
+          rightPaneTab = "properties"
         }
-        const { propertiesVisible: _pv, aiPanelVisible: _av, ...rest } = p
-        void _pv; void _av
-        return { ...current, ...rest, settings, ...(rightPane !== undefined ? { rightPane } : {}) }
+        const {
+          propertiesVisible: _pv,
+          aiPanelVisible: _av,
+          rightPane: _rp,
+          ...rest
+        } = p
+        void _pv; void _av; void _rp
+        return { ...current, ...rest, settings, rightPaneTab }
       },
     },
   ),

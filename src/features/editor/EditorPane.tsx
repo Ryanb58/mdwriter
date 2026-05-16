@@ -8,6 +8,8 @@ import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
 import { Sidebar, Warning, TextAa, Code, Robot } from "@phosphor-icons/react"
+import { useLayout } from "../../layout/LayoutShell"
+import { isOverlayMode } from "../../layout/constants"
 
 // CodeMirror only loads when the user enters raw mode.
 const RawEditor = lazy(() =>
@@ -24,14 +26,27 @@ export function EditorPane() {
   useAutoRename()
   const { toggle: toggleMode } = useEditorMode()
   const doc = useStore((s) => s.openDoc)
-  const mode = useStore((s) => s.editorMode)
-  const setMode = useStore((s) => s.setEditorMode)
+  const editorView = useStore((s) => s.editorMode)
+  const setEditorView = useStore((s) => s.setEditorMode)
   const patch = useStore((s) => s.patchOpenDoc)
-  const rightPane = useStore((s) => s.rightPane)
-  const toggleRightPane = useStore((s) => s.toggleRightPane)
-  const propertiesActive = rightPane === "properties"
-  const aiActive = rightPane === "ai"
+  const rightPaneTab = useStore((s) => s.rightPaneTab)
+  const setRightPaneTab = useStore((s) => s.setRightPaneTab)
   const rootPath = useStore((s) => s.rootPath)
+  const { rightState, mode: layoutMode, setPanelState } = useLayout()
+  const rightOpen = rightState === "open"
+  const propertiesActive = rightOpen && rightPaneTab === "properties"
+  const aiActive = rightOpen && rightPaneTab === "ai"
+
+  function activateTab(tab: "properties" | "ai") {
+    // Click on an already-active tab collapses the panel. Click on the other
+    // tab switches the tab and ensures the panel is visible.
+    if (rightOpen && rightPaneTab === tab) {
+      setPanelState("right", isOverlayMode(layoutMode) ? "closed" : "rail")
+      return
+    }
+    setRightPaneTab(tab)
+    setPanelState("right", "open")
+  }
 
   if (!doc) {
     return (
@@ -53,10 +68,10 @@ export function EditorPane() {
 
   // Switch to a target mode without toggling. The toggleMode hook handles the
   // necessary frontmatter ↔ rawMarkdown conversion.
-  function setBlock() { if (mode !== "block") toggleMode() }
-  function setRaw() { if (mode !== "raw") toggleMode() }
-  // Bind setMode for type checker — used only via toggleMode currently.
-  void setMode
+  function setBlock() { if (editorView !== "block") toggleMode() }
+  function setRaw() { if (editorView !== "raw") toggleMode() }
+  // Bind setter for type checker — used only via toggleMode currently.
+  void setEditorView
 
   return (
     <div className="flex flex-col h-full bg-bg">
@@ -67,9 +82,9 @@ export function EditorPane() {
         </div>
         <div className="flex items-center gap-3 flex-none">
           <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
-          <ModeSegmented mode={mode} onBlock={setBlock} onRaw={setRaw} />
+          <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
           <button
-            onClick={() => toggleRightPane("ai")}
+            onClick={() => activateTab("ai")}
             className={`p-1 rounded transition-colors ${
               aiActive
                 ? "text-text bg-elevated"
@@ -80,7 +95,7 @@ export function EditorPane() {
             <Robot size={15} />
           </button>
           <button
-            onClick={() => toggleRightPane("properties")}
+            onClick={() => activateTab("properties")}
             className={`p-1 rounded transition-colors ${
               propertiesActive
                 ? "text-text bg-elevated"
@@ -102,7 +117,7 @@ export function EditorPane() {
         </div>
       )}
       <div className="flex-1 overflow-hidden">
-        {mode === "block" ? (
+        {editorView === "block" ? (
           <BlockEditor
             docKey={doc.path}
             initialMarkdown={doc.rawMarkdown}

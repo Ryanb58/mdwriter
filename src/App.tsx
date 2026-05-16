@@ -1,4 +1,4 @@
-import { X } from "@phosphor-icons/react"
+import { Robot, Sidebar as SidebarIcon, FolderOpen } from "@phosphor-icons/react"
 import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
@@ -17,6 +17,7 @@ import { useExternalChanges } from "./features/watcher/useExternalChanges"
 import { useUpdates } from "./features/updates/useUpdates"
 import { UpdateBanner } from "./features/updates/UpdateBanner"
 import { usePasteDiagnostic } from "./lib/pasteDiagnostic"
+import { LayoutShell, useLayout } from "./layout/LayoutShell"
 import "./App.css"
 
 export default function App() {
@@ -28,8 +29,6 @@ export default function App() {
   useAiSession()
   const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
-  const rightPane = useStore((s) => s.rightPane)
-  const setRightPane = useStore((s) => s.setRightPane)
 
   if (!rootPath) {
     return (
@@ -45,43 +44,16 @@ export default function App() {
   return (
     <>
       <div className="flex flex-col h-screen bg-bg text-text">
-        <div className="flex flex-1 min-h-0">
-          <aside className="w-[240px] flex-none border-r border-border bg-surface">
-            <TreePane />
-          </aside>
-          <main className="flex-1 min-w-0 flex flex-col">
-            <EditorPane />
-          </main>
-          {rightPane && (
-            <aside className="w-[340px] flex-none border-l border-border bg-surface flex flex-col min-h-0">
-              <div className="flex items-center border-b border-border h-9 px-1 flex-none">
-                <RightPaneTabBtn active={rightPane === "properties"} onClick={() => setRightPane("properties")}>
-                  Properties
-                </RightPaneTabBtn>
-                <RightPaneTabBtn active={rightPane === "ai"} onClick={() => setRightPane("ai")}>
-                  Assistant
-                </RightPaneTabBtn>
-                <button
-                  onClick={() => setRightPane(null)}
-                  className="ml-auto mr-1 p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
-                  title="Close panel"
-                  aria-label="Close panel"
-                >
-                  <X size={12} weight="bold" />
-                </button>
-              </div>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                {rightPane === "properties" ? (
-                  <div className="h-full overflow-y-auto">
-                    <PropertiesPane />
-                  </div>
-                ) : (
-                  <AiPanel />
-                )}
-              </div>
-            </aside>
-          )}
-        </div>
+        <LayoutShell
+          leftLabel="File panel"
+          rightLabel="Sidebar"
+          left={<TreePane />}
+          leftRail={<LeftRail />}
+          right={<RightPanel />}
+          rightRail={<RightRail />}
+        >
+          <EditorPane />
+        </LayoutShell>
         <StatusBar />
       </div>
       <CommandPalette />
@@ -92,7 +64,74 @@ export default function App() {
   )
 }
 
-function RightPaneTabBtn({
+function LeftRail() {
+  const { togglePanel } = useLayout()
+  return (
+    <button
+      type="button"
+      onClick={() => togglePanel("left")}
+      title="Expand file panel"
+      aria-label="Expand file panel"
+      className="w-12 h-9 mt-2 mx-auto flex items-center justify-center rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
+    >
+      <FolderOpen size={16} />
+    </button>
+  )
+}
+
+function RightPanel() {
+  const tab = useStore((s) => s.rightPaneTab)
+  const setTab = useStore((s) => s.setRightPaneTab)
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div role="tablist" className="flex items-center border-b border-border h-9 px-1 flex-none">
+        <TabBtn active={tab === "properties"} onClick={() => setTab("properties")}>
+          Properties
+        </TabBtn>
+        <TabBtn active={tab === "ai"} onClick={() => setTab("ai")}>
+          Assistant
+        </TabBtn>
+      </div>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {tab === "properties" ? (
+          <div className="h-full overflow-y-auto">
+            <PropertiesPane />
+          </div>
+        ) : (
+          <AiPanel />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RightRail() {
+  const { setPanelState } = useLayout()
+  const tab = useStore((s) => s.rightPaneTab)
+  const setTab = useStore((s) => s.setRightPaneTab)
+
+  const choose = (next: "properties" | "ai") => {
+    setTab(next)
+    setPanelState("right", "open")
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-1 pt-2">
+      <RailBtn
+        active={tab === "properties"}
+        onClick={() => choose("properties")}
+        label="Properties"
+      >
+        <SidebarIcon size={16} />
+      </RailBtn>
+      <RailBtn active={tab === "ai"} onClick={() => choose("ai")} label="Assistant">
+        <Robot size={16} />
+      </RailBtn>
+    </div>
+  )
+}
+
+function TabBtn({
   active, onClick, children,
 }: {
   active: boolean
@@ -117,3 +156,28 @@ function RightPaneTabBtn({
   )
 }
 
+function RailBtn({
+  active, onClick, label, children,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={[
+        "w-9 h-9 flex items-center justify-center rounded transition-colors",
+        active
+          ? "text-text bg-elevated"
+          : "text-text-subtle hover:text-text hover:bg-elevated/60",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  )
+}

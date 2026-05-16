@@ -36,8 +36,9 @@ export function useTreeShortcuts() {
 
     function onKey(e: KeyboardEvent) {
       // Cmd/Ctrl+N runs before the editable-target gate so it works while
-      // the editor is focused. Target dir is the open doc's folder, the
-      // selected folder, or the vault root.
+      // the editor is focused. Target dir follows the tree-selection rules
+      // in `targetParentDir`: selected folder → that folder, selected file
+      // → its parent, otherwise the vault root.
       const meta = e.metaKey || e.ctrlKey
       if (meta && !e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) {
         const s = useStore.getState()

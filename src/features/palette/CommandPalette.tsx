@@ -4,6 +4,7 @@ import { MagnifyingGlass, FileText, Sparkle, ArrowUp } from "@phosphor-icons/rea
 import { useStore } from "../../lib/store"
 import { useVaultNotes } from "../../lib/vaultNotes"
 import { sendPrompt } from "../ai/useAiSession"
+import { openPanel } from "../../layout/layoutControl"
 import {
   applyWikilinkSelection,
   detectMentionTrigger,
@@ -163,7 +164,7 @@ function AskMode({ initialQuery, close }: { initialQuery: string; close: () => v
   const [trigger, setTrigger] = useState<WikilinkTrigger | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const taRef = useRef<HTMLTextAreaElement>(null)
-  const setRightPane = useStore((s) => s.setRightPane)
+  const setRightPaneTab = useStore((s) => s.setRightPaneTab)
   const notes = useVaultNotes()
   const results = useWikilinkResults(notes, trigger?.query ?? "")
 
@@ -202,7 +203,8 @@ function AskMode({ initialQuery, close }: { initialQuery: string; close: () => v
   function send() {
     const t = text.trim()
     if (!t) return
-    setRightPane("ai")
+    setRightPaneTab("ai")
+    openPanel("right")
     sendPrompt(t)
     close()
   }

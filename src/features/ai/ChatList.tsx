@@ -45,17 +45,17 @@ export function ChatList() {
   }
 
   return (
-    <div ref={wrapRef} className="relative min-w-0">
+    <div ref={wrapRef} className="relative min-w-0 flex-1">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] min-w-0 transition-colors ${
+        className={`w-full flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] min-w-0 transition-colors ${
           open ? "bg-elevated text-text" : "text-text-muted hover:text-text hover:bg-elevated"
         }`}
         title="Chats in this vault"
       >
         <ChatCircle size={11} className="text-text-subtle flex-none" />
-        <span className="truncate max-w-[160px]">{label}</span>
+        <span className="truncate flex-1 text-left">{label}</span>
         <CaretDown size={9} className="text-text-subtle flex-none" />
       </button>
       {open && (

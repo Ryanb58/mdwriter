@@ -92,7 +92,7 @@ export function VaultPicker() {
 
       {open_ && (
         <div
-          className="absolute left-0 bottom-[calc(100%+6px)] w-[300px] rounded-lg bg-elevated border border-border-strong overflow-hidden text-[13px]"
+          className="absolute left-0 bottom-[calc(100%+6px)] z-[100] w-[300px] rounded-lg bg-elevated border border-border-strong overflow-hidden text-[13px]"
           style={{ boxShadow: "0 12px 32px -8px oklch(0 0 0 / 0.55), 0 2px 4px oklch(0 0 0 / 0.3)" }}
         >
           {!creating && (

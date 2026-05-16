@@ -17,11 +17,15 @@ const MAX_RESULTS = 8
 /**
  * Tiny case-insensitive substring filter. We don't need cmdk's full fuzzy
  * matching for an in-input picker — substring is predictable and fast.
+ *
+ * With no query, the list is the most-recently-modified notes first (the
+ * typical "I want to reference what I was just working on" case). With a
+ * query, results sort by match quality and break ties by recency.
  */
 function filterNotes(notes: VaultNote[], query: string): VaultNote[] {
   const q = query.trim().toLowerCase()
   if (!q) {
-    return notes.slice(0, MAX_RESULTS)
+    return notes.slice().sort(byMtimeDesc).slice(0, MAX_RESULTS)
   }
   const out: { note: VaultNote; score: number }[] = []
   for (const n of notes) {
@@ -34,8 +38,14 @@ function filterNotes(notes: VaultNote[], query: string): VaultNote[] {
     const score = nameIdx >= 0 ? nameIdx : 1000 + relIdx
     out.push({ note: n, score })
   }
-  out.sort((a, b) => a.score - b.score || a.note.name.localeCompare(b.note.name))
+  out.sort((a, b) => a.score - b.score || byMtimeDesc(a.note, b.note))
   return out.slice(0, MAX_RESULTS).map((x) => x.note)
+}
+
+function byMtimeDesc(a: VaultNote, b: VaultNote): number {
+  // Notes without an mtime (rare — only happens when the FS read failed)
+  // sink to the bottom so well-known files always win.
+  return (b.mtime ?? 0) - (a.mtime ?? 0)
 }
 
 export function useWikilinkResults(notes: VaultNote[], query: string): VaultNote[] {

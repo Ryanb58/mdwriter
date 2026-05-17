@@ -41,6 +41,7 @@ tauri-plugin-clipboard-manager = "2"
 base64 = "0.22"
 tempfile = "3"
 tiny_http = "0.12"
+getrandom = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

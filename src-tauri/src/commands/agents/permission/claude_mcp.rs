@@ -18,6 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
@@ -25,6 +26,12 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tiny_http::{Header, Method, Response, Server};
+
+/// Hard cap on request body size. Tool inputs are tiny (file paths,
+/// commands, edit strings) — a request larger than this is either a
+/// bug on the MCP-server side or someone probing the loopback. Reject
+/// with 413 instead of growing the broker's memory.
+const MAX_BODY_BYTES: u64 = 256 * 1024;
 
 use super::{Decision, PermissionBroker};
 use crate::commands::agents::AgentCommand;
@@ -251,10 +258,14 @@ fn handle_request(
     }
 
     let mut body = String::new();
-    if request.as_reader().read_to_string(&mut body).is_err() {
+    if request.as_reader().take(MAX_BODY_BYTES).read_to_string(&mut body).is_err() {
         let _ = request.respond(Response::from_string("bad body").with_status_code(400));
         return;
     }
+    // `take` silently truncates if the body is larger; a truncated JSON
+    // payload will fail `serde_json::from_str` below, so the 400 path
+    // covers it. We don't 413 explicitly because tiny_http doesn't
+    // expose Content-Length without reading first anyway.
 
     let wire: WireRequest = match serde_json::from_str(&body) {
         Ok(w) => w,
@@ -360,32 +371,17 @@ pub fn mcp_config_json(exe_path: &Path, port: u16, token: &str) -> serde_json::V
     })
 }
 
-/// Cryptographically-random session token. We mix process id, current
-/// time at nanosecond resolution, and a few iterations of std hashing
-/// to get a 32-hex-char string. Not a true CSPRNG, but the threat model
-/// is "another local process on the same machine guessing the token of
-/// a session that lives for minutes" — this is more than enough.
+/// 128-bit bearer token, hex-encoded to 32 chars. Sourced from the OS
+/// CSPRNG via `getrandom` — this token gates an HTTP endpoint that can
+/// authorize arbitrary tool calls (Edit/Write/Bash) inside the user's
+/// vault, so predictable token material would be a local-privilege
+/// escalation surface for any other process on the same machine.
 fn generate_token() -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    std::process::id().hash(&mut h);
-    let mut state = h.finish();
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).expect("system RNG unavailable");
     let mut out = String::with_capacity(32);
-    for _ in 0..16 {
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let mut h2 = DefaultHasher::new();
-        state.hash(&mut h2);
-        ts.hash(&mut h2);
-        // Mix in the address of a stack local for a tiny bit more entropy.
-        let stack_addr: usize = &state as *const _ as usize;
-        stack_addr.hash(&mut h2);
-        state = h2.finish();
-        out.push_str(&format!("{:02x}", (state & 0xff) as u8));
-        state >>= 8;
+    for b in bytes {
+        out.push_str(&format!("{b:02x}"));
     }
     out
 }

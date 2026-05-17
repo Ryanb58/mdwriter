@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
-import type { TreeNode, AgentId, AgentAvailability } from "./ipc"
+import type { TreeNode, AgentId, AgentAvailability, PermissionMode } from "./ipc"
 
 export type EditorMode = "block" | "raw"
 
@@ -108,6 +108,14 @@ export type AppStore = {
   // AI session
   aiAgent: AgentId
   setAiAgent(id: AgentId): void
+  /**
+   * Permission posture for the agent subprocess. Defaults to accept-edits
+   * (the previous hardcoded behavior). Users cycle through modes from the
+   * AI panel header to opt into bypassing prompts or plan-only execution.
+   */
+  aiPermissionMode: PermissionMode
+  setAiPermissionMode(mode: PermissionMode): void
+  cycleAiPermissionMode(): void
   aiAvailable: AgentAvailability[]
   setAiAvailable(rows: AgentAvailability[]): void
   /**
@@ -141,6 +149,16 @@ export type AppStore = {
   aiDraftRequest: { text: string; nonce: number } | null
   requestAiDraft(text: string): void
   consumeAiDraftRequest(): void
+
+  /**
+   * One-shot skill pill insertion request injected from outside the composer
+   * (e.g. CommandMode palette). Unlike `aiDraftRequest` this is additive — it
+   * inserts a pill at the current caret rather than replacing the draft.
+   * MessageInput consumes and clears it.
+   */
+  aiSkillInsertRequest: { name: string; nonce: number } | null
+  requestAiSkillInsert(name: string): void
+  consumeAiSkillInsertRequest(): void
 
   /**
    * Whatever the user has highlighted in the active editor right now. Both
@@ -233,6 +251,28 @@ function makeChatId(): string {
   return `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 }
 
+const PERMISSION_MODE_ORDER: PermissionMode[] = [
+  "accept-edits",
+  "bypass-permissions",
+  "plan",
+]
+
+/** Rotate to the next permission mode in the cycle. Wraps. */
+export function nextPermissionMode(mode: PermissionMode): PermissionMode {
+  const idx = PERMISSION_MODE_ORDER.indexOf(mode)
+  return PERMISSION_MODE_ORDER[(idx + 1) % PERMISSION_MODE_ORDER.length]
+}
+
+const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
+  "accept-edits": "Accept edits",
+  "plan": "Plan only",
+  "bypass-permissions": "Bypass prompts",
+}
+
+export function permissionModeLabel(mode: PermissionMode): string {
+  return PERMISSION_MODE_LABELS[mode]
+}
+
 function pickMostRecent(chats: Record<string, Chat>): string | null {
   const ids = Object.keys(chats)
   if (ids.length === 0) return null
@@ -298,10 +338,12 @@ export const useStore = create<AppStore>()(
       pendingScroll: null,
 
       aiAgent: "claude-code" as AgentId,
+      aiPermissionMode: "accept-edits" as PermissionMode,
       aiAvailable: [],
       aiMessages: [],
       aiRunning: false,
       aiDraftRequest: null,
+      aiSkillInsertRequest: null,
       editorSelection: null,
       chats: {},
       activeChatId: null,
@@ -352,6 +394,9 @@ export const useStore = create<AppStore>()(
           }
           return next
         }),
+      setAiPermissionMode: (mode) => set({ aiPermissionMode: mode }),
+      cycleAiPermissionMode: () =>
+        set((s) => ({ aiPermissionMode: nextPermissionMode(s.aiPermissionMode) })),
       setAiAvailable: (rows) => set({ aiAvailable: rows }),
       appendAiMessage: (msg) =>
         set((s) => withActiveChat(s, (chat, msgs) => {
@@ -467,6 +512,9 @@ export const useStore = create<AppStore>()(
         }),
       requestAiDraft: (text) => set({ aiDraftRequest: { text, nonce: Date.now() } }),
       consumeAiDraftRequest: () => set({ aiDraftRequest: null }),
+      requestAiSkillInsert: (name) =>
+        set({ aiSkillInsertRequest: { name, nonce: Date.now() } }),
+      consumeAiSkillInsertRequest: () => set({ aiSkillInsertRequest: null }),
       setEditorSelection: (s) =>
         set((state) => {
           if (!s || !s.text) return { editorSelection: null }
@@ -494,6 +542,7 @@ export const useStore = create<AppStore>()(
         settings: s.settings,
         rightPaneTab: s.rightPaneTab,
         aiAgent: s.aiAgent,
+        aiPermissionMode: s.aiPermissionMode,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppStore> & {

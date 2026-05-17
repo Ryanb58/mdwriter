@@ -16,6 +16,7 @@ import {
   insertLineBreakAtCaret,
   insertTextAtCaret,
   makePill,
+  makeSkillPill,
   pillBeforeCaret,
   readEditorState,
   renderTextToEditor,
@@ -32,6 +33,8 @@ export function MessageInput() {
   const running = useStore((s) => s.aiRunning)
   const draftRequest = useStore((s) => s.aiDraftRequest)
   const consumeAiDraftRequest = useStore((s) => s.consumeAiDraftRequest)
+  const skillInsertRequest = useStore((s) => s.aiSkillInsertRequest)
+  const consumeSkillInsertRequest = useStore((s) => s.consumeAiSkillInsertRequest)
   const openDocPath = useStore((s) => s.openDoc?.path ?? null)
   const hasSelection = useStore((s) => !!s.editorSelection?.text)
   const notes = useVaultNotes()
@@ -74,6 +77,23 @@ export function MessageInput() {
     replaceDraft(draftRequest.text)
     consumeAiDraftRequest()
   }, [draftRequest, consumeAiDraftRequest, replaceDraft])
+
+  // Honor externally-requested skill pill inserts (e.g. CommandMode palette).
+  // Inserts at the current caret when focus is in the editor, otherwise at
+  // the end of the draft. Always followed by a trailing space so subsequent
+  // typing doesn't bleed into the atomic span boundary.
+  useEffect(() => {
+    if (!skillInsertRequest) return
+    const root = editorRef.current
+    if (!root) {
+      consumeSkillInsertRequest()
+      return
+    }
+    insertSkillPillAtCaret(root, skillInsertRequest.name)
+    syncFromDOM()
+    requestAnimationFrame(() => root.focus())
+    consumeSkillInsertRequest()
+  }, [skillInsertRequest, consumeSkillInsertRequest, syncFromDOM])
 
   useEffect(() => {
     setActiveIdx(0)
@@ -337,6 +357,38 @@ function insertPillAtTrigger(
     sel.addRange(r)
   }
   void draft // referenced by callers for control flow; unused inside.
+}
+
+/**
+ * Insert a skill pill at the current caret position. Falls back to appending
+ * at the end of the editor when the selection isn't inside it (which happens
+ * when the palette steals focus before dismissal). Always followed by a
+ * trailing space so subsequent typing doesn't fuse with the atomic span.
+ */
+function insertSkillPillAtCaret(root: HTMLDivElement, skillName: string) {
+  const sel = window.getSelection()
+  const range =
+    sel && sel.rangeCount > 0 && root.contains(sel.anchorNode)
+      ? sel.getRangeAt(0)
+      : (() => {
+          const r = document.createRange()
+          r.selectNodeContents(root)
+          r.collapse(false)
+          return r
+        })()
+  range.deleteContents()
+  const pill = makeSkillPill(skillName)
+  range.insertNode(pill)
+  const space = document.createTextNode(" ")
+  pill.after(space)
+  const newSel = window.getSelection()
+  if (newSel) {
+    const r = document.createRange()
+    r.setStartAfter(space)
+    r.collapse(true)
+    newSel.removeAllRanges()
+    newSel.addRange(r)
+  }
 }
 
 /**

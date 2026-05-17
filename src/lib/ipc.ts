@@ -41,6 +41,20 @@ export type SearchOptions = {
 
 export type AgentId = "claude-code" | "codex" | "open-code" | "pi" | "gemini"
 
+/** Permission posture for the agent subprocess. Maps to Claude Code's
+ *  `--permission-mode` flag; other adapters interpret it loosely or ignore. */
+export type PermissionMode = "accept-edits" | "plan" | "bypass-permissions"
+
+export type SkillSource = "vault-claude" | "vault-agents" | "user-claude" | "user-agents"
+
+export type Skill = {
+  name: string
+  description: string
+  source: SkillSource
+  absPath: string
+  vaultRelPath: string | null
+}
+
 export type AgentAvailability = {
   id: AgentId
   label: string
@@ -136,8 +150,18 @@ export const ipc = {
         implemented: r.implemented,
       } satisfies AgentAvailability))
     ),
-  startAiSession: (agent: AgentId, prompt: string, vaultPath: string) =>
-    invoke<void>("start_ai_session", { agent, prompt, vaultPath }),
+  startAiSession: (
+    agent: AgentId,
+    prompt: string,
+    vaultPath: string,
+    permissionMode?: PermissionMode | null,
+  ) =>
+    invoke<void>("start_ai_session", {
+      agent,
+      prompt,
+      vaultPath,
+      permissionMode: permissionMode ?? null,
+    }),
   stopAiSession: () => invoke<void>("stop_ai_session"),
   listChats: (vaultPath: string) =>
     invoke<Array<{ id: string; title: string; updated_at: number; created_at: number }>>(
@@ -157,6 +181,22 @@ export const ipc = {
     invoke<void>("write_chat", { vaultPath, id, data }),
   deleteChat: (vaultPath: string, id: string) =>
     invoke<void>("delete_chat", { vaultPath, id }),
+  listSkills: (rootPath: string | null) =>
+    invoke<Array<{
+      name: string
+      description: string
+      source: SkillSource
+      abs_path: string
+      vault_rel_path: string | null
+    }>>("list_skills", { rootPath }).then((rows) =>
+      rows.map((r) => ({
+        name: r.name,
+        description: r.description,
+        source: r.source,
+        absPath: r.abs_path,
+        vaultRelPath: r.vault_rel_path,
+      } satisfies Skill))
+    ),
 }
 
 export type ChatSummary = {

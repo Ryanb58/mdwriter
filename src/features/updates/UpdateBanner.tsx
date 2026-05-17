@@ -15,7 +15,7 @@ export function UpdateBanner({
   }
 
   return (
-    <div className="fixed bottom-9 right-3 z-40 w-[340px] rounded-lg border border-border-strong bg-elevated text-[13px] overflow-hidden"
+    <div className="fixed bottom-9 right-3 z-[60] w-[340px] rounded-lg border border-border-strong bg-elevated text-[13px] overflow-hidden"
          style={{ boxShadow: "0 12px 32px -8px oklch(0 0 0 / 0.55), 0 2px 4px oklch(0 0 0 / 0.3)" }}>
       {status.kind === "available" && (
         <Available version={status.update.version} notes={status.update.body} onInstall={onInstall} onDismiss={onDismiss} />

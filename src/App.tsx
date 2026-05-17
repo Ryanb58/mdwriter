@@ -1,4 +1,4 @@
-import { Robot, Sidebar as SidebarIcon, FolderOpen } from "@phosphor-icons/react"
+import { Robot, Sidebar as SidebarIcon } from "@phosphor-icons/react"
 import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
@@ -52,7 +52,6 @@ export default function App() {
           leftLabel="File panel"
           rightLabel="Sidebar"
           left={<TreePane />}
-          leftRail={<LeftRail />}
           right={<RightPanel />}
           rightRail={<RightRail />}
         >
@@ -65,21 +64,6 @@ export default function App() {
       <DndModals />
       <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
     </>
-  )
-}
-
-function LeftRail() {
-  const { togglePanel } = useLayout()
-  return (
-    <button
-      type="button"
-      onClick={() => togglePanel("left")}
-      title="Expand file panel"
-      aria-label="Expand file panel"
-      className="w-12 h-9 mt-2 mx-auto flex items-center justify-center rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
-    >
-      <FolderOpen size={16} />
-    </button>
   )
 }
 

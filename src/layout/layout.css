@@ -36,25 +36,43 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 8px;
-  border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   z-index: 30;
   position: relative;
 }
 
+/* macOS Tauri: the title bar is set to Overlay, so the traffic lights float
+   over the top-left of the window. Reserve 90px on the left so our toggle
+   button sits flush to the right of the close/minimize/zoom dots — same
+   gutter Tolaria uses. */
+.layout-toolbar[data-os="mac"] {
+  padding-left: 90px;
+}
+.layout-toolbar[data-os="mac"] .layout-toolbar-btn {
+  margin-top: 6px;
+}
+
+/* Interactive children stay clickable inside the drag region. */
+.layout-toolbar [data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+.layout-toolbar button {
+  -webkit-app-region: no-drag;
+}
+
 .layout-toolbar-group {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .layout-toolbar-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
   color: var(--color-text-subtle);
   background: transparent;
   border: 0;
@@ -62,16 +80,16 @@
   transition: background-color 120ms, color 120ms;
 }
 .layout-toolbar-btn:hover {
-  background: var(--color-elevated);
+  background: color-mix(in oklch, var(--color-text) 8%, transparent);
   color: var(--color-text);
 }
-.layout-toolbar-btn[aria-expanded="true"] {
+.layout-toolbar-btn[data-active="true"] {
   background: var(--color-elevated);
   color: var(--color-text);
 }
 .layout-toolbar-btn:focus-visible {
   outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 /* ─── body (grid host) ──────────────────────────────────────────────────── */

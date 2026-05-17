@@ -7,9 +7,7 @@ import { useAutoRename } from "./useAutoRename"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
-import { Sidebar, Warning, TextAa, Code, Robot, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
-import { useLayout } from "../../layout/LayoutShell"
-import { isOverlayMode } from "../../layout/constants"
+import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
 import { targetParentDir } from "../tree/targetDir"
@@ -33,24 +31,7 @@ export function EditorPane() {
   const editorView = useStore((s) => s.editorMode)
   const setEditorView = useStore((s) => s.setEditorMode)
   const patch = useStore((s) => s.patchOpenDoc)
-  const rightPaneTab = useStore((s) => s.rightPaneTab)
-  const setRightPaneTab = useStore((s) => s.setRightPaneTab)
   const rootPath = useStore((s) => s.rootPath)
-  const { rightState, mode: layoutMode, setPanelState } = useLayout()
-  const rightOpen = rightState === "open"
-  const propertiesActive = rightOpen && rightPaneTab === "properties"
-  const aiActive = rightOpen && rightPaneTab === "ai"
-
-  function activateTab(tab: "properties" | "ai") {
-    // Click on an already-active tab collapses the panel. Click on the other
-    // tab switches the tab and ensures the panel is visible.
-    if (rightOpen && rightPaneTab === tab) {
-      setPanelState("right", isOverlayMode(layoutMode) ? "closed" : "rail")
-      return
-    }
-    setRightPaneTab(tab)
-    setPanelState("right", "open")
-  }
 
   if (!doc) {
     return <EmptyEditorState />
@@ -77,28 +58,6 @@ export function EditorPane() {
         <div className="flex items-center gap-3 flex-none">
           <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
           <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
-          <button
-            onClick={() => activateTab("ai")}
-            className={`p-1 rounded transition-colors ${
-              aiActive
-                ? "text-text bg-elevated"
-                : "text-text-subtle hover:text-text hover:bg-elevated"
-            }`}
-            title={aiActive ? "Hide assistant" : "Show assistant"}
-          >
-            <Robot size={15} />
-          </button>
-          <button
-            onClick={() => activateTab("properties")}
-            className={`p-1 rounded transition-colors ${
-              propertiesActive
-                ? "text-text bg-elevated"
-                : "text-text-subtle hover:text-text hover:bg-elevated"
-            }`}
-            title={propertiesActive ? "Hide properties" : "Show properties"}
-          >
-            <Sidebar size={15} />
-          </button>
         </div>
       </div>
       {doc.parseError && (

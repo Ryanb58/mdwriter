@@ -99,9 +99,26 @@ jobs:
           # save them onto the release — so we capture the body and pass
           # it through to `gh release create` below.
           if [[ -z "${NOTES}" ]]; then
+            set +e
             HEAD_NOTES=$(gh api -X POST "/repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
               -f "tag_name=${TAG}" \
-              --jq '.body' 2>/dev/null || echo "")
+              --jq '.body' 2>/tmp/gh_notes_err)
+            GH_EXIT=$?
+            set -e
+            if [[ $GH_EXIT -ne 0 ]]; then
+              # A 404 means there is no previous release to diff against
+              # (first-ever release of the repo); fall back to an empty
+              # changelog.  Every other failure (403 permission denied,
+              # 429 rate-limit, 5xx transient) is unexpected and should
+              # fail the step so the problem is visible rather than
+              # silently publishing footer-only release notes.
+              if grep -qE "HTTP 404|\[404\]" /tmp/gh_notes_err 2>/dev/null; then
+                HEAD_NOTES=""
+              else
+                cat /tmp/gh_notes_err >&2
+                exit "$GH_EXIT"
+              fi
+            fi
           else
             HEAD_NOTES="${NOTES}"
           fi
@@ -113,11 +130,14 @@ jobs:
           **macOS (unsigned):** on first launch, click **Done** on the \"could not verify\" warning, then go to **System Settings → Privacy & Security**, scroll to *\"mdwriter.app was blocked\"*, and click **Open Anyway**. (On macOS 14 and earlier, right-click → **Open** also works.)
           **Windows (unsigned):** click \"More info → Run anyway\" on SmartScreen."
 
-          # Multi-line output: heredoc-style sentinel so newlines survive.
+          # Multi-line output: use a per-run random delimiter so the body
+          # cannot accidentally contain a line that matches the sentinel
+          # and terminates the output early.
+          DELIMITER="RELEASE_BODY_$(openssl rand -hex 8)"
           {
-            echo "body<<RELEASE_BODY_EOF"
+            echo "body<<${DELIMITER}"
             echo "${FULL_BODY}"
-            echo "RELEASE_BODY_EOF"
+            echo "${DELIMITER}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create draft GitHub release

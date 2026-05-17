@@ -23,7 +23,7 @@ export const PANEL_DIMS = {
   RIGHT_MAX: 1600,
   RAIL: 48,
   MAIN_MIN: 640,
-  TOOLBAR: 40,
+  TOOLBAR: 38,
 } as const
 
 export type LayoutMode = "docked-wide" | "docked-tight" | "overlay" | "mobile-sheet"

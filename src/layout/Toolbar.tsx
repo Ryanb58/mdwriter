@@ -1,14 +1,38 @@
 import type { ReactNode } from "react"
-import { SidebarSimple, Sidebar } from "@phosphor-icons/react"
+import { SidebarSimple, Sidebar, Robot } from "@phosphor-icons/react"
 import { useLayout } from "./LayoutContext"
+import { useIsMacTauri } from "./useIsMacTauri"
+import { useDragRegion } from "./useDragRegion"
+import { useStore } from "../lib/store"
+import { isOverlayMode } from "./constants"
 
 export function Toolbar({ center }: { center?: ReactNode }) {
-  const { leftState, rightState, togglePanel } = useLayout()
+  const { leftState, rightState, mode, togglePanel, setPanelState } = useLayout()
   const leftOpen = leftState === "open"
   const rightOpen = rightState === "open"
+  const rightTab = useStore((s) => s.rightPaneTab)
+  const setRightTab = useStore((s) => s.setRightPaneTab)
+  const aiActive = rightOpen && rightTab === "ai"
+  const isMacTauri = useIsMacTauri()
+  const { onMouseDown } = useDragRegion()
+
+  function toggleAi() {
+    if (aiActive) {
+      setPanelState("right", isOverlayMode(mode) ? "closed" : "rail")
+      return
+    }
+    setRightTab("ai")
+    setPanelState("right", "open")
+  }
 
   return (
-    <div className="layout-toolbar" role="toolbar" aria-label="Layout controls">
+    <div
+      className="layout-toolbar"
+      role="toolbar"
+      aria-label="Layout controls"
+      data-os={isMacTauri ? "mac" : undefined}
+      onMouseDown={onMouseDown}
+    >
       <div className="layout-toolbar-group">
         <button
           type="button"
@@ -26,6 +50,17 @@ export function Toolbar({ center }: { center?: ReactNode }) {
         {center}
       </div>
       <div className="layout-toolbar-group">
+        <button
+          type="button"
+          className="layout-toolbar-btn"
+          aria-pressed={aiActive}
+          aria-label={aiActive ? "Hide assistant" : "Show assistant"}
+          title={aiActive ? "Hide assistant" : "Show assistant"}
+          onClick={toggleAi}
+          data-active={aiActive ? "true" : undefined}
+        >
+          <Robot size={16} weight={aiActive ? "fill" : "regular"} />
+        </button>
         <button
           type="button"
           className="layout-toolbar-btn"

@@ -70,6 +70,21 @@ export type AiStreamEvent =
   | { kind: "error"; message: string }
   | { kind: "done"; usage: unknown | null }
 
+/**
+ * Emitted on the `ai-permission` channel when the agent's subprocess is
+ * paused waiting for the user to approve a tool call. Each pending request
+ * carries a stable `id` that the frontend echoes back through
+ * `respondPermission` to unblock the subprocess.
+ */
+export type AiPermissionRequest = {
+  id: string
+  tool: string
+  input: unknown
+  toolUseId: string | null
+}
+
+export type PermissionDecision = "allow" | "deny"
+
 export const ipc = {
   listTree: (root: string, options?: TreeOptions) =>
     invoke<TreeNode>("list_tree", { root, options: options ?? null }),
@@ -163,6 +178,29 @@ export const ipc = {
       permissionMode: permissionMode ?? null,
     }),
   stopAiSession: () => invoke<void>("stop_ai_session"),
+  respondPermission: (
+    id: string,
+    decision: PermissionDecision,
+    opts?: { message?: string; updatedInput?: unknown },
+  ) =>
+    invoke<boolean>("respond_permission", {
+      id,
+      decision,
+      message: opts?.message ?? null,
+      // Tauri's serde maps camelCase JS fields to snake_case Rust args via
+      // its built-in renamer, so `updatedInput` reaches `updated_input`.
+      updatedInput: opts?.updatedInput ?? null,
+    }),
+  /**
+   * Extend the current session's allowlist so subsequent matching tool
+   * calls auto-allow without a card. `pathPrefix` is matched against the
+   * tool input's `file_path` or `path` field (case-sensitive).
+   */
+  addPermissionRule: (tool: string, pathPrefix?: string | null) =>
+    invoke<boolean>("add_permission_rule", {
+      tool,
+      pathPrefix: pathPrefix ?? null,
+    }),
   listChats: (vaultPath: string) =>
     invoke<Array<{ id: string; title: string; updated_at: number; created_at: number }>>(
       "list_chats",

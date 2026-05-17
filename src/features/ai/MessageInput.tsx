@@ -31,6 +31,7 @@ export function MessageInput() {
   const [activeIdx, setActiveIdx] = useState(0)
   const [slashActiveIdx, setSlashActiveIdx] = useState(0)
   const running = useStore((s) => s.aiRunning)
+  const pausedOnApproval = useStore((s) => s.pendingPermissionOrder.length > 0)
   const draftRequest = useStore((s) => s.aiDraftRequest)
   const consumeAiDraftRequest = useStore((s) => s.consumeAiDraftRequest)
   const skillInsertRequest = useStore((s) => s.aiSkillInsertRequest)
@@ -263,6 +264,12 @@ export function MessageInput() {
   return (
     <div className="border-t border-border p-2.5" data-mdwriter-ai-composer>
       <SelectionChip />
+      {pausedOnApproval && (
+        <div className="mb-2 text-[11px] text-warning flex items-center gap-1.5">
+          <span className="inline-block size-1.5 rounded-full bg-warning animate-pulse" />
+          <span>Paused on approval — respond to the card above to continue.</span>
+        </div>
+      )}
       <div className="relative rounded-md border border-border bg-elevated focus-within:border-accent transition-colors">
         <div
           ref={editorRef}

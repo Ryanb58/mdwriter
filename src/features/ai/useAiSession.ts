@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
-import { ipc, type AiStreamEvent } from "../../lib/ipc"
+import { ipc, type AiStreamEvent, type AiPermissionRequest } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { buildPrompt, extractSkillRefs } from "./buildPrompt"
 
@@ -68,9 +68,17 @@ export function useAiSession() {
           if (turn) store.addChatUsage(turn)
           store.patchLastAssistantMessage((m) => ({ ...m, finished: true }))
           store.setAiRunning(false)
+          store.clearPendingPermissions()
           break
         }
       }
+    })
+    return () => { unlisten.then((u) => u()) }
+  }, [])
+
+  useEffect(() => {
+    const unlisten = listen<AiPermissionRequest>("ai-permission", (e) => {
+      useStore.getState().addPendingPermission(e.payload)
     })
     return () => { unlisten.then((u) => u()) }
   }, [])
@@ -129,7 +137,9 @@ export async function sendPrompt(text: string) {
 
 export async function cancelSession() {
   await ipc.stopAiSession().catch(console.error)
-  useStore.getState().setAiRunning(false)
+  const store = useStore.getState()
+  store.setAiRunning(false)
+  store.clearPendingPermissions()
 }
 
 /**

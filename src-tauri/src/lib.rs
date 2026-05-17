@@ -9,6 +9,15 @@ use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Dual-mode binary: when Claude Code spawns us as its MCP permission
+    // server, the right env vars are set and we run as a stdio JSON-RPC
+    // server instead of booting the Tauri stack. Doing this at the very
+    // top means none of the Tauri / plugin init code runs in that path.
+    if commands::agents::permission::embedded_mcp::should_run() {
+        commands::agents::permission::embedded_mcp::run();
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -122,6 +131,8 @@ pub fn run() {
             commands::agents::detect_agents,
             commands::agents::start_ai_session,
             commands::agents::stop_ai_session,
+            commands::agents::respond_permission,
+            commands::agents::add_permission_rule,
             commands::chats::list_chats,
             commands::chats::read_chat,
             commands::chats::write_chat,

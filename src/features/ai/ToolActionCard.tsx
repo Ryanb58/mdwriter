@@ -8,15 +8,25 @@ import {
   FilePlus,
   MagnifyingGlass,
   PencilSimple,
+  ShieldWarning,
   Terminal,
   Warning,
   Wrench,
 } from "@phosphor-icons/react"
 import type { ToolCall } from "../../lib/store"
 import { useStore } from "../../lib/store"
+import { regenerateFrom } from "./useAiSession"
 
-export function ToolActionCard({ tool }: { tool: ToolCall }) {
+export function ToolActionCard({
+  tool,
+  messageIdx,
+}: {
+  tool: ToolCall
+  messageIdx: number
+}) {
   const [expanded, setExpanded] = useState(false)
+  const permissionDenied =
+    tool.finished && tool.isError && isPermissionDenied(tool.output)
 
   const status = !tool.finished
     ? <CircleNotch size={11} className="animate-spin text-text-subtle" />
@@ -52,6 +62,9 @@ export function ToolActionCard({ tool }: { tool: ToolCall }) {
           {status}
         </span>
       </button>
+      {permissionDenied && (
+        <PermissionRetryBanner messageIdx={messageIdx} />
+      )}
       {expanded && (
         <div className="px-2 pb-2 border-t border-border space-y-1.5 pt-1.5">
           <Section label="Input">
@@ -69,6 +82,67 @@ export function ToolActionCard({ tool }: { tool: ToolCall }) {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Inline action shown when a tool call failed because Claude Code asked for
+ * permission and `--print` mode has no way to prompt. Switches the session's
+ * permission mode to bypass and re-runs the user turn that produced this
+ * message — the closest thing to an inline-approval workflow we can offer
+ * without a full MCP permission-prompt server.
+ */
+function PermissionRetryBanner({
+  messageIdx,
+}: {
+  messageIdx: number
+}) {
+  const setMode = useStore((s) => s.setAiPermissionMode)
+  const running = useStore((s) => s.aiRunning)
+  function retryWithBypass() {
+    setMode("bypass-permissions")
+    // regenerateFrom guards on running internally, but check eagerly so the
+    // button feels disabled rather than silently no-op'ing.
+    if (running) return
+    void regenerateFrom(messageIdx)
+  }
+  return (
+    <div className="mx-2 mb-2 mt-0.5 px-2 py-1.5 rounded-md border border-warning/30 bg-warning/5 flex items-start gap-2">
+      <ShieldWarning size={12} weight="bold" className="text-warning flex-none mt-[2px]" />
+      <div className="flex-1 min-w-0 text-[11.5px] leading-snug">
+        <div className="text-text">Permission required for this action.</div>
+        <div className="text-text-subtle">
+          Claude Code can't prompt interactively when run from mdwriter. Switch
+          to <span className="font-mono">bypass</span> mode and retry, or open
+          the shield in the header to change modes manually.
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={retryWithBypass}
+        disabled={running}
+        className="flex-none text-[11px] px-2 py-1 rounded bg-warning/15 text-warning hover:bg-warning/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
+      >
+        Retry with Bypass
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Pattern-match a Claude Code tool result against known permission-denial
+ * messages. Run only on results flagged `isError`, so false positives only
+ * happen when the agent's own error text happens to contain these phrases.
+ *
+ * Exported for unit tests.
+ */
+export function isPermissionDenied(output: unknown): boolean {
+  const text = formatToolOutput(output).toLowerCase()
+  return (
+    text.includes("requires approval") ||
+    text.includes("requested permissions") ||
+    text.includes("haven't granted") ||
+    text.includes("permission denied")
   )
 }
 

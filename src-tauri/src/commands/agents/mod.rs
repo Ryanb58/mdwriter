@@ -45,6 +45,33 @@ impl AgentId {
     }
 }
 
+/// Permission posture for the agent subprocess. Maps directly to the
+/// `--permission-mode` flag for Claude Code; other adapters interpret the
+/// closest equivalent. Default `AcceptEdits` matches the previous
+/// hardcoded behavior so this change is a no-op for existing users.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum PermissionMode {
+    /// Auto-approve edits; reads outside cwd still need `--add-dir`.
+    #[default]
+    AcceptEdits,
+    /// Read-only / planning mode.
+    Plan,
+    /// Bypass all permission checks ("YOLO mode").
+    BypassPermissions,
+}
+
+impl PermissionMode {
+    /// String passed to Claude Code's `--permission-mode` flag.
+    pub fn as_flag(self) -> &'static str {
+        match self {
+            PermissionMode::AcceptEdits => "acceptEdits",
+            PermissionMode::Plan => "plan",
+            PermissionMode::BypassPermissions => "bypassPermissions",
+        }
+    }
+}
+
 /// Reported availability for an agent.
 #[derive(Debug, Serialize, Clone)]
 pub struct AgentAvailability {
@@ -105,6 +132,7 @@ pub trait Agent: Send + Sync {
         binary: &Path,
         cwd: &Path,
         prompt: &str,
+        permission_mode: PermissionMode,
     ) -> AgentCommand;
 
     /// Parse a single line of stdout into zero or more normalized events.
@@ -198,6 +226,7 @@ pub async fn start_ai_session(
     agent: AgentId,
     prompt: String,
     vault_path: PathBuf,
+    permission_mode: Option<PermissionMode>,
 ) -> Result<()> {
     use std::io::{BufRead, BufReader};
     use std::process::{Command as StdCommand, Stdio};
@@ -218,7 +247,8 @@ pub async fn start_ai_session(
         let _ = child_arc.lock().unwrap().kill();
     }
 
-    let cmd = adapter.build_command(&binary, &vault_path, &prompt);
+    let mode = permission_mode.unwrap_or_default();
+    let cmd = adapter.build_command(&binary, &vault_path, &prompt, mode);
 
     // stdin → /dev/null so the agent doesn't block waiting for input. Some
     // CLIs (Claude Code) print a slow-stdin warning otherwise.

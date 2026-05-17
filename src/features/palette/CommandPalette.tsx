@@ -12,9 +12,10 @@ import {
 } from "../ai/wikilinkDetect"
 import { WikilinkPopover, useWikilinkResults } from "../ai/WikilinkPopover"
 import { SearchMode } from "./SearchMode"
+import { CommandMode } from "./CommandMode"
 import { onOpenPalette } from "./openPalette"
 
-type Mode = "file" | "ask" | "search"
+type Mode = "file" | "ask" | "search" | "command"
 
 // Sentinel prefixes that switch into ask-mode from the regular palette.
 function detectModeFromQuery(query: string): { mode: Mode; rest: string } {
@@ -34,6 +35,15 @@ export function CommandPalette() {
       if (meta && e.shiftKey && (e.key === "f" || e.key === "F")) {
         e.preventDefault()
         setInitialMode("search")
+        setQuery("")
+        setOpen((o) => !o)
+        return
+      }
+      if (meta && e.shiftKey && (e.key === "p" || e.key === "P")) {
+        // Must come before the plain Cmd+P branch — keyboard layouts send
+        // both shiftKey=true and key="P" (or "p") on this combo.
+        e.preventDefault()
+        setInitialMode("command")
         setQuery("")
         setOpen((o) => !o)
         return
@@ -68,13 +78,16 @@ export function CommandPalette() {
 
   // When opened via Cmd+P, the user can pivot to ask-mode by typing `> ` or
   // a leading space. When opened via Cmd+K, we stay in ask-mode regardless.
-  // Search mode is its own entrypoint (Cmd+Shift+F) and does not switch.
+  // Search mode (Cmd+Shift+F) and Command mode (Cmd+Shift+P) are their own
+  // entrypoints and do not switch.
   const { mode: derivedMode, rest } =
     initialMode === "ask"
       ? { mode: "ask" as const, rest: query }
       : initialMode === "search"
         ? { mode: "search" as const, rest: query }
-        : detectModeFromQuery(query)
+        : initialMode === "command"
+          ? { mode: "command" as const, rest: query }
+          : detectModeFromQuery(query)
 
   return (
     <div
@@ -92,6 +105,12 @@ export function CommandPalette() {
           />
         ) : derivedMode === "search" ? (
           <SearchMode
+            initialQuery={rest}
+            onQueryChange={setQuery}
+            close={() => setOpen(false)}
+          />
+        ) : derivedMode === "command" ? (
+          <CommandMode
             initialQuery={rest}
             onQueryChange={setQuery}
             close={() => setOpen(false)}

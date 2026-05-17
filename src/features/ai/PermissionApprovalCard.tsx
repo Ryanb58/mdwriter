@@ -19,6 +19,7 @@ import { getToolPath, pathPrefixForAllowlist, stringField, truncate } from "./to
 export function PermissionApprovalCard({ pending }: { pending: PendingPermission }) {
   const resolve = useStore((s) => s.resolvePendingPermission)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const summary = summarizePending(pending)
   const allowForSessionScope = sessionScope(pending)
@@ -26,6 +27,7 @@ export function PermissionApprovalCard({ pending }: { pending: PendingPermission
   async function decide(decision: "allow" | "deny", opts?: { sessionAllowlist?: boolean }) {
     if (busy) return
     setBusy(true)
+    setError(null)
     try {
       if (decision === "allow" && opts?.sessionAllowlist && allowForSessionScope) {
         // Order matters: add the rule before responding so a tight
@@ -34,8 +36,14 @@ export function PermissionApprovalCard({ pending }: { pending: PendingPermission
         await ipc.addPermissionRule(allowForSessionScope.tool, allowForSessionScope.pathPrefix)
       }
       await ipc.respondPermission(pending.id, decision)
-    } finally {
+      // Only drop the card after the broker has acknowledged the
+      // decision. If the IPC throws, the agent subprocess is still
+      // parked on its oneshot — closing the UI without unblocking
+      // would strand the turn forever.
       resolve(pending.id)
+    } catch (e) {
+      setError(String(e))
+      setBusy(false)
     }
   }
 
@@ -54,6 +62,11 @@ export function PermissionApprovalCard({ pending }: { pending: PendingPermission
           {summary.detail && (
             <div className="text-text-subtle text-[11.5px] mt-0.5 leading-snug truncate">
               {summary.detail}
+            </div>
+          )}
+          {error && (
+            <div className="text-danger text-[11.5px] mt-1 leading-snug">
+              Couldn't reach the agent: {error}. Try again or deny to free the turn.
             </div>
           )}
         </div>

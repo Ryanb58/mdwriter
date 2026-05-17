@@ -109,7 +109,7 @@ function AssistantBlock({
     <div className="group text-[13px]">
       <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle mb-1">Assistant</div>
       {msg.tools.map((t) => (
-        <ToolActionCard key={t.id} tool={t} />
+        <ToolActionCard key={t.id} tool={t} messageIdx={idx} />
       ))}
       {showSpinner && (
         <div className="text-text-subtle text-[12px]">Thinking…</div>

@@ -15,7 +15,7 @@
 //! We translate to the normalized [`AiStreamEvent`] vocabulary so the frontend
 //! doesn't have to know which adapter it's talking to.
 
-use super::{Agent, AgentCommand, AiStreamEvent};
+use super::{Agent, AgentCommand, AiStreamEvent, PermissionMode};
 use std::path::{Path, PathBuf};
 
 pub struct CodexAgent;
@@ -25,10 +25,18 @@ impl Agent for CodexAgent {
         super::which("codex")
     }
 
-    fn build_command(&self, binary: &Path, _cwd: &Path, prompt: &str) -> AgentCommand {
+    fn build_command(
+        &self,
+        binary: &Path,
+        _cwd: &Path,
+        prompt: &str,
+        _permission_mode: PermissionMode,
+    ) -> AgentCommand {
         // `codex exec` runs non-interactively and `--json` emits the JSONL
         // stream we parse below. We don't pass `--auto` / sandbox flags here;
         // approval behavior is left to the user's `~/.codex/config.toml`.
+        // Codex doesn't expose a mode flag equivalent to Claude Code's, so
+        // permission_mode is currently unused for this adapter.
         AgentCommand {
             binary: binary.to_path_buf(),
             args: vec![

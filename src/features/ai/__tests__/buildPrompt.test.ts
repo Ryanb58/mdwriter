@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { buildPrompt, extractWikilinks } from "../buildPrompt"
+import type { Skill } from "../../../lib/ipc"
+import { buildPrompt, extractSkillRefs, extractWikilinks } from "../buildPrompt"
 
 describe("extractWikilinks", () => {
   it("returns empty for plain text", () => {
@@ -91,5 +92,99 @@ describe("buildPrompt", () => {
       systemPrompt: "   ",
     })
     expect(out).toBe("hi")
+  })
+})
+
+describe("extractSkillRefs", () => {
+  it("returns empty when no skill refs are present", () => {
+    expect(extractSkillRefs("hello [[note]] world")).toEqual([])
+  })
+
+  it("captures a single skill ref", () => {
+    expect(extractSkillRefs("please [[skill:critique]] this")).toEqual([
+      "critique",
+    ])
+  })
+
+  it("captures multiple skill refs and dedupes", () => {
+    expect(extractSkillRefs("[[skill:a]] [[skill:b]] [[skill:a]]")).toEqual([
+      "a",
+      "b",
+    ])
+  })
+
+  it("does not match plain note wikilinks", () => {
+    expect(extractSkillRefs("[[plain-note]]")).toEqual([])
+  })
+})
+
+describe("extractWikilinks (skill exclusion)", () => {
+  it("ignores skill: refs so they don't show up as notes", () => {
+    expect(extractWikilinks("[[note]] [[skill:critique]] [[note]]")).toEqual([
+      "note",
+    ])
+  })
+})
+
+describe("buildPrompt with skills", () => {
+  const skills: Skill[] = [
+    {
+      name: "critique",
+      description: "Critique writing",
+      source: "vault-claude",
+      absPath: "/vault/.claude/skills/critique/SKILL.md",
+      vaultRelPath: ".claude/skills/critique/SKILL.md",
+    },
+    {
+      name: "summarize",
+      description: "Summarize content",
+      source: "user-claude",
+      absPath: "/home/u/.claude/skills/summarize/SKILL.md",
+      vaultRelPath: null,
+    },
+  ]
+
+  it("renders a skill block with vault-relative paths when available", () => {
+    const out = buildPrompt({
+      currentNote: null,
+      userText: "please [[skill:critique]] this",
+      availableSkills: skills,
+    })
+    expect(out).toContain("invoked these skills")
+    expect(out).toContain("critique → .claude/skills/critique/SKILL.md")
+  })
+
+  it("uses the absolute path for user-level skills", () => {
+    const out = buildPrompt({
+      currentNote: null,
+      userText: "[[skill:summarize]]",
+      availableSkills: skills,
+    })
+    expect(out).toContain(
+      "summarize → /home/u/.claude/skills/summarize/SKILL.md",
+    )
+  })
+
+  it("marks unresolved skill refs explicitly", () => {
+    const out = buildPrompt({
+      currentNote: null,
+      userText: "[[skill:nonexistent]]",
+      availableSkills: skills,
+    })
+    expect(out).toContain("nonexistent → (unresolved")
+  })
+
+  it("renders skills alongside notes and selection", () => {
+    const out = buildPrompt({
+      currentNote: "today.md",
+      userText: "rewrite [[notes]] using [[skill:critique]]",
+      selection: { text: "draft text", sourceNote: "today.md" },
+      availableSkills: skills,
+    })
+    expect(out).toContain("currently viewing: today.md")
+    expect(out).toContain("`notes.md`")
+    expect(out).toContain("critique → .claude/skills/critique/SKILL.md")
+    expect(out).toContain("<selection>")
+    expect(out).toContain("draft text")
   })
 })

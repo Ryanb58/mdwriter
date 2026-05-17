@@ -10,27 +10,29 @@
  */
 
 export const PILL_CLASS = "ai-pill"
-const WIKILINK_PATTERN = /\[\[([^\]\n[]+)\]\]/g
+export const SKILL_PILL_CLASS = "ai-pill-skill"
+const PILL_PATTERN = /\[\[(skill:)?([^\]\n[]+)\]\]/g
 
-/** Replace the editor's content so it mirrors `text`, expanding `[[Name]]`
- *  runs into atomic pill spans. */
+/** Replace the editor's content so it mirrors `text`, expanding pill runs
+ *  (`[[Name]]`, `[[skill:name]]`) into atomic non-editable spans. */
 export function renderTextToEditor(root: HTMLElement, text: string): void {
   root.replaceChildren()
   if (!text) return
   let lastIndex = 0
-  WIKILINK_PATTERN.lastIndex = 0
+  PILL_PATTERN.lastIndex = 0
   let m: RegExpExecArray | null
-  while ((m = WIKILINK_PATTERN.exec(text)) !== null) {
+  while ((m = PILL_PATTERN.exec(text)) !== null) {
     const before = text.slice(lastIndex, m.index)
     if (before) appendTextWithBreaks(root, before)
-    root.appendChild(makePill(m[1]))
+    const isSkill = m[1] === "skill:"
+    root.appendChild(isSkill ? makeSkillPill(m[2]) : makePill(m[2]))
     lastIndex = m.index + m[0].length
   }
   const tail = text.slice(lastIndex)
   if (tail) appendTextWithBreaks(root, tail)
 }
 
-/** Build a single atomic pill span for the given target. */
+/** Build a single atomic note pill span for the given target. */
 export function makePill(target: string): HTMLSpanElement {
   const span = document.createElement("span")
   span.className = PILL_CLASS
@@ -38,6 +40,20 @@ export function makePill(target: string): HTMLSpanElement {
   // reflect the contentEditable property to the attribute).
   span.setAttribute("contenteditable", "false")
   span.dataset.target = target
+  span.dataset.kind = "note"
+  span.textContent = target
+  return span
+}
+
+/** Build a single atomic skill pill span. Visually distinct from note pills
+ *  (lightning glyph via CSS, accent tint) and serializes back as
+ *  `[[skill:name]]`. */
+export function makeSkillPill(target: string): HTMLSpanElement {
+  const span = document.createElement("span")
+  span.className = `${PILL_CLASS} ${SKILL_PILL_CLASS}`
+  span.setAttribute("contenteditable", "false")
+  span.dataset.target = target
+  span.dataset.kind = "skill"
   span.textContent = target
   return span
 }
@@ -90,8 +106,7 @@ export function readEditorState(root: HTMLElement): { text: string; caret: numbe
     if (node.nodeType !== Node.ELEMENT_NODE) return
     const el = node as HTMLElement
     if (el.classList.contains(PILL_CLASS)) {
-      const target = el.dataset.target ?? el.textContent ?? ""
-      text += `[[${target}]]`
+      text += serializePill(el)
       return
     }
     if (el.tagName === "BR") {
@@ -106,6 +121,14 @@ export function readEditorState(root: HTMLElement): { text: string; caret: numbe
   return { text, caret }
 }
 
+/** Serialized text form of a pill: `[[Name]]` for notes, `[[skill:name]]`
+ *  for skills. The agent resolves both at run time via filesystem reads. */
+function serializePill(el: HTMLElement): string {
+  const target = el.dataset.target ?? el.textContent ?? ""
+  if (el.dataset.kind === "skill") return `[[skill:${target}]]`
+  return `[[${target}]]`
+}
+
 /** Total serialized text length contributed by a subtree. */
 function textLengthOf(node: Node | undefined): number {
   if (!node) return 0
@@ -113,7 +136,7 @@ function textLengthOf(node: Node | undefined): number {
   if (node.nodeType !== Node.ELEMENT_NODE) return 0
   const el = node as HTMLElement
   if (el.classList.contains(PILL_CLASS)) {
-    return `[[${el.dataset.target ?? el.textContent ?? ""}]]`.length
+    return serializePill(el).length
   }
   if (el.tagName === "BR") return 1
   let sum = 0
@@ -163,7 +186,7 @@ function positionAtTextOffset(
     if (node.nodeType !== Node.ELEMENT_NODE) return false
     const el = node as HTMLElement
     if (el.classList.contains(PILL_CLASS)) {
-      const totalLen = `[[${el.dataset.target ?? el.textContent ?? ""}]]`.length
+      const totalLen = serializePill(el).length
       if (target >= acc && target <= acc + totalLen) {
         snapToAtom(el, target - acc, totalLen)
         return true

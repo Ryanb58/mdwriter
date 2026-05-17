@@ -12,6 +12,19 @@
 use super::{Agent, AgentCommand, AiStreamEvent, PermissionMode};
 use std::path::{Path, PathBuf};
 
+/// Tools that are always allowed without an approval prompt. Read-only
+/// operations only — the permission broker still gates anything that
+/// can mutate the filesystem or shell out.
+const DEFAULT_ALLOWED_TOOLS: &[&str] = &[
+    "Read",
+    "Grep",
+    "Glob",
+    "LS",
+    "TodoWrite",
+    "WebFetch",
+    "WebSearch",
+];
+
 pub struct ClaudeCodeAgent;
 
 impl Agent for ClaudeCodeAgent {
@@ -34,6 +47,14 @@ impl Agent for ClaudeCodeAgent {
             "--permission-mode".into(),
             permission_mode.as_flag().into(),
         ];
+
+        // Pre-allowlist the read-only tools so the broker only sees
+        // mutating calls (Edit/Write/Bash). Bypass mode skips the prompt
+        // tool anyway, so the flag is redundant there.
+        if !matches!(permission_mode, PermissionMode::BypassPermissions) {
+            args.push("--allowed-tools".into());
+            args.push(DEFAULT_ALLOWED_TOOLS.join(",").into());
+        }
 
         // Pre-authorize the user-level skill directories so the agent can
         // read SKILL.md files referenced from the command palette without

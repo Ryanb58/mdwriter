@@ -88,7 +88,7 @@ function RightPanel() {
   const setTab = useStore((s) => s.setRightPaneTab)
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div role="tablist" className="flex items-center border-b border-border h-9 px-1 flex-none">
+      <div role="tablist" className="flex items-stretch border-b border-border h-9 px-2 flex-none">
         <TabBtn active={tab === "properties"} onClick={() => setTab("properties")}>
           Properties
         </TabBtn>
@@ -142,6 +142,9 @@ function TabBtn({
   onClick: () => void
   children: React.ReactNode
 }) {
+  // Underline-style tab: the active button's 2px bottom border overlaps
+  // the tablist's own border-b (via -mb-px) so it reads as a tab
+  // "punching through" the strip rather than a floating pill.
   return (
     <button
       type="button"
@@ -149,10 +152,10 @@ function TabBtn({
       aria-selected={active}
       onClick={onClick}
       className={[
-        "h-7 px-2.5 text-[12px] rounded transition-colors",
+        "h-9 px-3 -mb-px text-[12px] border-b-2 transition-colors",
         active
-          ? "text-text bg-elevated"
-          : "text-text-subtle hover:text-text hover:bg-elevated/60",
+          ? "text-text border-text font-medium"
+          : "text-text-subtle border-transparent hover:text-text hover:border-border-strong",
       ].join(" ")}
     >
       {children}

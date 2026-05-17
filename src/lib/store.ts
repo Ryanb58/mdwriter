@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
-import type { TreeNode, AgentId, AgentAvailability, PermissionMode } from "./ipc"
+import type { TreeNode, AgentId, AgentAvailability, PermissionMode, AiPermissionRequest } from "./ipc"
 
 export type EditorMode = "block" | "raw"
 
@@ -131,6 +131,18 @@ export type AppStore = {
   clearAiMessages(): void
   aiRunning: boolean
   setAiRunning(v: boolean): void
+  /**
+   * In-flight permission requests, keyed by request id. The card UI reads
+   * this map; `respondPermission` (or session shutdown) clears entries.
+   * The order of insertion is preserved as `pendingPermissionOrder` so
+   * multiple parallel approvals render top-to-bottom in the order they
+   * arrived from the agent.
+   */
+  pendingPermissions: Record<string, PendingPermission>
+  pendingPermissionOrder: string[]
+  addPendingPermission(req: AiPermissionRequest): void
+  resolvePendingPermission(id: string): void
+  clearPendingPermissions(): void
   /** Vault-scoped chats keyed by id. Loaded by `useChatPersistence`. */
   chats: Record<string, Chat>
   activeChatId: string | null
@@ -178,6 +190,19 @@ export type ToolCall = {
   output: unknown | null
   isError: boolean
   finished: boolean
+}
+
+/**
+ * A permission request awaiting the user's decision. Mirrors the wire
+ * shape from `ai-permission`. `receivedAt` is used to sort the card list
+ * stably when several arrive close together.
+ */
+export type PendingPermission = {
+  id: string
+  tool: string
+  input: unknown
+  toolUseId: string | null
+  receivedAt: number
 }
 
 export type AssistantMessage = {
@@ -342,6 +367,8 @@ export const useStore = create<AppStore>()(
       aiAvailable: [],
       aiMessages: [],
       aiRunning: false,
+      pendingPermissions: {},
+      pendingPermissionOrder: [],
       aiDraftRequest: null,
       aiSkillInsertRequest: null,
       editorSelection: null,
@@ -417,6 +444,35 @@ export const useStore = create<AppStore>()(
       clearAiMessages: () =>
         set((s) => withActiveChat(s, () => ({ messages: [] }))),
       setAiRunning: (v) => set({ aiRunning: v }),
+      addPendingPermission: (req) =>
+        set((s) => {
+          // Idempotent: a re-emit (e.g. devtools hot-reload) shouldn't
+          // produce a ghost card.
+          if (s.pendingPermissions[req.id]) return {}
+          const entry: PendingPermission = {
+            id: req.id,
+            tool: req.tool,
+            input: req.input,
+            toolUseId: req.toolUseId,
+            receivedAt: Date.now(),
+          }
+          return {
+            pendingPermissions: { ...s.pendingPermissions, [req.id]: entry },
+            pendingPermissionOrder: [...s.pendingPermissionOrder, req.id],
+          }
+        }),
+      resolvePendingPermission: (id) =>
+        set((s) => {
+          if (!s.pendingPermissions[id]) return {}
+          const { [id]: _gone, ...rest } = s.pendingPermissions
+          void _gone
+          return {
+            pendingPermissions: rest,
+            pendingPermissionOrder: s.pendingPermissionOrder.filter((x) => x !== id),
+          }
+        }),
+      clearPendingPermissions: () =>
+        set({ pendingPermissions: {}, pendingPermissionOrder: [] }),
       setChats: (chats) =>
         set((s) => {
           // If the active chat was dropped (e.g. external delete), pick the

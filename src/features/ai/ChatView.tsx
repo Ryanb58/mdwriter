@@ -3,6 +3,7 @@ import { useStore, type AssistantMessage } from "../../lib/store"
 import { basename } from "../../lib/paths"
 import { MarkdownView } from "./MarkdownView"
 import { MessageActions } from "./MessageActions"
+import { PermissionApprovalCard } from "./PermissionApprovalCard"
 import { ToolActionCard } from "./ToolActionCard"
 import { sendPrompt } from "./useAiSession"
 
@@ -104,15 +105,19 @@ function AssistantBlock({
   isLast: boolean
   running: boolean
 }) {
-  const showSpinner = isLast && running && !msg.finished && msg.text === "" && msg.tools.length === 0
   return (
     <div className="group text-[13px]">
       <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle mb-1">Assistant</div>
       {msg.tools.map((t) => (
         <ToolActionCard key={t.id} tool={t} messageIdx={idx} />
       ))}
-      {showSpinner && (
-        <div className="text-text-subtle text-[12px]">Thinking…</div>
+      {/* Permission cards belong only at the trailing edge of the latest
+          assistant turn. Mounting the subscription inside a child gated
+          on isLast means non-last blocks don't re-render when the
+          pending-permission map changes. */}
+      {isLast && <TrailingPermissions />}
+      {isLast && running && !msg.finished && msg.text === "" && msg.tools.length === 0 && (
+        <SpinnerIfNoPending />
       )}
       {msg.text && <MarkdownView text={msg.text} />}
       {/* Only show actions once the message has *something* — copy of an empty
@@ -122,4 +127,26 @@ function AssistantBlock({
       )}
     </div>
   )
+}
+
+function TrailingPermissions() {
+  const order = useStore((s) => s.pendingPermissionOrder)
+  const map = useStore((s) => s.pendingPermissions)
+  if (order.length === 0) return null
+  return (
+    <>
+      {order.map((id) => {
+        const p = map[id]
+        return p ? <PermissionApprovalCard key={p.id} pending={p} /> : null
+      })}
+    </>
+  )
+}
+
+function SpinnerIfNoPending() {
+  // Hide the "Thinking…" spinner while approval cards are visible —
+  // the agent isn't thinking, it's waiting for the user.
+  const hasPending = useStore((s) => s.pendingPermissionOrder.length > 0)
+  if (hasPending) return null
+  return <div className="text-text-subtle text-[12px]">Thinking…</div>
 }

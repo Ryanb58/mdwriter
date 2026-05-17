@@ -8,25 +8,22 @@ import {
   FilePlus,
   MagnifyingGlass,
   PencilSimple,
-  ShieldWarning,
   Terminal,
   Warning,
   Wrench,
 } from "@phosphor-icons/react"
 import type { ToolCall } from "../../lib/store"
 import { useStore } from "../../lib/store"
-import { regenerateFrom } from "./useAiSession"
+import { getToolPath, numberField, stringField, truncate } from "./toolInput"
 
 export function ToolActionCard({
   tool,
-  messageIdx,
+  messageIdx: _messageIdx,
 }: {
   tool: ToolCall
   messageIdx: number
 }) {
   const [expanded, setExpanded] = useState(false)
-  const permissionDenied =
-    tool.finished && tool.isError && isPermissionDenied(tool.output)
 
   const status = !tool.finished
     ? <CircleNotch size={11} className="animate-spin text-text-subtle" />
@@ -62,9 +59,6 @@ export function ToolActionCard({
           {status}
         </span>
       </button>
-      {permissionDenied && (
-        <PermissionRetryBanner messageIdx={messageIdx} />
-      )}
       {expanded && (
         <div className="px-2 pb-2 border-t border-border space-y-1.5 pt-1.5">
           <Section label="Input">
@@ -82,67 +76,6 @@ export function ToolActionCard({
         </div>
       )}
     </div>
-  )
-}
-
-/**
- * Inline action shown when a tool call failed because Claude Code asked for
- * permission and `--print` mode has no way to prompt. Switches the session's
- * permission mode to bypass and re-runs the user turn that produced this
- * message — the closest thing to an inline-approval workflow we can offer
- * without a full MCP permission-prompt server.
- */
-function PermissionRetryBanner({
-  messageIdx,
-}: {
-  messageIdx: number
-}) {
-  const setMode = useStore((s) => s.setAiPermissionMode)
-  const running = useStore((s) => s.aiRunning)
-  function retryWithBypass() {
-    setMode("bypass-permissions")
-    // regenerateFrom guards on running internally, but check eagerly so the
-    // button feels disabled rather than silently no-op'ing.
-    if (running) return
-    void regenerateFrom(messageIdx)
-  }
-  return (
-    <div className="mx-2 mb-2 mt-0.5 px-2 py-1.5 rounded-md border border-warning/30 bg-warning/5 flex items-start gap-2">
-      <ShieldWarning size={12} weight="bold" className="text-warning flex-none mt-[2px]" />
-      <div className="flex-1 min-w-0 text-[11.5px] leading-snug">
-        <div className="text-text">Permission required for this action.</div>
-        <div className="text-text-subtle">
-          Claude Code can't prompt interactively when run from mdwriter. Switch
-          to <span className="font-mono">bypass</span> mode and retry, or open
-          the shield in the header to change modes manually.
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={retryWithBypass}
-        disabled={running}
-        className="flex-none text-[11px] px-2 py-1 rounded bg-warning/15 text-warning hover:bg-warning/25 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
-      >
-        Retry with Bypass
-      </button>
-    </div>
-  )
-}
-
-/**
- * Pattern-match a Claude Code tool result against known permission-denial
- * messages. Run only on results flagged `isError`, so false positives only
- * happen when the agent's own error text happens to contain these phrases.
- *
- * Exported for unit tests.
- */
-export function isPermissionDenied(output: unknown): boolean {
-  const text = formatToolOutput(output).toLowerCase()
-  return (
-    text.includes("requires approval") ||
-    text.includes("requested permissions") ||
-    text.includes("haven't granted") ||
-    text.includes("permission denied")
   )
 }
 
@@ -199,8 +132,7 @@ type ToolSummary = {
 function summarizeTool(tool: ToolCall): ToolSummary {
   const input = (tool.input ?? {}) as Record<string, unknown>
   const name = tool.name
-
-  const filePath = stringField(input, "file_path") ?? stringField(input, "path")
+  const filePath = getToolPath(input)
 
   switch (name) {
     case "Read":
@@ -228,26 +160,18 @@ function summarizeTool(tool: ToolCall): ToolSummary {
         detail: writeDetail(input),
         openPath: filePath ?? null,
       }
-    case "Glob": {
-      const pattern = stringField(input, "pattern") ?? ""
-      return { icon: MagnifyingGlass, verb: "Glob", target: pattern, detail: "", openPath: null }
-    }
-    case "Grep": {
-      const pattern = stringField(input, "pattern") ?? ""
-      return { icon: MagnifyingGlass, verb: "Grep", target: pattern, detail: "", openPath: null }
-    }
-    case "Bash": {
-      const cmd = stringField(input, "command") ?? ""
-      const shortened = cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd
-      return { icon: Terminal, verb: "Bash", target: shortened, detail: "", openPath: null }
-    }
+    case "Glob":
+      return { icon: MagnifyingGlass, verb: "Glob", target: stringField(input, "pattern") ?? "", detail: "", openPath: null }
+    case "Grep":
+      return { icon: MagnifyingGlass, verb: "Grep", target: stringField(input, "pattern") ?? "", detail: "", openPath: null }
+    case "Bash":
+      return { icon: Terminal, verb: "Bash", target: truncate(stringField(input, "command") ?? "", 60), detail: "", openPath: null }
     default:
       return { icon: Wrench, verb: name, target: "", detail: "", openPath: null }
   }
 }
 
 function lineDetail(input: Record<string, unknown>, output: unknown): string {
-  // Prefer ranges declared in the input over inferred line counts.
   const offset = numberField(input, "offset")
   const limit = numberField(input, "limit")
   if (offset != null || limit != null) {
@@ -255,13 +179,9 @@ function lineDetail(input: Record<string, unknown>, output: unknown): string {
     const count = limit ?? null
     return count != null ? `lines ${from}–${from + count - 1}` : `from line ${from}`
   }
-  // Otherwise count lines in the output if it's a string-y payload.
   const text = textOf(output)
   if (text == null) return ""
-  // Strip the optional leading line-number "N→" prefix Read emits — we don't
-  // need to count those, but they'd inflate "N lines" otherwise.
-  const lines = text.split("\n").length
-  return `${lines} lines`
+  return `${text.split("\n").length} lines`
 }
 
 function editDetail(input: Record<string, unknown>): string {
@@ -276,18 +196,7 @@ function editDetail(input: Record<string, unknown>): string {
 function writeDetail(input: Record<string, unknown>): string {
   const content = stringField(input, "content")
   if (content == null) return ""
-  const lines = content.split("\n").length
-  return `${lines} lines`
-}
-
-function stringField(input: Record<string, unknown>, key: string): string | undefined {
-  const v = input[key]
-  return typeof v === "string" ? v : undefined
-}
-
-function numberField(input: Record<string, unknown>, key: string): number | undefined {
-  const v = input[key]
-  return typeof v === "number" ? v : undefined
+  return `${content.split("\n").length} lines`
 }
 
 function textOf(v: unknown): string | null {

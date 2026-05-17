@@ -15,11 +15,12 @@
 
 mod claude_code;
 mod codex;
+pub mod permission;
 
 use crate::errors::{AppError, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
 /// Stable identifier for each agent. Frontend uses this string.
@@ -113,10 +114,13 @@ pub enum AiStreamEvent {
 
 /// Where the running subprocess lives, so we can kill it. Behind an Arc so the
 /// reader thread (which calls .wait()) and the cancel command (which calls
-/// .kill()) can both reach the same Child.
+/// .kill()) can both reach the same Child. The optional `broker` is the
+/// agent's permission-prompt server for the active session — held here so
+/// the cancel path and the subprocess waiter can both call `shutdown` on it.
 #[derive(Default)]
 pub struct AgentSession {
     pub process: Mutex<Option<std::sync::Arc<Mutex<std::process::Child>>>>,
+    pub broker: Mutex<Option<Arc<dyn permission::PermissionBroker>>>,
 }
 
 /// Trait that each adapter implements.
@@ -241,14 +245,32 @@ pub async fn start_ai_session(
         .detect()
         .ok_or_else(|| AppError::Io(format!("'{}' binary was not found on this machine.", agent.label())))?;
 
-    // Stop any session already running.
-    let prev = app.state::<AgentSession>().process.lock().unwrap().take();
-    if let Some(child_arc) = prev {
+    // Stop any session already running. Both the process and any active
+    // permission broker hold state from the prior turn — drain both so
+    // pending approval cards resolve to deny rather than stranding.
+    let prev_proc = app.state::<AgentSession>().process.lock().unwrap().take();
+    if let Some(child_arc) = prev_proc {
         let _ = child_arc.lock().unwrap().kill();
     }
+    let prev_broker = app.state::<AgentSession>().broker.lock().unwrap().take();
+    if let Some(b) = prev_broker { b.shutdown(); }
 
     let mode = permission_mode.unwrap_or_default();
-    let cmd = adapter.build_command(&binary, &vault_path, &prompt, mode);
+    let mut cmd = adapter.build_command(&binary, &vault_path, &prompt, mode);
+
+    // Spawn a fresh broker per session and let it inject its own flags /
+    // env / config-file references into the command. Adapters that don't
+    // need a broker (e.g. Codex today) get None and the command is left
+    // untouched.
+    let broker: Option<Arc<dyn permission::PermissionBroker>> = match permission::broker_for(agent, app.clone()) {
+        Ok(b) => b,
+        Err(e) => {
+            return Err(AppError::Io(format!("permission broker failed to start: {e}")));
+        }
+    };
+    if let Some(b) = &broker {
+        b.wire(&mut cmd);
+    }
 
     // stdin → /dev/null so the agent doesn't block waiting for input. Some
     // CLIs (Claude Code) print a slow-stdin warning otherwise.
@@ -273,6 +295,7 @@ pub async fn start_ai_session(
 
     let child_arc = Arc::new(Mutex::new(child));
     *app.state::<AgentSession>().process.lock().unwrap() = Some(child_arc.clone());
+    *app.state::<AgentSession>().broker.lock().unwrap() = broker.clone();
 
     // stdout reader: parse each line and emit normalized events.
     let app_stdout = app.clone();
@@ -306,8 +329,11 @@ pub async fn start_ai_session(
 
     // Waiter: poll try_wait so we don't hold the child mutex across a blocking
     // wait — otherwise stop_ai_session can't kill while we're waiting.
+    // Also tears the broker down so any pending approval cards resolve as
+    // deny whether the subprocess exited cleanly or crashed mid-turn.
     let app_wait = app.clone();
     let child_for_wait = child_arc.clone();
+    let broker_for_wait = broker.clone();
     thread::spawn(move || {
         let exit_code: Option<i32> = loop {
             {
@@ -320,6 +346,7 @@ pub async fn start_ai_session(
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         };
+        if let Some(b) = &broker_for_wait { b.shutdown(); }
         let _ = app_wait.emit(
             "ai-stream",
             AiStreamEvent::Done {
@@ -327,6 +354,7 @@ pub async fn start_ai_session(
             },
         );
         *app_wait.state::<AgentSession>().process.lock().unwrap() = None;
+        *app_wait.state::<AgentSession>().broker.lock().unwrap() = None;
     });
 
     Ok(())
@@ -334,9 +362,41 @@ pub async fn start_ai_session(
 
 #[tauri::command]
 pub fn stop_ai_session(app: AppHandle) -> Result<()> {
+    let prev_broker = app.state::<AgentSession>().broker.lock().unwrap().take();
+    if let Some(b) = prev_broker { b.shutdown(); }
     let prev = app.state::<AgentSession>().process.lock().unwrap().take();
     if let Some(child_arc) = prev {
         let _ = child_arc.lock().unwrap().kill();
     }
     Ok(())
+}
+
+/// Resolve a pending permission request. The frontend calls this from the
+/// approval card; the broker forwards the decision to whichever HTTP
+/// handler thread is parked waiting for it. Returns `false` if no such
+/// request was pending (already resolved, broker shut down, etc.).
+#[tauri::command]
+pub fn respond_permission(
+    app: AppHandle,
+    id: String,
+    decision: permission::DecisionKind,
+    message: Option<String>,
+    updated_input: Option<serde_json::Value>,
+) -> Result<bool> {
+    let d = permission::Decision { id, decision, message, updated_input };
+    let broker = app.state::<AgentSession>().broker.lock().unwrap().clone();
+    Ok(broker.map(|b| b.respond(d)).unwrap_or(false))
+}
+
+/// Extend the active session's allowlist. Subsequent matching tool calls
+/// resolve to allow without a UI roundtrip. No-op when there's no live
+/// session or the active broker doesn't support allowlists.
+#[tauri::command]
+pub fn add_permission_rule(
+    app: AppHandle,
+    tool: String,
+    path_prefix: Option<String>,
+) -> Result<bool> {
+    let broker = app.state::<AgentSession>().broker.lock().unwrap().clone();
+    Ok(broker.map(|b| b.add_allow_rule(&tool, path_prefix.as_deref())).unwrap_or(false))
 }

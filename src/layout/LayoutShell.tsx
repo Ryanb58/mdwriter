@@ -88,7 +88,18 @@ export function LayoutShell({
   const renderedLeftWidth = Math.min(leftWidth, effectiveLeftMax)
   const renderedRightWidth = Math.min(rightWidth, effectiveRightMax)
 
-  const widths = computeWidths(mode, leftState, rightState, width, renderedLeftWidth, renderedRightWidth)
+  const leftHasRail = leftRail !== undefined
+  const rightHasRail = rightRail !== undefined
+  const widths = computeWidths(
+    mode,
+    leftState,
+    rightState,
+    width,
+    renderedLeftWidth,
+    renderedRightWidth,
+    leftHasRail,
+    rightHasRail,
+  )
 
   const styleVars: CSSProperties = {
     ["--layout-left-grid" as string]: `${widths.leftGrid}px`,
@@ -203,9 +214,15 @@ function computeWidths(
   viewportW: number,
   leftCustom: number,
   rightCustom: number,
+  leftHasRail: boolean,
+  rightHasRail: boolean,
 ) {
-  const leftIntrinsic = left === "rail" ? PANEL_DIMS.RAIL : leftCustom
-  const rightIntrinsic = right === "rail" ? PANEL_DIMS.RAIL : rightCustom
+  // Sides without a rail collapse to 0 in their "rail" state so the side
+  // doesn't show an empty 48px strip.
+  const leftRailW = leftHasRail ? PANEL_DIMS.RAIL : 0
+  const rightRailW = rightHasRail ? PANEL_DIMS.RAIL : 0
+  const leftIntrinsic = left === "rail" ? leftRailW : leftCustom
+  const rightIntrinsic = right === "rail" ? rightRailW : rightCustom
 
   if (mode === "mobile-sheet") {
     // Sheets fill the layout root width. Fall back to a sane default before

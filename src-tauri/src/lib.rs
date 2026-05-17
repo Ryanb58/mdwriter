@@ -126,6 +126,7 @@ pub fn run() {
             commands::chats::read_chat,
             commands::chats::write_chat,
             commands::chats::delete_chat,
+            commands::skills::list_skills,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

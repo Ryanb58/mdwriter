@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
   PILL_CLASS,
+  SKILL_PILL_CLASS,
   insertLineBreakAtCaret,
   insertTextAtCaret,
+  makeSkillPill,
   readEditorState,
   renderTextToEditor,
   setCaretAtTextOffset,
@@ -148,6 +150,63 @@ describe("insertLineBreakAtCaret", () => {
     const { text } = readEditorState(div)
     expect(text).toBe("one\n")
     expect(div.querySelectorAll("br")).toHaveLength(1)
+    cleanup(div)
+  })
+})
+
+describe("skill pills", () => {
+  it("makeSkillPill produces a span with data-kind=skill and the skill class", () => {
+    const pill = makeSkillPill("critique")
+    expect(pill.dataset.kind).toBe("skill")
+    expect(pill.dataset.target).toBe("critique")
+    expect(pill.classList.contains(PILL_CLASS)).toBe(true)
+    expect(pill.classList.contains(SKILL_PILL_CLASS)).toBe(true)
+    expect(pill.getAttribute("contenteditable")).toBe("false")
+  })
+
+  it("renderTextToEditor turns `[[skill:name]]` into a skill pill", () => {
+    const div = mount()
+    renderTextToEditor(div, "run [[skill:critique]] now")
+    const pills = div.querySelectorAll(`.${SKILL_PILL_CLASS}`)
+    expect(pills).toHaveLength(1)
+    expect(pills[0].getAttribute("data-target")).toBe("critique")
+    expect((pills[0] as HTMLElement).dataset.kind).toBe("skill")
+    cleanup(div)
+  })
+
+  it("serializes skill pills back as `[[skill:name]]`", () => {
+    const div = mount()
+    renderTextToEditor(div, "first [[skill:summarize]] then [[Note]]")
+    const { text } = readEditorState(div)
+    expect(text).toBe("first [[skill:summarize]] then [[Note]]")
+    cleanup(div)
+  })
+
+  it("note and skill pills coexist as distinct atomic spans", () => {
+    const div = mount()
+    renderTextToEditor(div, "[[skill:a]][[b]]")
+    const notePills = Array.from(div.querySelectorAll(`.${PILL_CLASS}`)).filter(
+      (el) => (el as HTMLElement).dataset.kind === "note",
+    )
+    const skillPills = div.querySelectorAll(`.${SKILL_PILL_CLASS}`)
+    expect(notePills).toHaveLength(1)
+    expect(skillPills).toHaveLength(1)
+    cleanup(div)
+  })
+
+  it("round-trips mixed skill/note/text content losslessly", () => {
+    const div = mount()
+    const cases = [
+      "[[skill:a]]",
+      "before [[skill:critique]] after",
+      "[[skill:a]] and [[Note]] together",
+      "line one\n[[skill:x]]\nline three",
+    ]
+    for (const text of cases) {
+      renderTextToEditor(div, text)
+      const { text: out } = readEditorState(div)
+      expect(out).toBe(text)
+    }
     cleanup(div)
   })
 })

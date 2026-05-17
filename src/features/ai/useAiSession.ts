@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { ipc, type AiStreamEvent } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
-import { buildPrompt } from "./buildPrompt"
+import { buildPrompt, extractSkillRefs } from "./buildPrompt"
 
 /**
  * Detect installed agents on mount and listen for the streaming events that
@@ -98,10 +98,25 @@ export async function sendPrompt(text: string) {
     : null
   const activeChat = store.activeChatId ? store.chats[store.activeChatId] : null
   const systemPrompt = activeChat?.systemPrompt ?? null
-  const wrapped = buildPrompt({ currentNote, userText: trimmed, selection, systemPrompt })
+  // Only fetch the skill registry when the prompt actually invokes one.
+  // The list is small but the IPC roundtrip on every send adds up.
+  const needsSkills = extractSkillRefs(trimmed).length > 0
+  const availableSkills = needsSkills
+    ? await ipc.listSkills(root).catch((e) => {
+        console.error("[ai] listSkills failed:", e)
+        return null
+      })
+    : null
+  const wrapped = buildPrompt({
+    currentNote,
+    userText: trimmed,
+    selection,
+    systemPrompt,
+    availableSkills,
+  })
 
   try {
-    await ipc.startAiSession(store.aiAgent, wrapped, root)
+    await ipc.startAiSession(store.aiAgent, wrapped, root, store.aiPermissionMode)
   } catch (e) {
     store.patchLastAssistantMessage((m) => ({
       ...m,

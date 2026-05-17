@@ -320,6 +320,18 @@ body {
   opacity: 0.85;
 }
 
+/* Skill pills share the chip shape with note pills but use a warm tint and a
+   lightning glyph so the two reference kinds are visually distinct. */
+.ai-pill-skill {
+  background: color-mix(in oklch, var(--color-warning, oklch(75% 0.12 75)) 20%, transparent);
+  border-color: color-mix(in oklch, var(--color-warning, oklch(75% 0.12 75)) 50%, transparent);
+}
+.ai-pill-skill::before {
+  background: var(--color-warning, oklch(75% 0.12 75));
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'><path d='M13 2L3 14h7l-1 8 10-12h-7l1-8z'/></svg>") center / contain no-repeat;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'><path d='M13 2L3 14h7l-1 8 10-12h-7l1-8z'/></svg>") center / contain no-repeat;
+}
+
 /* Assistant markdown rendering. The chat surface uses a smaller body size
    than the editor — these rules keep block spacing tight, code legible, and
    tables/lists scaled appropriately for a narrow pane. */

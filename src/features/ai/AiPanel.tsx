@@ -1,6 +1,7 @@
 import { useState } from "react"
-import { SlidersHorizontal } from "@phosphor-icons/react"
-import { useStore } from "../../lib/store"
+import { SlidersHorizontal, ShieldCheck, ShieldWarning, Eye } from "@phosphor-icons/react"
+import { useStore, permissionModeLabel } from "../../lib/store"
+import type { PermissionMode } from "../../lib/ipc"
 import { ChatList } from "./ChatList"
 import { ChatView } from "./ChatView"
 import { MessageInput } from "./MessageInput"
@@ -16,6 +17,7 @@ export function AiPanel() {
       <header className="flex items-center gap-1.5 border-b border-border px-2.5 py-1.5">
         <ChatList />
         <UsageMeter />
+        <PermissionModeButton />
         {activeChatId && (
           <button
             onClick={() => setEditingInstructions(true)}
@@ -62,4 +64,57 @@ function formatTokens(n: number): string {
   if (n < 1000) return `${n} tok`
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k tok`
   return `${(n / 1_000_000).toFixed(1)}m tok`
+}
+
+/**
+ * Cycle button for the agent's permission posture. Click rotates through
+ * accept-edits → bypass-permissions → plan. Icon and tint change with the
+ * mode so the current posture is glanceable.
+ */
+function PermissionModeButton() {
+  const mode = useStore((s) => s.aiPermissionMode)
+  const cycle = useStore((s) => s.cycleAiPermissionMode)
+  const { Icon, tone } = modePresentation(mode)
+  return (
+    <button
+      onClick={cycle}
+      className={`flex-none flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-[0.08em] font-medium transition-colors ${tone}`}
+      title={`Permission mode: ${permissionModeLabel(mode)} — click to cycle`}
+      aria-label={`Permission mode: ${permissionModeLabel(mode)}. Click to cycle.`}
+    >
+      <Icon size={11} weight="bold" />
+      <span>{shortLabel(mode)}</span>
+    </button>
+  )
+}
+
+function modePresentation(mode: PermissionMode) {
+  switch (mode) {
+    case "accept-edits":
+      return {
+        Icon: ShieldCheck,
+        tone: "text-text-subtle hover:text-text hover:bg-elevated",
+      }
+    case "bypass-permissions":
+      return {
+        Icon: ShieldWarning,
+        tone: "text-warning hover:bg-elevated",
+      }
+    case "plan":
+      return {
+        Icon: Eye,
+        tone: "text-accent hover:bg-elevated",
+      }
+  }
+}
+
+function shortLabel(mode: PermissionMode): string {
+  switch (mode) {
+    case "accept-edits":
+      return "Edits"
+    case "bypass-permissions":
+      return "Bypass"
+    case "plan":
+      return "Plan"
+  }
 }

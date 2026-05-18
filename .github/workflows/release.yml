@@ -390,12 +390,13 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.tag.outputs.version }}"
           TAG="${{ needs.tag.outputs.tag }}"
-          # Downloads are mirrored to taylorbrazelton.com/mdwriter/ rather than
-          # served from the GitHub release directly. The release-asset filenames
-          # (after the rename step above) match exactly, so the mirror just
-          # needs to host the same names. The updater manifest itself is still
-          # published to gh-pages — only the binaries move.
-          BASE="https://taylorbrazelton.com/mdwriter"
+          # Serve binaries from the GitHub release directly. An earlier
+          # attempt to mirror them to taylorbrazelton.com/mdwriter/ shipped
+          # the manifest without ever wiring up the mirror upload, so every
+          # update download 404'd; until/unless that mirror is actually
+          # populated, the release-download URL is authoritative and
+          # follows redirects fine through Tauri's updater.
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           PUBDATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
           # Search by artifact name (which encodes the platform) rather than

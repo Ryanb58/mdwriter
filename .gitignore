@@ -3,6 +3,7 @@
 .DS_Store
 .idea
 .superpowers/
+.claude/worktrees/
 .vscode/*
 *.local
 *.log

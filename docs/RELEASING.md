@@ -48,7 +48,7 @@ The workflow is **manually triggered** from the Actions tab.
 
 That's it. The workflow:
 
-1. Computes today's date and the short SHA of the chosen commit, builds the tag `vYYYY-MM-DD.<short-sha>`, and pushes it (e.g. `v2026-05-10.a1b2c3d`). Bails if the tag already exists.
+1. Computes today's UTC date + time and the short SHA of the chosen commit, builds the tag `vYYYY-MM-DD.HHMMSS.<short-sha>`, and pushes it (e.g. `v2026-05-10.034106.a1b2c3d`). Bails if the tag already exists.
 2. Stamps `2026.5.10` into `tauri.conf.json`, `Cargo.toml`, and `package.json`.
 3. Builds bundles in parallel for macOS arm64, macOS x86_64, Windows x64, and Linux x64. macOS bundles are ad-hoc codesigned during the build (`APPLE_SIGNING_IDENTITY=-`).
 4. Uploads every artifact to a draft GitHub Release.
@@ -59,9 +59,9 @@ Watch it at `Actions → Release`. ~10-20 minutes.
 
 ## Tag format
 
-`vYYYY-MM-DD.<git-short-sha>`, e.g. `v2026-05-10.a1b2c3d`. Created automatically by the workflow.
+`vYYYY-MM-DD.HHMMSS.<git-short-sha>` (UTC time), e.g. `v2026-05-10.034106.a1b2c3d`. Created automatically by the workflow.
 
-The version baked into the bundle is `YYYY.M.D` (no leading zeros — semver doesn't allow them). The hash lives only in the tag and the release name for traceability.
+The version baked into the bundle is `YYYY.M.D` (no leading zeros — semver doesn't allow them). The hash lives only in the tag and the release name for traceability. The `HHMMSS` component is what keeps the GitHub Releases page in recency order: tags aren't semver, so GitHub falls back to lex-sorting tag names — without a time component, two same-day releases would be ordered by their SHA letters instead of when they were cut.
 
 ## Same-day re-release
 

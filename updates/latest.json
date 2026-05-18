@@ -5,15 +5,15 @@
   "platforms": {
     "darwin-aarch64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlRnd2I3aWswSXVHVGM0L3Aza05YM0lFWnNzVGdERjhQT0RzSWx1dnFZR0gyTTEwWHFIMWNnVGlHeUh1Wnh1UlBkOEVaSEVPem5QMHR3K2ZTMERFUlFvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5MDczMjAxCWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpXWmozcVZ4YTU5VHpTVG40VU9ZQmhPOHRpK0ZjcEFSVEZvZzhtQ2F2UW5LRGVmT2VFTGM1cWp6bXlob0ZNVithS2QwendIOVdqRkVWV0RQMGVSSEZDQT09Cg==\n",
-      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.18_macOS_Silicon.app.tar.gz"
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-18.e8311cc/mdwriter_2026.5.18_macOS_Silicon.app.tar.gz"
     },
     "darwin-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlhlU0kxY2xqSzNsUUQ4Q3ZVdHA0TDZqZUk3UlI1bktSTEc4ZjcveEVDY3VKMno5R3VoNS9uQ2FXTDVDWDhnV3psUmpGbHd6YUJieURVYUJPU1ZGY0FBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5MDczMjI0CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negppWmJibWRWaGZER2FjUGVXejhjeWZKZi9CMXFpb2JaZEkweElkSVBVcWtVVDVvOHpVUWhRSGoyOHdSS3E0MHRqbFJwWmU1eDVqeGlra3RyYjFqRVlEQT09Cg==\n",
-      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.18_macOS_Intel.app.tar.gz"
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-18.e8311cc/mdwriter_2026.5.18_macOS_Intel.app.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQllzVEtkSzB3M1htZFhJeTF2K1VsYXRjdGprMDZteUhYaXJ6eDRadDdyUXZzWHc2UlJubjE1RVRvRDhOcTJQbmluWFUzOXhNZUUvYndCaEYwZlgwaFFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTIxNjE0CWZpbGU6bWR3cml0ZXJfMjAyNi41LjExX3g2NC1zZXR1cC5leGUKdnJIREtkaXhBYW5CcktqRVR6ZXV0N01icU9FVzc2a2lQYzBrSmpzbnVMSEt6L1Zyb3V0VTFQTXVZNEhBOENMd1BjU3hVbVBPdU1ONWhiT09TTndpREE9PQo=\n",
-      "url": "https://taylorbrazelton.com/mdwriter/mdwriter_2026.5.18_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmJaSzZhNkx5UHg4TEg3Y1AwdVlRTlczSFhoeXNCZ1BMaWw0UHRIQ0V4bUlhSDFzVnJSVEZ6bjZQMzBWZG14YVlZY05JUFhEK1BpaFV2MFJLb3Y5cEFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5MDczMzAxCWZpbGU6bWR3cml0ZXJfMjAyNi41LjE4X3g2NC1zZXR1cC5leGUKVUNUaDlQZHVrbS96b0xZR25SbE50YkV1dDJRWmZlTjdOdk9UR0N4Mmo3NGlwdnJOZzVwZkJDVklQQndKV25Qd21nQTJ3QWFGbkRKVUFTZlhMa1BvQWc9PQo=\n",
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-18.e8311cc/mdwriter_2026.5.18_x64-setup.exe"
     }
   }
 }

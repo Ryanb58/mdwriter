@@ -430,7 +430,12 @@ jobs:
               if [[ -z "$sig" ]]; then return; fi
               if [[ $FIRST -eq 0 ]]; then echo ','; fi
               FIRST=0
-              printf '    "%s": {\n      "signature": %s,\n      "url": "%s"\n    }' "$key" "$(jq -Rs <<< "$sig")" "$url"
+              # `printf '%s'` (not herestring) avoids appending a
+              # trailing newline that jq would then bake into the JSON
+              # string. Tauri's signature base64 decoder errors with
+              # "Invalid symbol 10, offset N" if such a newline is
+              # present in the signature value.
+              printf '    "%s": {\n      "signature": %s,\n      "url": "%s"\n    }' "$key" "$(printf '%s' "$sig" | jq -Rs .)" "$url"
             }
             emit "darwin-aarch64" "$MAC_ARM_SIG" "${BASE}/mdwriter_${VERSION}_macOS_Silicon.app.tar.gz"
             emit "darwin-x86_64"  "$MAC_X64_SIG" "${BASE}/mdwriter_${VERSION}_macOS_Intel.app.tar.gz"

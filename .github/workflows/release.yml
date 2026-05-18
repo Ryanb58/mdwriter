@@ -29,7 +29,11 @@ concurrency:
 jobs:
   # ──────────────────────────────────────────────────────────────
   # Job 1: Create the release tag from today's date + current short SHA.
-  # Tag form: vYYYY-MM-DD.<short-sha>; version YYYY.M.D (no leading zeros).
+  # Tag form: vYYYY-MM-DD.HHMMSS.<short-sha>; version YYYY.M.D (no leading
+  # zeros). The HHMMSS component is what keeps the GitHub Releases page in
+  # recency order: tags aren't semver, so GitHub falls back to lex-sorting
+  # tag names — without a time component, two same-day releases would be
+  # ordered by their SHA letters instead of when they were cut.
   # ──────────────────────────────────────────────────────────────
   tag:
     name: Create release tag
@@ -53,7 +57,8 @@ jobs:
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y-%m-%d)
-          TAG="v${DATE}.${SHORT_SHA}"
+          TIME=$(date -u +%H%M%S)
+          TAG="v${DATE}.${TIME}.${SHORT_SHA}"
           VERSION=$(echo "$DATE" | awk -F- '{printf "%d.%d.%d", $1, $2, $3}')
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then

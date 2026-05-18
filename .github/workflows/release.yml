@@ -416,6 +416,7 @@ jobs:
           MAC_ARM_SIG=$(read_sig "sigs-macos-15-aarch64"      "*.app.tar.gz.sig")
           MAC_X64_SIG=$(read_sig "sigs-macos-15-x86_64"       "*.app.tar.gz.sig")
           WIN_SIG=$(read_sig     "sigs-windows-latest-x86_64" "*-setup.exe.sig")
+          LINUX_SIG=$(read_sig   "sigs-ubuntu-latest-x86_64"  "*.AppImage.sig")
 
           mkdir -p out
           {
@@ -440,6 +441,7 @@ jobs:
             emit "darwin-aarch64" "$MAC_ARM_SIG" "${BASE}/mdwriter_${VERSION}_macOS_Silicon.app.tar.gz"
             emit "darwin-x86_64"  "$MAC_X64_SIG" "${BASE}/mdwriter_${VERSION}_macOS_Intel.app.tar.gz"
             emit "windows-x86_64" "$WIN_SIG"     "${BASE}/mdwriter_${VERSION}_x64-setup.exe"
+            emit "linux-x86_64"   "$LINUX_SIG"   "${BASE}/mdwriter_${VERSION}_amd64.AppImage"
             echo
             echo '  }'
             echo '}'

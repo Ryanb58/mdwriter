@@ -93,12 +93,14 @@ jobs:
           NOTES: ${{ inputs.release_notes }}
         run: |
           set -euo pipefail
-          # If the user didn't supply release notes, fall back to GitHub's
-          # auto-generated changelog (PRs merged since the previous tag).
-          # The generate-notes API only computes the notes — it does not
-          # save them onto the release — so we capture the body and pass
-          # it through to `gh release create` below.
-          if [[ -z "${NOTES}" ]]; then
+          # If the user didn't supply release notes (treating a
+          # whitespace-only input as blank — workflow form fields make
+          # trailing-newline mistakes easy), fall back to GitHub's
+          # auto-generated changelog (PRs merged since the previous
+          # tag). The generate-notes API only computes the notes — it
+          # does not save them onto the release — so we capture the
+          # body and pass it through to `gh release create` below.
+          if [[ "${NOTES}" =~ ^[[:space:]]*$ ]]; then
             set +e
             HEAD_NOTES=$(gh api -X POST "/repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
               -f "tag_name=${TAG}" \
@@ -123,12 +125,19 @@ jobs:
             HEAD_NOTES="${NOTES}"
           fi
 
-          FULL_BODY="${HEAD_NOTES}
-
+          # Single-quoted heredoc keeps the footer literal — future
+          # edits don't have to escape quotes, backticks, or `$`.
+          FOOTER=$(cat <<'EOF'
           ---
 
-          **macOS (unsigned):** on first launch, click **Done** on the \"could not verify\" warning, then go to **System Settings → Privacy & Security**, scroll to *\"mdwriter.app was blocked\"*, and click **Open Anyway**. (On macOS 14 and earlier, right-click → **Open** also works.)
-          **Windows (unsigned):** click \"More info → Run anyway\" on SmartScreen."
+          **macOS (unsigned):** on first launch, click **Done** on the "could not verify" warning, then go to **System Settings → Privacy & Security**, scroll to *"mdwriter.app was blocked"*, and click **Open Anyway**. (On macOS 14 and earlier, right-click → **Open** also works.)
+          **Windows (unsigned):** click "More info → Run anyway" on SmartScreen.
+          EOF
+          )
+
+          FULL_BODY="${HEAD_NOTES}
+
+          ${FOOTER}"
 
           # Multi-line output: use a per-run random delimiter so the body
           # cannot accidentally contain a line that matches the sentinel

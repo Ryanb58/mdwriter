@@ -55,6 +55,12 @@ export function CommandPalette() {
         setOpen((o) => !o)
       }
       if (meta && e.key === "k") {
+        // BlockNote's CreateLinkButton (and CodeMirror's keymap) bind Cmd+K on
+        // the editor DOM and call preventDefault without stopPropagation, so
+        // the event still bubbles here. Yielding to them when the editor has
+        // already claimed Cmd+K lets the link popover open inside the editor
+        // while keeping Cmd+K → ask palette working everywhere else.
+        if (e.defaultPrevented) return
         e.preventDefault()
         setInitialMode("ask")
         setQuery("")

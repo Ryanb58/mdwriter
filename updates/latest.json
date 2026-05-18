@@ -14,6 +14,10 @@
     "windows-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmJaSzZhNkx5UHg4TEg3Y1AwdVlRTlczSFhoeXNCZ1BMaWw0UHRIQ0V4bUlhSDFzVnJSVEZ6bjZQMzBWZG14YVlZY05JUFhEK1BpaFV2MFJLb3Y5cEFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5MDczMzAxCWZpbGU6bWR3cml0ZXJfMjAyNi41LjE4X3g2NC1zZXR1cC5leGUKVUNUaDlQZHVrbS96b0xZR25SbE50YkV1dDJRWmZlTjdOdk9UR0N4Mmo3NGlwdnJOZzVwZkJDVklQQndKV25Qd21nQTJ3QWFGbkRKVUFTZlhMa1BvQWc9PQo=",
       "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-18.e8311cc/mdwriter_2026.5.18_x64-setup.exe"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlhxTEtIdnJwT0pxdXlzRHZyNlIrSkdycTNmZUF3V0Z6OW1rb01WOEU5OWR0d3NCVDZKcEl2R0Z6d2hNTkNxcVREcFdNSXNtVlhuSjBJMTFwOFRyUXdFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5MDczMzA5CWZpbGU6bWR3cml0ZXJfMjAyNi41LjE4X2FtZDY0LkFwcEltYWdlCkVoQ01yS25EdVlVRkgrSGZpOHRVd0FxakdZaGxnSlp4dE5tKzhGRnUra3ZuMEtNWnRUSk9XQlFmYXdjYlpsbXdaOVV2SGhiNDh3S3MranBCN3FVU0N3PT0K",
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-05-18.e8311cc/mdwriter_2026.5.18_amd64.AppImage"
     }
   }
 }

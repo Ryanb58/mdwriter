@@ -191,6 +191,9 @@ body {
   font-family: var(--font-mono) !important;
   font-size: 13.5px;
 }
+.bn-editor .bn-block-content[data-content-type="heading"] {
+  padding-top: 0;
+}
 
 /* CodeMirror raw-mode tuning */
 .cm-editor {

@@ -952,6 +952,22 @@ Use `superpowers:requesting-code-review` for Phases 7–9. After approval, the b
 - [ ] Each phase ends with a test run and a commit.
 - [ ] Review gates are scheduled after Phase 6 and Phase 9.
 
+## Phase 9 — closed without implementation
+
+The original Phase 9 added an xxh3 hash to read/write responses for
+echo detection. Phase 6 (Rust takes text) already made `text === doc.text`
+the watcher's echo check, which is strictly stronger than a hash
+comparison (byte equality has no collision risk). The 1-second
+`RECENT_WRITE_WINDOW_MS` heuristic survives only as a fast-path filter
+for tree refreshes, where a false positive is harmless (unnecessary
+refresh).
+
+If a future need surfaces — large vaults where the per-event readFile
+on the watcher hot path becomes a measurable cost, or a defense
+against concurrent writers — revisit with profiling data. As of this
+plan, the version vector adds infrastructure without changing the
+correctness guarantees the architectural fix already provides.
+
 ## Out of scope (intentionally deferred)
 
 - **Position-preserving BlockNote serialization.** Would require either an mdast-positioned parser or a custom serializer that knows source ranges. The idempotent emit guard in Phase 5 handles the common case (no-op render); shape-stable round-trip for *changed* content remains a BlockNote limitation. Re-evaluate after this plan ships.

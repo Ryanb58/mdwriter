@@ -29,8 +29,8 @@ vi.mock("../../../lib/ipc", () => {
 })
 
 const cancelSpy = vi.fn()
-vi.mock("../../editor/useAutoSave", () => ({
-  cancelPendingDocSave: () => cancelSpy(),
+vi.mock("../../../lib/writeDoc", () => ({
+  cancelPendingOpenDocSave: () => cancelSpy(),
 }))
 
 import { handleVaultChange, noteSelfWrite } from "../useExternalChanges"

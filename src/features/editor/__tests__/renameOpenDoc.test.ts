@@ -32,8 +32,8 @@ vi.mock("../../tree/useTreeActions", () => ({
 }))
 
 const cancelSpy = vi.fn()
-vi.mock("../useAutoSave", () => ({
-  cancelPendingDocSave: () => cancelSpy(),
+vi.mock("../../../lib/writeDoc", () => ({
+  cancelPendingOpenDocSave: () => cancelSpy(),
 }))
 
 import { renameOpenDoc, RenameOpenDocError } from "../renameOpenDoc"

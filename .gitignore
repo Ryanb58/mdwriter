@@ -22,6 +22,10 @@ logs
 node_modules
 node_modules/
 npm-debug.log*
+# This project uses pnpm — package-lock.json (npm) and yarn.lock (yarn) are
+# tooling mistakes if they appear here. Only pnpm-lock.yaml is checked in.
+package-lock.json
+yarn.lock
 pnpm-debug.log*
 target/
 yarn-debug.log*

@@ -1,5 +1,5 @@
 import { useStore } from "../../lib/store"
-import { combineRaw } from "../../lib/yaml"
+import { getBody, setBody } from "../../lib/doc"
 
 export type ApplyOp =
   | { kind: "replace-selection"; markdown: string }
@@ -12,28 +12,31 @@ export type ApplyResult =
 
 /**
  * Mutate the currently-open document by injecting assistant-authored
- * markdown. Operations work on the store's raw markdown source and bump
- * `docRev` so the active editor re-initialises from the new content. The
- * autosave loop persists the change.
+ * markdown. Operations work on the body slice of `text` — frontmatter
+ * is preserved verbatim across every branch. `docRev` is bumped so the
+ * active editor re-initialises from the new content; the autosave loop
+ * persists the change.
  *
- * "replace-selection" uses the first textual occurrence of the user's current
- * selection; ambiguous cases (the same text appears multiple times) prefer
- * the first match. Callers can fall back to the diff modal when that's not
- * good enough.
+ * "replace-selection" uses the first textual occurrence of the user's
+ * current selection (searched within the body); ambiguous cases prefer
+ * the first match. Callers can fall back to the diff modal when that's
+ * not good enough.
  */
 export function applyToOpenDoc(op: ApplyOp): ApplyResult {
   const state = useStore.getState()
   const doc = state.openDoc
   if (!doc) return { ok: false, reason: "No document is open." }
 
-  let next: string | null = null
+  const currentBody = getBody(doc.text)
+  let nextBody: string | null = null
+
   switch (op.kind) {
     case "replace-all":
-      next = op.markdown
+      nextBody = op.markdown
       break
     case "append": {
-      const tail = doc.rawMarkdown.endsWith("\n") ? "" : "\n"
-      next = `${doc.rawMarkdown}${tail}\n${op.markdown}`
+      const tail = currentBody.endsWith("\n") ? "" : "\n"
+      nextBody = `${currentBody}${tail}\n${op.markdown}`
       break
     }
     case "replace-selection": {
@@ -41,36 +44,33 @@ export function applyToOpenDoc(op: ApplyOp): ApplyResult {
       if (!sel || !sel.text) {
         return { ok: false, reason: "No selection to replace." }
       }
-      const idx = doc.rawMarkdown.indexOf(sel.text)
+      const idx = currentBody.indexOf(sel.text)
       if (idx === -1) {
         return { ok: false, reason: "Couldn't locate the selected text in the document." }
       }
-      next = doc.rawMarkdown.slice(0, idx) + op.markdown + doc.rawMarkdown.slice(idx + sel.text.length)
+      nextBody = currentBody.slice(0, idx) + op.markdown + currentBody.slice(idx + sel.text.length)
       break
     }
   }
 
-  if (next == null) return { ok: false, reason: "Unknown operation." }
-  if (next === doc.rawMarkdown) return { ok: true }
+  if (nextBody == null) return { ok: false, reason: "Unknown operation." }
+  if (nextBody === currentBody) return { ok: true }
 
-  state.patchOpenDoc({
-    rawMarkdown: next,
-    text: combineRaw(doc.frontmatter, next),
-    dirty: true,
-  })
+  const nextText = setBody(doc.text, nextBody)
+  state.patchOpenDoc({ text: nextText, dirty: true })
   state.bumpDocRev()
   return { ok: true }
 }
 
 /**
- * Read-only preview of what `applyToOpenDoc` *would* produce. Used by the
- * diff modal so the user can compare without committing.
+ * Read-only preview of what `applyToOpenDoc` *would* produce, expressed
+ * as before/after body strings (frontmatter is unchanged across every op).
  */
 export function previewApply(op: ApplyOp): { before: string; after: string } | null {
   const state = useStore.getState()
   const doc = state.openDoc
   if (!doc) return null
-  const before = doc.rawMarkdown
+  const before = getBody(doc.text)
 
   switch (op.kind) {
     case "replace-all":

@@ -26,9 +26,6 @@ export function useOpenFile() {
         setOpenDoc({
           path: selectedPath,
           text,
-          frontmatter: parsed.values,
-          rawMarkdown: parsed.body,
-          blocks: null,
           dirty: false,
           savedAt: null,
           parseError: parsed.parseError,
@@ -38,9 +35,6 @@ export function useOpenFile() {
         setOpenDoc({
           path: selectedPath,
           text: "",
-          frontmatter: {},
-          rawMarkdown: "",
-          blocks: null,
           dirty: false,
           savedAt: null,
           parseError: String(e),

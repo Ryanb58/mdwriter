@@ -74,9 +74,6 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
     setOpenDoc({
       path: doc.path,
       text,
-      frontmatter: parsed.values,
-      rawMarkdown: parsed.body,
-      blocks: null,
       dirty: false,
       savedAt: null,
       parseError: parsed.parseError,

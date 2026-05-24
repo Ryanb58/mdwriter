@@ -170,6 +170,77 @@ describe("invariant: frontmatter bytes are preserved when only body changes", ()
   })
 })
 
+describe("invariant: body bytes preserved across frontmatter edits", () => {
+  it("multi-blank-line bodies survive a property update", () => {
+    // Reviewer flag #1: rebuild's previous body.replace(/^\n+/, "") strip
+    // silently ate the user's intentional blank lines between fences and
+    // the first body content. Splice-based mutation must preserve them.
+    const text = "---\nfoo: 1\n---\n\n\n# H\n"
+    const next = setFrontmatterField(text, "foo", 2)
+    expect(next).toBe("---\nfoo: 2\n---\n\n\n# H\n")
+  })
+
+  it("body bytes survive a property addition on a no-FM file", () => {
+    const text = "\n\n# H\n"
+    const next = setFrontmatterField(text, "title", "T")
+    // The body bytes (leading blank lines + content) are appended after
+    // the new canonical FM block.
+    expect(next).toBe("---\ntitle: T\n---\n\n\n\n# H\n")
+  })
+
+  it("preserves a body with no separator newline before the first content", () => {
+    // File where the closing fence has no blank line before body.
+    const text = "---\nfoo: 1\n---\n# H"
+    const next = setFrontmatterField(text, "foo", 2)
+    expect(next).toBe("---\nfoo: 2\n---\n# H")
+  })
+})
+
+describe("invariant: unmodeled YAML survives mutations of other keys", () => {
+  it("preserves multiline nested mapping when editing a sibling scalar", () => {
+    // Reviewer flag #2: parseSimpleYaml can't model `nested:` followed by
+    // an indented child mapping; previously the rebuild path round-tripped
+    // through the values map and wrote `nested: []`, destroying the
+    // nested content. The splice mutator preserves it byte-for-byte.
+    const text = "---\nnested:\n  a: 1\n  b: 2\ntitle: T\n---\n\nbody"
+    const next = setFrontmatterField(text, "title", "new")
+    expect(next).toContain("nested:\n  a: 1\n  b: 2\n")
+    expect(next).toContain("title: new")
+    // Body untouched.
+    expect(getBody(next)).toBe("body")
+  })
+
+  it("preserves nested mapping when removing a sibling key", () => {
+    const text = "---\nnested:\n  a: 1\n  b: 2\ntitle: T\n---\n\nbody"
+    const next = removeFrontmatterField(text, "title")
+    expect(next).toContain("nested:\n  a: 1\n  b: 2\n")
+    expect(next).not.toContain("title:")
+    expect(getBody(next)).toBe("body")
+  })
+
+  it("preserves comment lines when editing a scalar", () => {
+    const text = "---\n# a comment\nfoo: 1\n---\n\nbody"
+    const next = setFrontmatterField(text, "foo", 2)
+    expect(next).toContain("# a comment")
+    expect(next).toContain("foo: 2")
+  })
+
+  it("removing the only modeled key from a file with unmodeled YAML keeps the FM block", () => {
+    // The nested mapping is still there, so the block isn't degenerate.
+    const text = "---\nnested:\n  a: 1\ntitle: T\n---\n\nbody"
+    const next = removeFrontmatterField(text, "title")
+    expect(next.startsWith("---\n")).toBe(true)
+    expect(next).toContain("nested:\n  a: 1")
+  })
+
+  it("appends new keys before the closing fence", () => {
+    const text = "---\nexisting: x\n---\n\nbody"
+    const next = setFrontmatterField(text, "added", "y")
+    expect(parseDoc(next).values).toEqual({ existing: "x", added: "y" })
+    expect(getBody(next)).toBe("body")
+  })
+})
+
 describe("invariant: idempotent operations", () => {
   it("setFrontmatterField with the same value is a no-op on body", () => {
     const text = "---\nt: T\n---\n\nbody"

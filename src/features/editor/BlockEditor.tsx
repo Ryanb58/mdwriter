@@ -161,10 +161,19 @@ export function BlockEditor({
       const hadPendingScroll = !!useStore.getState().pendingScroll
       tryConsumePendingScroll()
       if (!hadPendingScroll && !editor.isFocused()) {
+        // For freshly-created files (createNewFile sets pendingCursorAtEnd
+        // to the new path), land the cursor at the end of the first block —
+        // which for a `# ` seed is inside the empty H1, ready for the user's
+        // title keystrokes. For any other open, "start" keeps the prior
+        // behavior.
+        const { openDoc, pendingCursorAtEnd, setPendingCursorAtEnd } = useStore.getState()
+        const placement: "start" | "end" =
+          pendingCursorAtEnd && openDoc && pendingCursorAtEnd === openDoc.path ? "end" : "start"
+        if (placement === "end") setPendingCursorAtEnd(null)
         const firstBlock = (editor.document as Array<{ id?: string }>)[0]
         if (firstBlock) {
           try {
-            editor.setTextCursorPosition(firstBlock as never, "start")
+            editor.setTextCursorPosition(firstBlock as never, placement)
             editor.focus()
           } catch {
             // Block went away mid-frame; nothing to recover.

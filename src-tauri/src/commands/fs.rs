@@ -156,12 +156,17 @@ pub fn write_file(path: PathBuf, text: String) -> Result<()> {
     write_atomic(&path, &text)
 }
 
+/// Create a new note. Seeds the file with a `# ` H1 marker so the
+/// editor can land the cursor inside the heading and the user's first
+/// keystroke types the note's title. The trailing space is intentional
+/// — without it, BlockNote serializes the heading as `\n` and the
+/// auto-rename heuristic can't pick up an empty heading.
 #[tauri::command]
 pub fn create_file(path: PathBuf) -> Result<()> {
     if path.exists() {
         return Err(AppError::Io(format!("already exists: {}", path.display())));
     }
-    std::fs::write(&path, "")?;
+    std::fs::write(&path, "# ")?;
     Ok(())
 }
 
@@ -460,13 +465,13 @@ mod write_tests {
     }
 
     #[test]
-    fn create_file_writes_empty_doc() {
+    fn create_file_seeds_h1_marker() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("new.md");
         create_file(p.clone()).unwrap();
         assert!(p.exists());
         let contents = std::fs::read_to_string(&p).unwrap();
-        assert_eq!(contents, "");
+        assert_eq!(contents, "# ");
     }
 
     #[test]

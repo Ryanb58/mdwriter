@@ -8,6 +8,7 @@ import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
 import { combineRaw } from "../../lib/yaml"
+import { parseDoc } from "../../lib/doc"
 import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
@@ -82,10 +83,22 @@ export function EditorPane() {
         ) : (
           <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>
             <RawEditor
-              value={doc.rawMarkdown}
-              onChange={(next) =>
-                patch({ rawMarkdown: next, text: combineRaw(doc.frontmatter, next), dirty: true })
-              }
+              value={doc.text}
+              onChange={(nextText) => {
+                // Mirror back to frontmatter + rawMarkdown so the legacy
+                // autosave path keeps writing consistent bytes through
+                // Phase 6. parseDoc is lenient — for half-finished or
+                // unrecognised YAML the region is empty and the entire
+                // text is treated as body, which serializes correctly on
+                // the Rust side.
+                const parsed = parseDoc(nextText)
+                patch({
+                  text: nextText,
+                  frontmatter: parsed.values,
+                  rawMarkdown: parsed.body,
+                  dirty: true,
+                })
+              }}
             />
           </Suspense>
         )}

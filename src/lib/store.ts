@@ -93,6 +93,14 @@ export type AppStore = {
   settings: Settings
   renamingPath: string | null
   pendingScroll: PendingScroll | null
+  /**
+   * One-shot signal that the next editor mount for this path should
+   * land the cursor at the end of the document instead of the start.
+   * Set by `createNewFile` after seeding a `# ` H1 so the user's first
+   * keystroke types into the heading. Consumed and cleared by whichever
+   * editor (block or raw) renders the file first.
+   */
+  pendingCursorAtEnd: string | null
 
   setRoot(path: string | null): void
   setTree(tree: TreeNode | null): void
@@ -108,6 +116,7 @@ export type AppStore = {
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
   setPendingScroll(target: PendingScroll | null): void
+  setPendingCursorAtEnd(path: string | null): void
 
   // AI session
   aiAgent: AgentId
@@ -365,6 +374,7 @@ export const useStore = create<AppStore>()(
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
       pendingScroll: null,
+      pendingCursorAtEnd: null,
 
       aiAgent: "claude-code" as AgentId,
       aiPermissionMode: "accept-edits" as PermissionMode,
@@ -412,6 +422,7 @@ export const useStore = create<AppStore>()(
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
       setRenamingPath: (path) => set({ renamingPath: path }),
       setPendingScroll: (target) => set({ pendingScroll: target }),
+      setPendingCursorAtEnd: (path) => set({ pendingCursorAtEnd: path }),
 
       setAiAgent: (id) =>
         set((s) => {

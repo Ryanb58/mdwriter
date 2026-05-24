@@ -7,8 +7,7 @@ import { useAutoRename } from "./useAutoRename"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
-import { combineRaw } from "../../lib/yaml"
-import { parseDoc } from "../../lib/doc"
+import { parseDoc, getBody, setBody } from "../../lib/doc"
 import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
@@ -58,7 +57,7 @@ export function EditorPane() {
           <EditableFileName fileName={fileName} />
         </div>
         <div className="flex items-center gap-3 flex-none">
-          <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
+          <span className="text-[11px] text-text-subtle">{wordCount(getBody(doc.text))} words</span>
           <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
         </div>
       </div>
@@ -75,10 +74,18 @@ export function EditorPane() {
         {editorView === "block" ? (
           <BlockEditor
             docKey={`${doc.path}#${docRev}`}
-            initialMarkdown={doc.rawMarkdown}
-            onChangeMarkdown={(md) =>
-              patch({ rawMarkdown: md, text: combineRaw(doc.frontmatter, md), dirty: true })
-            }
+            initialMarkdown={getBody(doc.text)}
+            onChangeMarkdown={(body) => {
+              const cur = useStore.getState().openDoc
+              if (!cur) return
+              // Idempotent emit guard: BlockNote re-fires onChange after
+              // its own renders even when the resulting markdown is
+              // byte-identical. Suppress the patch entirely so we don't
+              // mark the doc dirty and trigger a no-op save loop.
+              if (getBody(cur.text) === body) return
+              const nextText = setBody(cur.text, body)
+              patch({ rawMarkdown: body, text: nextText, dirty: true })
+            }}
           />
         ) : (
           <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>

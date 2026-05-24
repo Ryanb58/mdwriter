@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
-import { cancelPendingDocSave } from "../editor/useAutoSave"
+import { cancelPendingOpenDocSave } from "../../lib/writeDoc"
 import { parseDoc } from "../../lib/doc"
 
 type VaultEvent = { paths: string[] }
@@ -67,7 +67,7 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
     // A debounced autosave queued *before* the external write would fire
     // ~500ms after this point with the old buffer in closure, overwriting
     // the bytes we're about to load. Cancel it.
-    cancelPendingDocSave()
+    cancelPendingOpenDocSave()
 
     const parsed = parseDoc(text)
     const { setOpenDoc, bumpDocRev } = useStore.getState()

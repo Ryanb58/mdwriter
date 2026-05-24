@@ -41,7 +41,7 @@ export async function renameOpenDoc(rawName: string): Promise<void> {
 
   if (doc.dirty) {
     noteSelfWrite(oldPath)
-    await ipc.writeFile(oldPath, { frontmatter: doc.frontmatter, body: doc.rawMarkdown })
+    await ipc.writeFile(oldPath, doc.text)
   }
   cancelPendingDocSave()
 

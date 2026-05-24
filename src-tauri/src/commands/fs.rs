@@ -1,4 +1,3 @@
-use crate::commands::frontmatter::{parse_doc, serialize_doc, ParsedDoc};
 use crate::errors::{AppError, Result};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde::{Deserialize, Serialize};
@@ -141,16 +140,20 @@ fn has_visible_file(node: &TreeNode) -> bool {
     }
 }
 
+/// Read a file as plain text. Frontmatter parsing now happens on the
+/// frontend (see `src/lib/doc.ts`). The Rust side is a transport for
+/// bytes only — keeping it free of any parse/serialize round-trip is
+/// what makes the body byte-stable across saves.
 #[tauri::command]
-pub fn read_file(path: PathBuf) -> Result<ParsedDoc> {
-    let raw = std::fs::read_to_string(&path)?;
-    parse_doc(&raw)
+pub fn read_file(path: PathBuf) -> Result<String> {
+    Ok(std::fs::read_to_string(&path)?)
 }
 
+/// Write a file as plain text. The caller is responsible for the exact
+/// bytes — there is no Rust-side serialize_doc that could reformat YAML.
 #[tauri::command]
-pub fn write_file(path: PathBuf, doc: ParsedDoc) -> Result<()> {
-    let serialized = serialize_doc(&doc)?;
-    write_atomic(&path, &serialized)
+pub fn write_file(path: PathBuf, text: String) -> Result<()> {
+    write_atomic(&path, &text)
 }
 
 #[tauri::command]
@@ -440,13 +443,10 @@ mod write_tests {
     fn write_then_read_round_trip() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("a.md");
-        let doc = ParsedDoc {
-            frontmatter: serde_yaml::from_str("title: Hi").unwrap(),
-            body: "# Body\n".into(),
-        };
-        write_file(p.clone(), doc).unwrap();
+        let original = "---\ntitle: Hi\n---\n\n# Body\n";
+        write_file(p.clone(), original.to_string()).unwrap();
         let back = read_file(p).unwrap();
-        assert_eq!(back.body, "# Body\n");
+        assert_eq!(back, original);
     }
 
     #[test]

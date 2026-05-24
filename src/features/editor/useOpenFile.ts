@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { ipc } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { findNode } from "../tree/findNode"
-import { combineRaw } from "../../lib/yaml"
+import { parseDoc } from "../../lib/doc"
 
 export function useOpenFile() {
   const selectedPath = useStore((s) => s.selectedPath)
@@ -20,20 +20,18 @@ export function useOpenFile() {
     let cancelled = false
     ;(async () => {
       try {
-        const parsed = await ipc.readFile(selectedPath)
+        const text = await ipc.readFile(selectedPath)
         if (cancelled) return
-        const fm = (parsed.frontmatter && typeof parsed.frontmatter === "object" && !Array.isArray(parsed.frontmatter))
-          ? parsed.frontmatter as Record<string, unknown>
-          : {}
+        const parsed = parseDoc(text)
         setOpenDoc({
           path: selectedPath,
-          text: combineRaw(fm, parsed.body),
-          frontmatter: fm,
+          text,
+          frontmatter: parsed.values,
           rawMarkdown: parsed.body,
           blocks: null,
           dirty: false,
           savedAt: null,
-          parseError: null,
+          parseError: parsed.parseError,
         })
       } catch (e) {
         if (cancelled) return

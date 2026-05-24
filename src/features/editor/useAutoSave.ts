@@ -18,10 +18,10 @@ export function cancelPendingDocSave() {
 export function useAutoSave() {
   const doc = useStore((s) => s.openDoc)
 
-  const saver = useMemo(() => debounce(async (path: string, frontmatter: Record<string, unknown>, body: string) => {
+  const saver = useMemo(() => debounce(async (path: string, text: string) => {
     try {
       noteSelfWrite(path)
-      await ipc.writeFile(path, { frontmatter, body })
+      await ipc.writeFile(path, text)
       const cur = useStore.getState().openDoc
       if (cur && cur.path === path) {
         useStore.getState().patchOpenDoc({ dirty: false, savedAt: Date.now() })
@@ -38,8 +38,8 @@ export function useAutoSave() {
 
   useEffect(() => {
     if (!doc || !doc.dirty) return
-    saver.call(doc.path, doc.frontmatter, doc.rawMarkdown)
-  }, [doc?.dirty, doc?.rawMarkdown, doc?.frontmatter, doc?.path, saver])
+    saver.call(doc.path, doc.text)
+  }, [doc?.dirty, doc?.text, doc?.path, saver])
 
   // flush on path change / unmount
   useEffect(() => {

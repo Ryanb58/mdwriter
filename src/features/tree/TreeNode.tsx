@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react"
 import {
   CaretRight, CaretDown, FileText, Folder, FolderOpen,
-  FilePlus, FolderPlus, PencilSimple, TrashSimple,
+  FilePlus, FolderPlus, PencilSimple, TrashSimple, Copy,
 } from "@phosphor-icons/react"
 import type { TreeNode as TN } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { useTreeActions } from "./useTreeActions"
 import { TreeContextMenu, type ContextActionGroup } from "./TreeContextMenu"
-import { parent } from "../../lib/paths"
+import { parent, relativeTo } from "../../lib/paths"
 import { handleRowClick } from "./selection"
 import { useRowDnd } from "./useTreeDnd"
 
@@ -15,6 +15,7 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(node.name)
+  const rootPath = useStore((s) => s.rootPath)
   const selectedPath = useStore((s) => s.selectedPath)
   const selectedPaths = useStore((s) => s.selectedPaths)
   const expandedFolders = useStore((s) => s.expandedFolders)
@@ -63,6 +64,23 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
           },
         ]]
       : []),
+    [
+      {
+        label: "Copy path",
+        onClick: () => {
+          navigator.clipboard.writeText(node.path).catch(console.error)
+        },
+        icon: <Copy size={14} />,
+      },
+      {
+        label: "Copy relative path",
+        onClick: () => {
+          const rel = rootPath ? relativeTo(rootPath, node.path) : node.path
+          navigator.clipboard.writeText(rel).catch(console.error)
+        },
+        icon: <Copy size={14} />,
+      },
+    ],
     [
       {
         label: "Rename",

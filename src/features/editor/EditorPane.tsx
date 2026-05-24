@@ -7,6 +7,7 @@ import { useAutoRename } from "./useAutoRename"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
+import { getBody, setBody } from "../../lib/doc"
 import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
@@ -41,8 +42,9 @@ export function EditorPane() {
   // clickable — they reveal the folder in the tree sidebar.
   const { vaultName, folders, fileName } = buildBreadcrumbTrail(rootPath, doc.path)
 
-  // Switch to a target mode without toggling. The toggleMode hook handles the
-  // necessary frontmatter ↔ rawMarkdown conversion.
+  // Switch to a target mode without toggling. Both modes are pure views
+  // over the same `doc.text` — toggling is just a renderer swap, no
+  // parse/serialize round-trip happens here.
   function setBlock() { if (editorView !== "block") toggleMode() }
   function setRaw() { if (editorView !== "raw") toggleMode() }
   // Bind setter for type checker — used only via toggleMode currently.
@@ -56,7 +58,7 @@ export function EditorPane() {
           <EditableFileName fileName={fileName} />
         </div>
         <div className="flex items-center gap-3 flex-none">
-          <span className="text-[11px] text-text-subtle">{wordCount(doc.rawMarkdown)} words</span>
+          <span className="text-[11px] text-text-subtle">{wordCount(getBody(doc.text))} words</span>
           <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
         </div>
       </div>
@@ -73,14 +75,23 @@ export function EditorPane() {
         {editorView === "block" ? (
           <BlockEditor
             docKey={`${doc.path}#${docRev}`}
-            initialMarkdown={doc.rawMarkdown}
-            onChangeMarkdown={(md) => patch({ rawMarkdown: md, dirty: true })}
+            initialMarkdown={getBody(doc.text)}
+            onChangeMarkdown={(body) => {
+              const cur = useStore.getState().openDoc
+              if (!cur) return
+              // Idempotent emit guard: BlockNote re-fires onChange after
+              // its own renders even when the resulting markdown is
+              // byte-identical. Suppress the patch entirely so we don't
+              // mark the doc dirty and trigger a no-op save loop.
+              if (getBody(cur.text) === body) return
+              patch({ text: setBody(cur.text, body), dirty: true })
+            }}
           />
         ) : (
           <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>
             <RawEditor
-              value={doc.rawMarkdown}
-              onChange={(next) => patch({ rawMarkdown: next, dirty: true })}
+              value={doc.text}
+              onChange={(nextText) => patch({ text: nextText, dirty: true })}
             />
           </Suspense>
         )}

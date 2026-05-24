@@ -14,9 +14,9 @@ vi.mock("../../../lib/ipc", () => {
         fs.existing.delete(from)
         fs.existing.add(to)
       }),
-      writeFile: vi.fn(async (path: string, contents: { frontmatter: Record<string, unknown>; body: string }) => {
+      writeFile: vi.fn(async (path: string, text: string) => {
         fs.existing.add(path)
-        fs.writes.push({ path, body: contents.body })
+        fs.writes.push({ path, body: text })
       }),
       listTree: vi.fn(async () => ({ kind: "dir", name: "root", path: "/vault", children: [] })),
     },
@@ -32,8 +32,8 @@ vi.mock("../../tree/useTreeActions", () => ({
 }))
 
 const cancelSpy = vi.fn()
-vi.mock("../useAutoSave", () => ({
-  cancelPendingDocSave: () => cancelSpy(),
+vi.mock("../../../lib/writeDoc", () => ({
+  cancelPendingOpenDocSave: () => cancelSpy(),
 }))
 
 import { renameOpenDoc, RenameOpenDocError } from "../renameOpenDoc"
@@ -65,9 +65,7 @@ function openAt(path: string, opts: { dirty?: boolean; body?: string } = {}) {
     selectedPaths: new Set([path]),
     openDoc: {
       path,
-      frontmatter: {},
-      rawMarkdown: opts.body ?? "hello",
-      blocks: null,
+      text: opts.body ?? "hello",
       dirty: opts.dirty ?? false,
       savedAt: opts.dirty ? null : Date.now(),
       parseError: null,

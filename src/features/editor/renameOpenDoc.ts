@@ -3,7 +3,7 @@ import { useStore } from "../../lib/store"
 import { basename, parent, joinPath } from "../../lib/paths"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
 import { refreshTree } from "../tree/useTreeActions"
-import { cancelPendingDocSave } from "./useAutoSave"
+import { cancelPendingOpenDocSave } from "../../lib/writeDoc"
 
 export class RenameOpenDocError extends Error {
   constructor(public reason: "no-doc" | "invalid-name" | "unchanged" | "ipc-failed", message: string, public cause?: unknown) {
@@ -39,11 +39,15 @@ export async function renameOpenDoc(rawName: string): Promise<void> {
 
   const newPath = joinPath(parent(oldPath), normalized)
 
+  // Drop any pending debounced save first so its trailing closure can't
+  // re-create the file at oldPath after we've moved it. Then synchronously
+  // flush the user's unsaved bytes (if any) to the old path before the
+  // rename, so the renamed file holds what the user actually sees.
+  cancelPendingOpenDocSave()
   if (doc.dirty) {
     noteSelfWrite(oldPath)
-    await ipc.writeFile(oldPath, { frontmatter: doc.frontmatter, body: doc.rawMarkdown })
+    await ipc.writeFile(oldPath, doc.text)
   }
-  cancelPendingDocSave()
 
   noteSelfWrite(oldPath)
   noteSelfWrite(newPath)

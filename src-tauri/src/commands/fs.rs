@@ -1,4 +1,3 @@
-use crate::commands::frontmatter::{parse_doc, serialize_doc, ParsedDoc};
 use crate::errors::{AppError, Result};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use serde::{Deserialize, Serialize};
@@ -141,24 +140,33 @@ fn has_visible_file(node: &TreeNode) -> bool {
     }
 }
 
+/// Read a file as plain text. Frontmatter parsing now happens on the
+/// frontend (see `src/lib/doc.ts`). The Rust side is a transport for
+/// bytes only — keeping it free of any parse/serialize round-trip is
+/// what makes the body byte-stable across saves.
 #[tauri::command]
-pub fn read_file(path: PathBuf) -> Result<ParsedDoc> {
-    let raw = std::fs::read_to_string(&path)?;
-    parse_doc(&raw)
+pub fn read_file(path: PathBuf) -> Result<String> {
+    Ok(std::fs::read_to_string(&path)?)
 }
 
+/// Write a file as plain text. The caller is responsible for the exact
+/// bytes — there is no Rust-side serialize_doc that could reformat YAML.
 #[tauri::command]
-pub fn write_file(path: PathBuf, doc: ParsedDoc) -> Result<()> {
-    let serialized = serialize_doc(&doc)?;
-    write_atomic(&path, &serialized)
+pub fn write_file(path: PathBuf, text: String) -> Result<()> {
+    write_atomic(&path, &text)
 }
 
+/// Create a new note. Seeds the file with a `# ` H1 marker so the
+/// editor can land the cursor inside the heading and the user's first
+/// keystroke types the note's title. The trailing space is intentional
+/// — without it, BlockNote serializes the heading as `\n` and the
+/// auto-rename heuristic can't pick up an empty heading.
 #[tauri::command]
 pub fn create_file(path: PathBuf) -> Result<()> {
     if path.exists() {
         return Err(AppError::Io(format!("already exists: {}", path.display())));
     }
-    std::fs::write(&path, "")?;
+    std::fs::write(&path, "# ")?;
     Ok(())
 }
 
@@ -440,13 +448,10 @@ mod write_tests {
     fn write_then_read_round_trip() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("a.md");
-        let doc = ParsedDoc {
-            frontmatter: serde_yaml::from_str("title: Hi").unwrap(),
-            body: "# Body\n".into(),
-        };
-        write_file(p.clone(), doc).unwrap();
+        let original = "---\ntitle: Hi\n---\n\n# Body\n";
+        write_file(p.clone(), original.to_string()).unwrap();
         let back = read_file(p).unwrap();
-        assert_eq!(back.body, "# Body\n");
+        assert_eq!(back, original);
     }
 
     #[test]
@@ -460,13 +465,13 @@ mod write_tests {
     }
 
     #[test]
-    fn create_file_writes_empty_doc() {
+    fn create_file_seeds_h1_marker() {
         let dir = tempdir().unwrap();
         let p = dir.path().join("new.md");
         create_file(p.clone()).unwrap();
         assert!(p.exists());
         let contents = std::fs::read_to_string(&p).unwrap();
-        assert_eq!(contents, "");
+        assert_eq!(contents, "# ");
     }
 
     #[test]

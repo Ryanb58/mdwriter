@@ -4,11 +4,6 @@ export type TreeNode =
   | { kind: "dir"; name: string; path: string; children: TreeNode[] }
   | { kind: "file"; name: string; path: string; mtime?: number }
 
-export type ParsedDoc = {
-  frontmatter: unknown
-  body: string
-}
-
 export type TreeOptions = {
   includePdfs?: boolean
   includeImages?: boolean
@@ -88,8 +83,8 @@ export type PermissionDecision = "allow" | "deny"
 export const ipc = {
   listTree: (root: string, options?: TreeOptions) =>
     invoke<TreeNode>("list_tree", { root, options: options ?? null }),
-  readFile: (path: string) => invoke<ParsedDoc>("read_file", { path }),
-  writeFile: (path: string, doc: ParsedDoc) => invoke<void>("write_file", { path, doc }),
+  readFile: (path: string) => invoke<string>("read_file", { path }),
+  writeFile: (path: string, text: string) => invoke<void>("write_file", { path, text }),
   createFile: (path: string) => invoke<void>("create_file", { path }),
   createDir: (path: string) => invoke<void>("create_dir", { path }),
   renamePath: (from: string, to: string) => invoke<void>("rename_path", { from, to }),

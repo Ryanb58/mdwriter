@@ -66,6 +66,10 @@ export async function createNewFile(parentDir: string) {
   }
   await refreshTree()
   useStore.getState().toggleFolderExpanded(parentDir, true)
+  // Flag this path so the editor that opens it lands the cursor at end
+  // of the seeded `# ` heading. Must be set before setSelected so the
+  // editor mount sees it on the first render.
+  useStore.getState().setPendingCursorAtEnd(candidate)
   useStore.getState().setSelected(candidate)
 }
 

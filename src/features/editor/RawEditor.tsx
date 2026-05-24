@@ -91,6 +91,7 @@ export function RawEditor({
   useRawImagePaste(viewRef)
   useLinkActivation(hostRef)
   usePendingScroll(viewRef, value)
+  useConsumePendingCursorAtEnd(viewRef, value)
 
   return (
     <>
@@ -119,6 +120,34 @@ function findLineElement(view: EditorView, pos: number): HTMLElement | null {
     n = n.parentNode
   }
   return null
+}
+
+/**
+ * When the active doc was just created via the "new file" tree action,
+ * createNewFile flagged its path in `pendingCursorAtEnd`. Move the
+ * caret to the end of the buffer and focus, so the user's first
+ * keystroke types into the seeded `# ` heading instead of in front of it.
+ */
+function useConsumePendingCursorAtEnd(viewRef: React.RefObject<EditorView | null>, value: string) {
+  const pending = useStore((s) => s.pendingCursorAtEnd)
+  const openPath = useStore((s) => s.openDoc?.path ?? null)
+  const clear = useStore((s) => s.setPendingCursorAtEnd)
+
+  useEffect(() => {
+    if (!pending || !openPath || pending !== openPath) return
+    // Defer one frame so the value-sync dispatch above has settled into
+    // the view's doc — otherwise the position we set is for the prior
+    // doc and the next dispatch overrides it.
+    const raf = requestAnimationFrame(() => {
+      const view = viewRef.current
+      if (!view) return
+      const len = view.state.doc.length
+      view.dispatch({ selection: { anchor: len } })
+      view.focus()
+      clear(null)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [pending, openPath, value, viewRef, clear])
 }
 
 function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: string) {

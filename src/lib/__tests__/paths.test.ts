@@ -48,5 +48,13 @@ describe("paths", () => {
     it("supports windows-style backslash separators", () => {
       expect(relativeTo("C:\\vault", "C:\\vault\\notes\\a.md")).toBe("notes\\a.md")
     })
+
+    it("does not treat backslash in posix path as separator", () => {
+      // On POSIX, backslash is a valid filename character; only root's style
+      // should determine the separator.
+      expect(relativeTo("/vault", "/vault/notes\\weird.md")).toBe(
+        "notes\\weird.md",
+      )
+    })
   })
 })

@@ -21,7 +21,7 @@ export function isMarkdown(p: string): boolean {
 // (or equals it without a separator before the rest), returns `path`
 // unchanged so callers can fall back to the absolute path.
 export function relativeTo(root: string, path: string): string {
-  const sep = root.includes("\\") || path.includes("\\") ? "\\" : "/"
+  const sep = root.includes("\\") ? "\\" : "/"
   const r = root.endsWith(sep) ? root.slice(0, -1) : root
   if (path === r) return ""
   const prefix = r + sep

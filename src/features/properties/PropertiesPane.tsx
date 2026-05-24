@@ -29,9 +29,9 @@ export function PropertiesPane() {
     )
   }
 
-  // Read directly from the canonical text. The legacy `doc.frontmatter`
-  // object is mirrored only — we no longer treat it as the source of
-  // truth.
+  // Read directly from the canonical text. The on-disk YAML is the
+  // source of truth; we re-parse it on every render so external edits
+  // (file watcher, AI apply) are reflected without a separate sync step.
   const values = getFrontmatterValues(doc.text)
   const entries = Object.entries(values)
 

@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("../../../lib/ipc", () => {
   const fs: {
-    files: Map<string, { frontmatter: Record<string, unknown>; body: string }>
+    // Mock vault content keyed by path. The test helpers below adapt the
+    // old { frontmatter, body } shape to the unified text-buffer model
+    // by combining them via the same canonical layout the production
+    // helpers emit.
+    files: Map<string, string>
     listTreeCalls: number
   } = {
     files: new Map(),
@@ -13,8 +17,8 @@ vi.mock("../../../lib/ipc", () => {
     ipc: {
       readFile: vi.fn(async (path: string) => {
         const f = fs.files.get(path)
-        if (!f) throw new Error(`missing ${path}`)
-        return { frontmatter: f.frontmatter, body: f.body }
+        if (f === undefined) throw new Error(`missing ${path}`)
+        return f
       }),
       listTree: vi.fn(async () => {
         fs.listTreeCalls++
@@ -33,21 +37,36 @@ import { handleVaultChange, noteSelfWrite } from "../useExternalChanges"
 import { useStore } from "../../../lib/store"
 import * as ipcMod from "../../../lib/ipc"
 
-function fs(): {
-  files: Map<string, { frontmatter: Record<string, unknown>; body: string }>
-  listTreeCalls: number
-} {
+function fs(): { files: Map<string, string>; listTreeCalls: number } {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (ipcMod as any).__fs
 }
 
+function toText(frontmatter: Record<string, unknown>, body: string): string {
+  const keys = Object.keys(frontmatter)
+  if (keys.length === 0) return body
+  const yaml = keys
+    .map((k) => {
+      const v = frontmatter[k]
+      if (typeof v === "string") return `${k}: ${v}`
+      return `${k}: ${String(v)}`
+    })
+    .join("\n")
+  return `---\n${yaml}\n---\n\n${body}`
+}
+
+function setFile(path: string, body: string, frontmatter: Record<string, unknown> = {}) {
+  fs().files.set(path, toText(frontmatter, body))
+}
+
 function openClean(path: string, body: string, frontmatter: Record<string, unknown> = {}) {
-  fs().files.set(path, { frontmatter, body })
+  const text = toText(frontmatter, body)
+  fs().files.set(path, text)
   useStore.setState({
     rootPath: "/vault",
     openDoc: {
       path,
-      text: body,
+      text,
       frontmatter,
       rawMarkdown: body,
       blocks: null,
@@ -74,7 +93,7 @@ beforeEach(() => {
 describe("handleVaultChange — open-doc reload", () => {
   it("reloads the open doc when an external write changes the bytes", async () => {
     openClean("/vault/a.md", "old body")
-    fs().files.set("/vault/a.md", { frontmatter: {}, body: "new body from outside" })
+    setFile("/vault/a.md", "new body from outside")
 
     await handleVaultChange(["/vault/a.md"])
 
@@ -85,7 +104,7 @@ describe("handleVaultChange — open-doc reload", () => {
 
   it("bumps docRev so the BlockEditor re-initialises from the new content", async () => {
     openClean("/vault/a.md", "old")
-    fs().files.set("/vault/a.md", { frontmatter: {}, body: "new" })
+    setFile("/vault/a.md", "new")
 
     await handleVaultChange(["/vault/a.md"])
 
@@ -96,7 +115,7 @@ describe("handleVaultChange — open-doc reload", () => {
 
   it("cancels any pending autosave before applying external content", async () => {
     openClean("/vault/a.md", "old")
-    fs().files.set("/vault/a.md", { frontmatter: {}, body: "new" })
+    setFile("/vault/a.md", "new")
 
     await handleVaultChange(["/vault/a.md"])
 
@@ -117,7 +136,7 @@ describe("handleVaultChange — open-doc reload", () => {
   it("preserves local edits when the doc is dirty", async () => {
     openClean("/vault/a.md", "buffer content")
     useStore.setState((prev) => ({ openDoc: { ...prev.openDoc!, dirty: true, rawMarkdown: "user typing in flight" } }))
-    fs().files.set("/vault/a.md", { frontmatter: {}, body: "external write" })
+    setFile("/vault/a.md", "external write")
 
     await handleVaultChange(["/vault/a.md"])
 
@@ -134,7 +153,7 @@ describe("handleVaultChange — open-doc reload", () => {
     // got clobbered by the next save. We now always re-read and rely on
     // the bytes-equal check to filter true echoes.
     openClean("/vault/a.md", "old")
-    fs().files.set("/vault/a.md", { frontmatter: {}, body: "external" })
+    setFile("/vault/a.md", "external")
     noteSelfWrite("/vault/a.md")
 
     await handleVaultChange(["/vault/a.md"])
@@ -145,7 +164,7 @@ describe("handleVaultChange — open-doc reload", () => {
 
   it("treats a frontmatter-only external change as a reload", async () => {
     openClean("/vault/a.md", "same body", { title: "old" })
-    fs().files.set("/vault/a.md", { frontmatter: { title: "new" }, body: "same body" })
+    setFile("/vault/a.md", "same body", { title: "new" })
 
     await handleVaultChange(["/vault/a.md"])
 
@@ -155,7 +174,7 @@ describe("handleVaultChange — open-doc reload", () => {
 
   it("ignores events whose paths don't include the open doc", async () => {
     openClean("/vault/a.md", "old")
-    fs().files.set("/vault/a.md", { frontmatter: {}, body: "old" })
+    setFile("/vault/a.md", "old")
 
     await handleVaultChange(["/vault/other.md"])
 

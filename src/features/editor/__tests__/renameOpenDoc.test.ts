@@ -14,9 +14,9 @@ vi.mock("../../../lib/ipc", () => {
         fs.existing.delete(from)
         fs.existing.add(to)
       }),
-      writeFile: vi.fn(async (path: string, contents: { frontmatter: Record<string, unknown>; body: string }) => {
+      writeFile: vi.fn(async (path: string, text: string) => {
         fs.existing.add(path)
-        fs.writes.push({ path, body: contents.body })
+        fs.writes.push({ path, body: text })
       }),
       listTree: vi.fn(async () => ({ kind: "dir", name: "root", path: "/vault", children: [] })),
     },

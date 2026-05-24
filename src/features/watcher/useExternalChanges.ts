@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
 import { cancelPendingDocSave } from "../editor/useAutoSave"
-import { combineRaw } from "../../lib/yaml"
+import { parseDoc } from "../../lib/doc"
 
 type VaultEvent = { paths: string[] }
 
@@ -58,52 +58,34 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
   }
 
   try {
-    const reparsed = await ipc.readFile(doc.path)
-    const fm = (reparsed.frontmatter && typeof reparsed.frontmatter === "object" && !Array.isArray(reparsed.frontmatter))
-      ? reparsed.frontmatter as Record<string, unknown>
-      : {}
-    // Short-circuit on identical content. This is what makes it safe to
-    // bypass the self-write filter above: an autosave echo reads back as
+    const text = await ipc.readFile(doc.path)
+    // Short-circuit on byte-identical content. This is what makes it safe
+    // to bypass the self-write filter above: an autosave echo reads back as
     // bytes-equal to the buffer, while a real external edit doesn't.
-    if (reparsed.body === doc.rawMarkdown && shallowEqual(fm, doc.frontmatter)) return
+    if (text === doc.text) return
 
     // A debounced autosave queued *before* the external write would fire
     // ~500ms after this point with the old buffer in closure, overwriting
     // the bytes we're about to load. Cancel it.
     cancelPendingDocSave()
 
+    const parsed = parseDoc(text)
     const { setOpenDoc, bumpDocRev } = useStore.getState()
     setOpenDoc({
       path: doc.path,
-      text: combineRaw(fm, reparsed.body),
-      frontmatter: fm,
-      rawMarkdown: reparsed.body,
+      text,
+      frontmatter: parsed.values,
+      rawMarkdown: parsed.body,
       blocks: null,
       dirty: false,
       savedAt: null,
-      parseError: null,
+      parseError: parsed.parseError,
     })
     // Force the active editor to re-initialise from the new content. The
     // BlockEditor's init effect keys off `${path}#${docRev}`; without a
     // bump it would skip the re-init and keep displaying the old blocks.
     bumpDocRev()
   } catch (_e) { /* file gone */ }
-}
-
-/**
- * Loose equality for the frontmatter object — both keys present in both
- * sides, and values stringify the same. Frontmatter is parsed YAML, so
- * we don't need structural deep-equality semantics beyond JSON.
- */
-function shallowEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const ak = Object.keys(a)
-  const bk = Object.keys(b)
-  if (ak.length !== bk.length) return false
-  for (const k of ak) {
-    if (!(k in b)) return false
-    if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) return false
-  }
-  return true
 }
 
 export function useExternalChanges() {

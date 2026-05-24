@@ -42,8 +42,9 @@ export function EditorPane() {
   // clickable — they reveal the folder in the tree sidebar.
   const { vaultName, folders, fileName } = buildBreadcrumbTrail(rootPath, doc.path)
 
-  // Switch to a target mode without toggling. The toggleMode hook handles the
-  // necessary frontmatter ↔ rawMarkdown conversion.
+  // Switch to a target mode without toggling. Both modes are pure views
+  // over the same `doc.text` — toggling is just a renderer swap, no
+  // parse/serialize round-trip happens here.
   function setBlock() { if (editorView !== "block") toggleMode() }
   function setRaw() { if (editorView !== "raw") toggleMode() }
   // Bind setter for type checker — used only via toggleMode currently.

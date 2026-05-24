@@ -31,6 +31,15 @@ export function noteSelfWrite(path: string) {
  *   change on disk. Instead, we always re-read the file when the open path
  *   is in the batch and only bail when the bytes match what's already in
  *   the buffer (true echo or no-op write).
+ *
+ * Known semantic edge: if the user typed in the last ~500ms before an
+ * external write lands AND the doc was clean at the moment the watcher
+ * event arrived (i.e. the autosave already flushed those bytes), the
+ * external write wins. The user's typed bytes are flushed first (Phase 8
+ * autosave debounce), then the external reload replaces them. Dirty-in-
+ * memory edits are preserved (see the `doc.dirty` guard below); only the
+ * narrow already-saved-then-superseded race loses bytes, and the same
+ * race existed pre-refactor.
  */
 export async function handleVaultChange(paths: string[]): Promise<void> {
   const root = useStore.getState().rootPath

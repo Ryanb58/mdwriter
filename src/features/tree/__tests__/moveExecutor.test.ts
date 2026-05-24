@@ -65,7 +65,7 @@ describe("moveItems", () => {
       selectedPath: "/root/a.md",
       selectedPaths: new Set(["/root/a.md"]),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      openDoc: { path: "/root/a.md", frontmatter: {}, rawMarkdown: "", blocks: null, dirty: false, savedAt: 0, parseError: null } as any,
+      openDoc: { path: "/root/a.md", text: "", dirty: false, savedAt: 0, parseError: null } as any,
     })
     await moveItems(["/root/a.md"], "/root/notes")
     const s = useStore.getState()
@@ -81,7 +81,7 @@ describe("moveItems", () => {
       selectedPaths: new Set(["/root/notes/inner/deep.md"]),
       expandedFolders: new Set(["/root/notes", "/root/notes/inner"]),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      openDoc: { path: "/root/notes/inner/deep.md", frontmatter: {}, rawMarkdown: "", blocks: null, dirty: false, savedAt: 0, parseError: null } as any,
+      openDoc: { path: "/root/notes/inner/deep.md", text: "", dirty: false, savedAt: 0, parseError: null } as any,
     })
     await moveItems(["/root/notes"], "/root/archive")
     const s = useStore.getState()

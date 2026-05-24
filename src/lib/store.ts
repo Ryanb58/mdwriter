@@ -80,10 +80,10 @@ export type AppStore = {
   expandedFolders: Set<string>
   openDoc: OpenDoc | null
   /**
-   * Bumped whenever an outside caller (e.g. "Apply to note") mutates
-   * `openDoc.rawMarkdown` so editors that key off the doc identity re-init
-   * with the new content. User typing does *not* bump this — it's specifically
-   * an "external replace" signal.
+   * Bumped whenever an outside caller (e.g. "Apply to note", file watcher
+   * reload) replaces `openDoc.text` so editors that key off the doc
+   * identity re-init with the new content. User typing does *not* bump
+   * this — it's specifically an "external replace" signal.
    */
   docRev: number
   bumpDocRev(): void

@@ -5,10 +5,10 @@ export function useEditorMode() {
   const mode = useStore((s) => s.editorMode)
   const setMode = useStore((s) => s.setEditorMode)
 
-  // Pure view switch. The block editor binds to `doc.rawMarkdown` (body
-  // only); the raw editor binds to `doc.text` (full file). Both are kept
-  // mutually consistent by the editor mirrors in EditorPane / BlockEditor
-  // — toggling modes is no longer a parse/serialize round-trip.
+  // Pure view switch. The block editor binds to `getBody(doc.text)`
+  // (body only); the raw editor binds to `doc.text` (full file). Both
+  // are views over the same canonical buffer — toggling is just a
+  // renderer swap, no parse/serialize round-trip.
   async function toggle() {
     const doc = useStore.getState().openDoc
     if (!doc) return

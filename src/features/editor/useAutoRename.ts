@@ -38,8 +38,8 @@ export function useAutoRename() {
   const settings = useStore((s) => s.settings)
   // Tracks rename attempts in flight, keyed by the source path. Prevents the
   // effect from kicking off a second async rename for the same path while one
-  // is already running (effect deps change as dirty/savedAt/rawMarkdown
-  // settle). Entries are cleared in the async's `finally` so a brand-new file
+  // is already running (effect deps change as dirty/savedAt/text settle).
+  // Entries are cleared in the async's `finally` so a brand-new file
   // re-created at the same path later — `untitled.md` is the obvious case —
   // can still be renamed.
   const inFlight = useRef<Set<string>>(new Set())

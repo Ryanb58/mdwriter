@@ -191,6 +191,20 @@ body {
   font-family: var(--font-mono) !important;
   font-size: 13.5px;
 }
+.bn-editor .bn-block-content[data-content-type="heading"] {
+  padding-top: 0;
+}
+/* The caret in a contenteditable line-box paints from the ascender edge to
+   the descender edge — for Inter at heading sizes that's ~11px above the
+   cap-height of capital letters, so the caret visibly extends above the
+   "T". Trim the line-box to cap-height/baseline so the caret follows the
+   visible glyph edges. WebKit (WKWebView) supports this from Safari 18.2;
+   older browsers fall back to the untrimmed line-box. */
+.bn-editor h1,
+.bn-editor h2,
+.bn-editor h3 {
+  text-box: trim-both cap alphabetic;
+}
 
 /* CodeMirror raw-mode tuning */
 .cm-editor {

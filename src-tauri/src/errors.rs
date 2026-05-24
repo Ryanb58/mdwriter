@@ -6,8 +6,6 @@ use thiserror::Error;
 pub enum AppError {
     #[error("io: {0}")]
     Io(String),
-    #[error("frontmatter: {0}")]
-    Frontmatter(String),
     #[error("invalid path: {0}")]
     InvalidPath(String),
     #[error("not found: {0}")]
@@ -40,8 +38,8 @@ mod tests {
 
     #[test]
     fn serializes_with_kind_and_message() {
-        let err = AppError::Frontmatter("bad yaml".into());
+        let err = AppError::InvalidPath("/bad".into());
         let json = serde_json::to_string(&err).unwrap();
-        assert_eq!(json, r#"{"kind":"Frontmatter","message":"bad yaml"}"#);
+        assert_eq!(json, r#"{"kind":"InvalidPath","message":"/bad"}"#);
     }
 }

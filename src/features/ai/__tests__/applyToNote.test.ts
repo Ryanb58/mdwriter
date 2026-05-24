@@ -6,9 +6,7 @@ function seedDoc(raw: string) {
   useStore.setState({
     openDoc: {
       path: "/vault/note.md",
-      frontmatter: {},
-      rawMarkdown: raw,
-      blocks: null,
+      text: raw,
       dirty: false,
       savedAt: null,
       parseError: null,
@@ -27,7 +25,7 @@ describe("applyToOpenDoc", () => {
     seedDoc("old content")
     const result = applyToOpenDoc({ kind: "replace-all", markdown: "fresh" })
     expect(result).toEqual({ ok: true })
-    expect(useStore.getState().openDoc?.rawMarkdown).toBe("fresh")
+    expect(useStore.getState().openDoc?.text).toBe("fresh")
     expect(useStore.getState().openDoc?.dirty).toBe(true)
     expect(useStore.getState().docRev).toBe(1)
   })
@@ -35,13 +33,13 @@ describe("applyToOpenDoc", () => {
   it("appends with separator", () => {
     seedDoc("# top\n\nbody")
     applyToOpenDoc({ kind: "append", markdown: "extra" })
-    expect(useStore.getState().openDoc?.rawMarkdown).toBe("# top\n\nbody\n\nextra")
+    expect(useStore.getState().openDoc?.text).toBe("# top\n\nbody\n\nextra")
   })
 
   it("appends without a doubled trailing newline", () => {
     seedDoc("body\n")
     applyToOpenDoc({ kind: "append", markdown: "extra" })
-    expect(useStore.getState().openDoc?.rawMarkdown).toBe("body\n\nextra")
+    expect(useStore.getState().openDoc?.text).toBe("body\n\nextra")
   })
 
   it("refuses replace-selection without a selection", () => {
@@ -56,7 +54,7 @@ describe("applyToOpenDoc", () => {
       editorSelection: { text: "hello", sourcePath: "/vault/note.md", attached: true },
     })
     applyToOpenDoc({ kind: "replace-selection", markdown: "hi" })
-    expect(useStore.getState().openDoc?.rawMarkdown).toBe("hi world. hello again.")
+    expect(useStore.getState().openDoc?.text).toBe("hi world. hello again.")
   })
 
   it("reports when the selection no longer matches", () => {
@@ -91,6 +89,6 @@ describe("previewApply", () => {
     seedDoc("hello world")
     const preview = previewApply({ kind: "replace-all", markdown: "new" })
     expect(preview).toEqual({ before: "hello world", after: "new" })
-    expect(useStore.getState().openDoc?.rawMarkdown).toBe("hello world")
+    expect(useStore.getState().openDoc?.text).toBe("hello world")
   })
 })

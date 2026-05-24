@@ -2,9 +2,6 @@ import { useEffect } from "react"
 import { ipc } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { findNode } from "../tree/findNode"
-import { basename } from "../../lib/paths"
-
-const UNTITLED_PATTERN = /^untitled(\s+\d+)?\.(md|markdown)$/i
 
 export function useOpenFile() {
   const selectedPath = useStore((s) => s.selectedPath)
@@ -27,18 +24,12 @@ export function useOpenFile() {
         const fm = (parsed.frontmatter && typeof parsed.frontmatter === "object" && !Array.isArray(parsed.frontmatter))
           ? parsed.frontmatter as Record<string, unknown>
           : {}
-        const settings = useStore.getState().settings
-        const seedH1 =
-          settings.autoRenameFromH1 &&
-          UNTITLED_PATTERN.test(basename(selectedPath)) &&
-          !parsed.body.trim()
-        console.log("[useOpenFile]", { path: selectedPath, body: JSON.stringify(parsed.body), seedH1, autoRenameFromH1: settings.autoRenameFromH1 })
         setOpenDoc({
           path: selectedPath,
           frontmatter: fm,
-          rawMarkdown: seedH1 ? "# \n" : parsed.body,
+          rawMarkdown: parsed.body,
           blocks: null,
-          dirty: seedH1,
+          dirty: false,
           savedAt: null,
           parseError: null,
         })

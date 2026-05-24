@@ -125,16 +125,52 @@ export function BlockEditor({
 
   useEffect(() => {
     if (initializedKey.current === docKey) return
+    // docKey embeds the file path, so a rename (e.g. autoRename-from-H1)
+    // changes the key even though the doc body is identical to what the
+    // editor just emitted. Re-parsing in that case clobbers the user's
+    // live cursor position — skip it. This is only valid as a re-init
+    // optimization: on the very first init, the editor is still in its
+    // empty-default state, so we must run the parse + focus pass even when
+    // both strings happen to be "".
+    const isFirstInit = initializedKey.current === null
+    if (!isFirstInit && initialMarkdown === lastEmitted.current) {
+      initializedKey.current = docKey
+      return
+    }
     initializedKey.current = docKey
     parsing.current = true
     ;(async () => {
       const pre = preprocessWikilinks(initialMarkdown)
       const parsed = (await editor.tryParseMarkdownToBlocks(pre)) as PartialBlock[]
       const hydrated = hydrateWikilinkBlocks(parsed)
-      editor.replaceBlocks(editor.document, hydrated.length ? hydrated : [{ type: "paragraph" }])
+      // Only replace when there's actual content to load. For a brand-new
+      // empty file, BlockNote's editor already has the default empty
+      // paragraph it created in useCreateBlockNote — replacing it with a
+      // freshly-built paragraph swaps plugin state in a way that makes
+      // the heading input rule silently no-op against it.
+      if (hydrated.length > 0) {
+        editor.replaceBlocks(editor.document, hydrated)
+      }
       lastEmitted.current = initialMarkdown
       parsing.current = false
+      // If a search/palette jump is queued, it owns cursor + focus. Also bail
+      // when the editor is already focused — happens when an external reload
+      // (file watcher / AI apply) lands while the user is typing. Otherwise
+      // land the cursor in the first block so the first keystroke after open
+      // goes somewhere.
+      const hadPendingScroll = !!useStore.getState().pendingScroll
       tryConsumePendingScroll()
+      if (!hadPendingScroll && !editor.isFocused()) {
+        const firstBlock = (editor.document as Array<{ id?: string }>)[0]
+        if (firstBlock) {
+          try {
+            editor.setTextCursorPosition(firstBlock as never, "start")
+            editor.focus()
+          } catch {
+            // Block went away mid-frame; nothing to recover.
+          }
+        }
+      }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey, initialMarkdown, editor])

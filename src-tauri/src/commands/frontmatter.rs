@@ -30,12 +30,17 @@ pub fn parse_doc(raw: &str) -> Result<ParsedDoc> {
 }
 
 pub fn serialize_doc(doc: &ParsedDoc) -> Result<String> {
-    let body = doc.body.trim_start_matches('\n').to_string();
     let yaml_out = match &doc.frontmatter {
-        serde_yaml::Value::Null => return Ok(body),
-        serde_yaml::Value::Mapping(m) if m.is_empty() => return Ok(body),
+        serde_yaml::Value::Null => return Ok(doc.body.clone()),
+        serde_yaml::Value::Mapping(m) if m.is_empty() => return Ok(doc.body.clone()),
         v => serde_yaml::to_string(v).map_err(|e| AppError::Frontmatter(e.to_string()))?,
     };
+    // Trim leading newlines only when we're prepending the `---\nfm---\n\n`
+    // header — otherwise a body that's just `\n` (e.g. an empty BlockNote
+    // heading the user just typed `# ` into) gets squashed to `""` on disk,
+    // and the watcher's echo-detection (`disk == buffer`) misfires and
+    // triggers a full re-init that clobbers the heading.
+    let body = doc.body.trim_start_matches('\n');
     Ok(format!("---\n{}---\n\n{}", yaml_out, body))
 }
 

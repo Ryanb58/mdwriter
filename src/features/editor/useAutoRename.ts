@@ -35,8 +35,13 @@ function slugify(text: string): string {
 export function useAutoRename() {
   const doc = useStore((s) => s.openDoc)
   const settings = useStore((s) => s.settings)
-  // Tracks files we've already renamed away from so we don't loop.
-  const renamedFrom = useRef<Set<string>>(new Set())
+  // Tracks rename attempts in flight, keyed by the source path. Prevents the
+  // effect from kicking off a second async rename for the same path while one
+  // is already running (effect deps change as dirty/savedAt/rawMarkdown
+  // settle). Entries are cleared in the async's `finally` so a brand-new file
+  // re-created at the same path later — `untitled.md` is the obvious case —
+  // can still be renamed.
+  const inFlight = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (!settings.autoRenameFromH1) return
@@ -45,7 +50,7 @@ export function useAutoRename() {
     if (!doc.savedAt) return               // never saved → not eligible
     const name = basename(doc.path)
     if (!UNTITLED_PATTERN.test(name)) return
-    if (renamedFrom.current.has(doc.path)) return
+    if (inFlight.current.has(doc.path)) return
 
     const h1 = extractFirstH1(doc.rawMarkdown)
     if (!h1) return
@@ -55,39 +60,43 @@ export function useAutoRename() {
 
     const parentDir = parent(doc.path)
     const fromPath = doc.path
-    renamedFrom.current.add(fromPath)
+    inFlight.current.add(fromPath)
 
     ;(async () => {
-      // Find a non-colliding path; rename_path errors on collision, so loop.
-      for (let n = 1; n <= 200; n++) {
-        const target = joinPath(parentDir, n === 1 ? `${slug}.md` : `${slug}-${n}.md`)
-        if (target === fromPath) return
-        try {
-          noteSelfWrite(target)
-          noteSelfWrite(fromPath)
-          await ipc.renamePath(fromPath, target)
-          await refreshTree()
-          // Update editor state to point at the renamed path.
-          useStore.setState((s) => {
-            const nextPaths = new Set(s.selectedPaths)
-            if (nextPaths.has(fromPath)) {
-              nextPaths.delete(fromPath)
-              nextPaths.add(target)
-            } else {
-              nextPaths.add(target)
-            }
-            return {
-              selectedPath: target,
-              selectedPaths: nextPaths,
-              openDoc: s.openDoc && s.openDoc.path === fromPath
-                ? { ...s.openDoc, path: target }
-                : s.openDoc,
-            }
-          })
-          return
-        } catch {
-          // Collision — try the next suffix.
+      try {
+        // Find a non-colliding path; rename_path errors on collision, so loop.
+        for (let n = 1; n <= 200; n++) {
+          const target = joinPath(parentDir, n === 1 ? `${slug}.md` : `${slug}-${n}.md`)
+          if (target === fromPath) return
+          try {
+            noteSelfWrite(target)
+            noteSelfWrite(fromPath)
+            await ipc.renamePath(fromPath, target)
+            await refreshTree()
+            // Update editor state to point at the renamed path.
+            useStore.setState((s) => {
+              const nextPaths = new Set(s.selectedPaths)
+              if (nextPaths.has(fromPath)) {
+                nextPaths.delete(fromPath)
+                nextPaths.add(target)
+              } else {
+                nextPaths.add(target)
+              }
+              return {
+                selectedPath: target,
+                selectedPaths: nextPaths,
+                openDoc: s.openDoc && s.openDoc.path === fromPath
+                  ? { ...s.openDoc, path: target }
+                  : s.openDoc,
+              }
+            })
+            return
+          } catch {
+            // Collision — try the next suffix.
+          }
         }
+      } finally {
+        inFlight.current.delete(fromPath)
       }
     })().catch((e) => console.error("auto-rename failed", e))
   }, [doc?.path, doc?.dirty, doc?.savedAt, doc?.rawMarkdown, settings.autoRenameFromH1])

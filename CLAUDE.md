@@ -104,4 +104,4 @@ Playwright (`e2e/`) drives `pnpm dev` (browser-only — no Tauri runtime). Anyth
 
 ### Vite chunking
 
-`vite.config.ts` splits BlockNote + CodeMirror + ProseMirror + Lezer + yjs into an `editor-vendor` chunk. The 2.5MB warning threshold is intentional — that's the floor for both editors. Don't lower it.
+`vite.config.ts` splits BlockNote + CodeMirror + ProseMirror + Lezer + yjs + Shiki (used by `@blocknote/code-block` for fenced-block syntax highlighting) into an `editor-vendor` chunk. The 6 MB warning threshold is intentional — Shiki's precompiled language grammars dominate the chunk and that's the floor. Don't lower it.

@@ -25,6 +25,7 @@ import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
 import { findNthBlockMatch } from "./blockTextSearch"
 import { flashHighlight } from "./flashHighlight"
+import { installCodeCopyButtons } from "./codeCopyButton"
 
 export function BlockEditor({
   initialMarkdown,
@@ -264,6 +265,14 @@ export function BlockEditor({
     host.addEventListener("keydown", onKeyDown, true)
     return () => host.removeEventListener("keydown", onKeyDown, true)
   }, [editor])
+
+  // Decorate rendered code blocks with a top-right Copy button. Watches
+  // hostRef for blocks added by typing/paste/reflow.
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    return installCodeCopyButtons(host)
+  }, [])
 
   useLinkActivation(hostRef)
 

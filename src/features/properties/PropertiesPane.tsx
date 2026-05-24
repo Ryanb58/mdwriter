@@ -36,14 +36,7 @@ export function PropertiesPane() {
   const entries = Object.entries(values)
 
   function applyText(nextText: string) {
-    // Mirror to the legacy fields so the autosave path (which still
-    // reads frontmatter + rawMarkdown through Phase 6) writes the
-    // updated frontmatter and the same body it had.
-    patch({
-      text: nextText,
-      frontmatter: getFrontmatterValues(nextText),
-      dirty: true,
-    })
+    patch({ text: nextText, dirty: true })
   }
 
   function setField(k: string, v: unknown) {

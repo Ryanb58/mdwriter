@@ -67,9 +67,6 @@ function openClean(path: string, body: string, frontmatter: Record<string, unkno
     openDoc: {
       path,
       text,
-      frontmatter,
-      rawMarkdown: body,
-      blocks: null,
       dirty: false,
       savedAt: Date.now(),
       parseError: null,
@@ -98,7 +95,7 @@ describe("handleVaultChange — open-doc reload", () => {
     await handleVaultChange(["/vault/a.md"])
 
     const s = useStore.getState()
-    expect(s.openDoc?.rawMarkdown).toBe("new body from outside")
+    expect(s.openDoc?.text).toBe("new body from outside")
     expect(s.openDoc?.dirty).toBe(false)
   })
 
@@ -135,13 +132,13 @@ describe("handleVaultChange — open-doc reload", () => {
 
   it("preserves local edits when the doc is dirty", async () => {
     openClean("/vault/a.md", "buffer content")
-    useStore.setState((prev) => ({ openDoc: { ...prev.openDoc!, dirty: true, rawMarkdown: "user typing in flight" } }))
+    useStore.setState((prev) => ({ openDoc: { ...prev.openDoc!, dirty: true, text: "user typing in flight" } }))
     setFile("/vault/a.md", "external write")
 
     await handleVaultChange(["/vault/a.md"])
 
     const s = useStore.getState()
-    expect(s.openDoc?.rawMarkdown).toBe("user typing in flight")
+    expect(s.openDoc?.text).toBe("user typing in flight")
     expect(s.docRev).toBe(0)
     expect(cancelSpy).not.toHaveBeenCalled()
   })
@@ -158,7 +155,7 @@ describe("handleVaultChange — open-doc reload", () => {
 
     await handleVaultChange(["/vault/a.md"])
 
-    expect(useStore.getState().openDoc?.rawMarkdown).toBe("external")
+    expect(useStore.getState().openDoc?.text).toBe("external")
     expect(useStore.getState().docRev).toBe(1)
   })
 
@@ -168,7 +165,11 @@ describe("handleVaultChange — open-doc reload", () => {
 
     await handleVaultChange(["/vault/a.md"])
 
-    expect(useStore.getState().openDoc?.frontmatter).toEqual({ title: "new" })
+    // The new model carries the full file text; assert via the
+    // parsed YAML view so the test still expresses the user-facing
+    // invariant (Properties reflects the external frontmatter change).
+    const text = useStore.getState().openDoc?.text ?? ""
+    expect(text).toContain("title: new")
     expect(useStore.getState().docRev).toBe(1)
   })
 

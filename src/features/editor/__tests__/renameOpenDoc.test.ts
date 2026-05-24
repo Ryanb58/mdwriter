@@ -66,9 +66,6 @@ function openAt(path: string, opts: { dirty?: boolean; body?: string } = {}) {
     openDoc: {
       path,
       text: opts.body ?? "hello",
-      frontmatter: {},
-      rawMarkdown: opts.body ?? "hello",
-      blocks: null,
       dirty: opts.dirty ?? false,
       savedAt: opts.dirty ? null : Date.now(),
       parseError: null,

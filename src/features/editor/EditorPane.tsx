@@ -7,7 +7,7 @@ import { useAutoRename } from "./useAutoRename"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
-import { parseDoc, getBody, setBody } from "../../lib/doc"
+import { getBody, setBody } from "../../lib/doc"
 import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
@@ -83,29 +83,14 @@ export function EditorPane() {
               // byte-identical. Suppress the patch entirely so we don't
               // mark the doc dirty and trigger a no-op save loop.
               if (getBody(cur.text) === body) return
-              const nextText = setBody(cur.text, body)
-              patch({ rawMarkdown: body, text: nextText, dirty: true })
+              patch({ text: setBody(cur.text, body), dirty: true })
             }}
           />
         ) : (
           <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>
             <RawEditor
               value={doc.text}
-              onChange={(nextText) => {
-                // Mirror back to frontmatter + rawMarkdown so the legacy
-                // autosave path keeps writing consistent bytes through
-                // Phase 6. parseDoc is lenient — for half-finished or
-                // unrecognised YAML the region is empty and the entire
-                // text is treated as body, which serializes correctly on
-                // the Rust side.
-                const parsed = parseDoc(nextText)
-                patch({
-                  text: nextText,
-                  frontmatter: parsed.values,
-                  rawMarkdown: parsed.body,
-                  dirty: true,
-                })
-              }}
+              onChange={(nextText) => patch({ text: nextText, dirty: true })}
             />
           </Suspense>
         )}

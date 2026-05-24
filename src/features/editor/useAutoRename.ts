@@ -4,6 +4,7 @@ import { useStore } from "../../lib/store"
 import { basename, parent, joinPath } from "../../lib/paths"
 import { refreshTree } from "../tree/useTreeActions"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
+import { getBody } from "../../lib/doc"
 
 const UNTITLED_PATTERN = /^untitled(\s+\d+)?\.(md|markdown)$/i
 
@@ -52,7 +53,7 @@ export function useAutoRename() {
     if (!UNTITLED_PATTERN.test(name)) return
     if (inFlight.current.has(doc.path)) return
 
-    const h1 = extractFirstH1(doc.rawMarkdown)
+    const h1 = extractFirstH1(getBody(doc.text))
     if (!h1) return
 
     const slug = slugify(h1)
@@ -99,5 +100,5 @@ export function useAutoRename() {
         inFlight.current.delete(fromPath)
       }
     })().catch((e) => console.error("auto-rename failed", e))
-  }, [doc?.path, doc?.dirty, doc?.savedAt, doc?.rawMarkdown, settings.autoRenameFromH1])
+  }, [doc?.path, doc?.dirty, doc?.savedAt, doc?.text, settings.autoRenameFromH1])
 }

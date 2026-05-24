@@ -47,6 +47,7 @@ function openClean(path: string, body: string, frontmatter: Record<string, unkno
     rootPath: "/vault",
     openDoc: {
       path,
+      text: body,
       frontmatter,
       rawMarkdown: body,
       blocks: null,

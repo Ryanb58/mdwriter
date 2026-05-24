@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
 import { cancelPendingDocSave } from "../editor/useAutoSave"
+import { combineRaw } from "../../lib/yaml"
 
 type VaultEvent = { paths: string[] }
 
@@ -74,6 +75,7 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
     const { setOpenDoc, bumpDocRev } = useStore.getState()
     setOpenDoc({
       path: doc.path,
+      text: combineRaw(fm, reparsed.body),
       frontmatter: fm,
       rawMarkdown: reparsed.body,
       blocks: null,

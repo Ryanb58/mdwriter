@@ -12,7 +12,7 @@ export function useEditorMode() {
     if (mode === "block") {
       // Going to raw: produce combined source from current frontmatter + body.
       const raw = combineRaw(doc.frontmatter, doc.rawMarkdown)
-      useStore.getState().patchOpenDoc({ rawMarkdown: raw })
+      useStore.getState().patchOpenDoc({ rawMarkdown: raw, text: raw })
       setMode("raw")
     } else {
       // Going back to block: re-parse via local simple YAML parser.
@@ -21,6 +21,7 @@ export function useEditorMode() {
         useStore.getState().patchOpenDoc({
           frontmatter: parsed.frontmatter,
           rawMarkdown: parsed.body,
+          text: combineRaw(parsed.frontmatter, parsed.body),
           parseError: null,
         })
         setMode("block")

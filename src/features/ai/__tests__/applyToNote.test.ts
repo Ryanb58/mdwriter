@@ -6,6 +6,7 @@ function seedDoc(raw: string) {
   useStore.setState({
     openDoc: {
       path: "/vault/note.md",
+      text: raw,
       frontmatter: {},
       rawMarkdown: raw,
       blocks: null,

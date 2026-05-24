@@ -1,4 +1,5 @@
 import { useStore } from "../../lib/store"
+import { combineRaw } from "../../lib/yaml"
 
 export type ApplyOp =
   | { kind: "replace-selection"; markdown: string }
@@ -52,7 +53,11 @@ export function applyToOpenDoc(op: ApplyOp): ApplyResult {
   if (next == null) return { ok: false, reason: "Unknown operation." }
   if (next === doc.rawMarkdown) return { ok: true }
 
-  state.patchOpenDoc({ rawMarkdown: next, dirty: true })
+  state.patchOpenDoc({
+    rawMarkdown: next,
+    text: combineRaw(doc.frontmatter, next),
+    dirty: true,
+  })
   state.bumpDocRev()
   return { ok: true }
 }

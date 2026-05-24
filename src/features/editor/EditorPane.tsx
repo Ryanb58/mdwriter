@@ -7,6 +7,7 @@ import { useAutoRename } from "./useAutoRename"
 import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
+import { combineRaw } from "../../lib/yaml"
 import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
@@ -74,13 +75,17 @@ export function EditorPane() {
           <BlockEditor
             docKey={`${doc.path}#${docRev}`}
             initialMarkdown={doc.rawMarkdown}
-            onChangeMarkdown={(md) => patch({ rawMarkdown: md, dirty: true })}
+            onChangeMarkdown={(md) =>
+              patch({ rawMarkdown: md, text: combineRaw(doc.frontmatter, md), dirty: true })
+            }
           />
         ) : (
           <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>
             <RawEditor
               value={doc.rawMarkdown}
-              onChange={(next) => patch({ rawMarkdown: next, dirty: true })}
+              onChange={(next) =>
+                patch({ rawMarkdown: next, text: combineRaw(doc.frontmatter, next), dirty: true })
+              }
             />
           </Suspense>
         )}

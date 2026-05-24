@@ -2,6 +2,7 @@ import { useEffect } from "react"
 import { ipc } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { findNode } from "../tree/findNode"
+import { combineRaw } from "../../lib/yaml"
 
 export function useOpenFile() {
   const selectedPath = useStore((s) => s.selectedPath)
@@ -26,6 +27,7 @@ export function useOpenFile() {
           : {}
         setOpenDoc({
           path: selectedPath,
+          text: combineRaw(fm, parsed.body),
           frontmatter: fm,
           rawMarkdown: parsed.body,
           blocks: null,
@@ -37,6 +39,7 @@ export function useOpenFile() {
         if (cancelled) return
         setOpenDoc({
           path: selectedPath,
+          text: "",
           frontmatter: {},
           rawMarkdown: "",
           blocks: null,

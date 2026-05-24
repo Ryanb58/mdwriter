@@ -65,6 +65,7 @@ function openAt(path: string, opts: { dirty?: boolean; body?: string } = {}) {
     selectedPaths: new Set([path]),
     openDoc: {
       path,
+      text: opts.body ?? "hello",
       frontmatter: {},
       rawMarkdown: opts.body ?? "hello",
       blocks: null,

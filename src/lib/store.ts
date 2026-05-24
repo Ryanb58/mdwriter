@@ -6,6 +6,14 @@ export type EditorMode = "block" | "raw"
 
 export type OpenDoc = {
   path: string
+  /**
+   * Canonical document text — the bytes on disk, with frontmatter (if any)
+   * as a `---\n…---\n\n` prefix followed by the body. This is the future
+   * single source of truth; the `frontmatter` / `rawMarkdown` fields below
+   * are mirrored from it during the unified-buffer migration and will be
+   * removed once every consumer reads from `text`.
+   */
+  text: string
   frontmatter: Record<string, unknown>
   rawMarkdown: string
   blocks: unknown[] | null

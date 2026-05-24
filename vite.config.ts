@@ -48,6 +48,8 @@ export default defineConfig(async () => ({
             id.includes("@codemirror") ||
             id.includes("@lezer") ||
             id.includes("prosemirror") ||
+            id.includes("@shikijs") ||
+            id.includes("/shiki/") ||
             id.includes("yjs") ||
             id.includes("react-markdown") ||
             id.includes("remark-") ||
@@ -64,9 +66,10 @@ export default defineConfig(async () => ({
         },
       },
     },
-    // editor-vendor lands ~2 MB (BlockNote + CodeMirror + ProseMirror); that's
-    // the floor for a block + raw markdown editor. Raise the limit so the
-    // warning isn't noise on every build.
-    chunkSizeWarningLimit: 2500,
+    // editor-vendor lands ~5.7 MB raw / ~1.1 MB gzipped (BlockNote +
+    // CodeMirror + ProseMirror + Shiki precompiled grammars for ~50
+    // languages via @blocknote/code-block). That's the floor — the
+    // grammars dominate. Raise the limit so the warning isn't noise.
+    chunkSizeWarningLimit: 6000,
   },
 }));

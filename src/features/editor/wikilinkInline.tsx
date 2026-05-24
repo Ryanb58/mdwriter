@@ -1,9 +1,4 @@
-import {
-  BlockNoteSchema,
-  createCodeBlockSpec,
-  defaultBlockSpecs,
-  defaultInlineContentSpecs,
-} from "@blocknote/core"
+import { BlockNoteSchema, createCodeBlockSpec } from "@blocknote/core"
 import { codeBlockOptions } from "@blocknote/code-block"
 import { createReactInlineContentSpec } from "@blocknote/react"
 import type { VaultNote } from "../../lib/vaultNotes"
@@ -73,14 +68,16 @@ export const wikilinkInlineSpec = createReactInlineContentSpec(
  * BlockNote schema that adds the wikilink inline content type and overrides
  * the default codeBlock with a Shiki-backed variant from `@blocknote/code-block`
  * so fenced markdown blocks (```python …```) render with syntax highlighting.
+ *
+ * Uses the `.extend()` builder pattern recommended in the BlockNote docs
+ * (https://www.blocknotejs.org/docs/features/blocks/code-blocks) — additive,
+ * so defaults for unmentioned block / inline-content specs stay in place.
  */
-export const editorSchema = BlockNoteSchema.create({
+export const editorSchema = BlockNoteSchema.create().extend({
   blockSpecs: {
-    ...defaultBlockSpecs,
     codeBlock: createCodeBlockSpec(codeBlockOptions),
   },
   inlineContentSpecs: {
-    ...defaultInlineContentSpecs,
     wikilink: wikilinkInlineSpec,
   },
 })

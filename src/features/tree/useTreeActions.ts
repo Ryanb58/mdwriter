@@ -38,6 +38,7 @@ async function trashImpl(paths: readonly string[]) {
   }
 
   if (Object.keys(patch).length > 0) useStore.setState(patch)
+  useStore.getState().removePinnedUnder(targets)
 }
 
 // Tauri command errors arrive as `{ kind, message }`. The Rust create_*
@@ -113,6 +114,7 @@ export function useTreeActions() {
         patch.selectedPaths = next
       }
       if (Object.keys(patch).length > 0) useStore.setState(patch)
+      useStore.getState().remapPinnedPath(from, to)
     },
     async trash(path: string) {
       await trashImpl([path])

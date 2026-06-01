@@ -5,6 +5,7 @@ import { useRootDnd } from "./useTreeDnd"
 import { useDragScroll } from "./useDragScroll"
 import { targetParentDir } from "./targetDir"
 import { FilePlus, FolderPlus } from "@phosphor-icons/react"
+import { PinnedFiles } from "./PinnedFiles"
 
 export function TreePane() {
   const tree = useStore((s) => s.tree)
@@ -36,6 +37,7 @@ export function TreePane() {
           <FolderPlus size={13} />
         </button>
       </div>
+      <PinnedFiles />
       <div
         ref={dragScroll.ref}
         className={[

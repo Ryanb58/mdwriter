@@ -71,6 +71,7 @@ export async function renameOpenDoc(rawName: string): Promise<void> {
         : cur.openDoc,
     }
   })
+  useStore.getState().remapPinnedPath(oldPath, newPath)
 
   await refreshTree()
 }

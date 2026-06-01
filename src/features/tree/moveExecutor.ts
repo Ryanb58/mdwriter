@@ -211,4 +211,5 @@ async function onMoved(from: string, to: string): Promise<void> {
   if (expChanged) patch.expandedFolders = nextExp
 
   if (Object.keys(patch).length > 0) useStore.setState(patch)
+  useStore.getState().remapPinnedPath(from, to)
 }

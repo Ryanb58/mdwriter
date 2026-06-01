@@ -39,7 +39,13 @@ function fsState(): { existing: Set<string> } {
 }
 
 beforeEach(() => {
-  useStore.setState({ selectedPath: null, selectedPaths: new Set(), openDoc: null, expandedFolders: new Set() })
+  useStore.setState({
+    selectedPath: null,
+    selectedPaths: new Set(),
+    openDoc: null,
+    expandedFolders: new Set(),
+    pinnedPaths: [],
+  })
   fsState().existing.clear()
   usePromptStore.setState({ collision: null, confirm: null })
 })
@@ -89,6 +95,20 @@ describe("moveItems", () => {
     expect(s.selectedPath).toBe("/root/archive/notes/inner/deep.md")
     expect(s.expandedFolders.has("/root/archive/notes")).toBe(true)
     expect(s.expandedFolders.has("/root/archive/notes/inner")).toBe(true)
+  })
+
+  it("remaps pinned files when a file or ancestor folder moves", async () => {
+    fsState().existing.add("/root/a.md")
+    fsState().existing.add("/root/notes")
+    useStore.setState({ pinnedPaths: ["/root/a.md", "/root/notes/inner/deep.md"] })
+
+    await moveItems(["/root/a.md"], "/root/archive")
+    await moveItems(["/root/notes"], "/root/archive")
+
+    expect(useStore.getState().pinnedPaths).toEqual([
+      "/root/archive/a.md",
+      "/root/archive/notes/inner/deep.md",
+    ])
   })
 
   it("invokes the collision dialog and respects skip", async () => {

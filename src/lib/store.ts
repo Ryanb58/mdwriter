@@ -78,6 +78,7 @@ export type AppStore = {
   // the store so shift-range selection and drag-hover auto-expand can
   // both reason about visibility.
   expandedFolders: Set<string>
+  pinnedPaths: string[]
   openDoc: OpenDoc | null
   /**
    * Bumped whenever an outside caller (e.g. "Apply to note", file watcher
@@ -108,6 +109,11 @@ export type AppStore = {
   setSelected(path: string | null): void
   setSelectedPaths(paths: Set<string>, anchor: string | null): void
   toggleFolderExpanded(path: string, expanded?: boolean): void
+  pinPath(path: string): void
+  unpinPath(path: string): void
+  togglePinnedPath(path: string): void
+  remapPinnedPath(from: string, to: string): void
+  removePinnedUnder(paths: readonly string[]): void
   setOpenDoc(doc: OpenDoc | null): void
   patchOpenDoc(patch: Partial<OpenDoc>): void
   setEditorMode(mode: EditorMode): void
@@ -318,6 +324,19 @@ function pickMostRecent(chats: Record<string, Chat>): string | null {
   return ids[0]
 }
 
+function remapPath(path: string, fromRoot: string, toRoot: string): string | null {
+  if (path === fromRoot) return toRoot
+  for (const sep of ["/", "\\"]) {
+    const prefix = fromRoot + sep
+    if (path.startsWith(prefix)) return toRoot + sep + path.slice(prefix.length)
+  }
+  return null
+}
+
+function isUnderAny(path: string, roots: readonly string[]): boolean {
+  return roots.some((root) => remapPath(path, root, root) !== null)
+}
+
 /**
  * Update the active chat's `messages` (and optionally `title`) and mirror
  * the new messages onto the top-level `aiMessages` field. Auto-creates a
@@ -366,6 +385,7 @@ export const useStore = create<AppStore>()(
       selectedPath: null,
       selectedPaths: new Set<string>(),
       expandedFolders: new Set<string>(),
+      pinnedPaths: [],
       openDoc: null,
       docRev: 0,
       editorMode: "block",
@@ -410,6 +430,34 @@ export const useStore = create<AppStore>()(
           if (want) next.add(path)
           else next.delete(path)
           return { expandedFolders: next }
+        }),
+      pinPath: (path) =>
+        set((s) => s.pinnedPaths.includes(path) ? {} : { pinnedPaths: [...s.pinnedPaths, path] }),
+      unpinPath: (path) =>
+        set((s) => ({ pinnedPaths: s.pinnedPaths.filter((p) => p !== path) })),
+      togglePinnedPath: (path) =>
+        set((s) => s.pinnedPaths.includes(path)
+          ? { pinnedPaths: s.pinnedPaths.filter((p) => p !== path) }
+          : { pinnedPaths: [...s.pinnedPaths, path] }),
+      remapPinnedPath: (from, to) =>
+        set((s) => {
+          let changed = false
+          const seen = new Set<string>()
+          const next: string[] = []
+          for (const path of s.pinnedPaths) {
+            const remapped = remapPath(path, from, to) ?? path
+            if (remapped !== path) changed = true
+            if (!seen.has(remapped)) {
+              seen.add(remapped)
+              next.push(remapped)
+            }
+          }
+          return changed ? { pinnedPaths: next } : {}
+        }),
+      removePinnedUnder: (paths) =>
+        set((s) => {
+          const next = s.pinnedPaths.filter((p) => !isUnderAny(p, paths))
+          return next.length === s.pinnedPaths.length ? {} : { pinnedPaths: next }
         }),
       setOpenDoc: (doc) => set({ openDoc: doc, editorMode: "block" }),
       patchOpenDoc: (patch) =>
@@ -614,6 +662,7 @@ export const useStore = create<AppStore>()(
         rightPaneTab: s.rightPaneTab,
         aiAgent: s.aiAgent,
         aiPermissionMode: s.aiPermissionMode,
+        pinnedPaths: s.pinnedPaths,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppStore> & {
@@ -631,6 +680,9 @@ export const useStore = create<AppStore>()(
         if (typeof settings.imageFilenameTemplate !== "string") {
           settings.imageFilenameTemplate = DEFAULT_SETTINGS.imageFilenameTemplate
         }
+        const pinnedPaths = Array.isArray(p.pinnedPaths)
+          ? p.pinnedPaths.filter((path): path is string => typeof path === "string")
+          : current.pinnedPaths
         // Migrate legacy tab + visibility flags into rightPaneTab. Layout
         // open/closed state is now owned by the layout module, so we only
         // recover the tab choice here.
@@ -649,7 +701,7 @@ export const useStore = create<AppStore>()(
           ...rest
         } = p
         void _pv; void _av; void _rp
-        return { ...current, ...rest, settings, rightPaneTab }
+        return { ...current, ...rest, settings, rightPaneTab, pinnedPaths }
       },
     },
   ),

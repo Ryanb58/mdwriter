@@ -2,12 +2,13 @@ import { useEffect, useState } from "react"
 import {
   CaretRight, CaretDown, FileText, Folder, FolderOpen,
   FilePlus, FolderPlus, PencilSimple, TrashSimple, Copy,
+  PushPinSimple, PushPinSimpleSlash,
 } from "@phosphor-icons/react"
 import type { TreeNode as TN } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { useTreeActions } from "./useTreeActions"
 import { TreeContextMenu, type ContextActionGroup } from "./TreeContextMenu"
-import { parent, relativeTo } from "../../lib/paths"
+import { isMarkdown, parent, relativeTo } from "../../lib/paths"
 import { handleRowClick } from "./selection"
 import { useRowDnd } from "./useTreeDnd"
 
@@ -21,8 +22,12 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
   const expandedFolders = useStore((s) => s.expandedFolders)
   const toggleFolderExpanded = useStore((s) => s.toggleFolderExpanded)
   const renamingPath = useStore((s) => s.renamingPath)
+  const pinnedPaths = useStore((s) => s.pinnedPaths)
+  const togglePinnedPath = useStore((s) => s.togglePinnedPath)
   const actions = useTreeActions()
   const isDir = node.kind === "dir"
+  const canPin = !isDir && isMarkdown(node.path)
+  const pinned = canPin && pinnedPaths.includes(node.path)
   const expanded = isDir && expandedFolders.has(node.path)
   const inSelection = selectedPaths.has(node.path)
   const dnd = useRowDnd(node)
@@ -65,6 +70,13 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
         ]]
       : []),
     [
+      ...(canPin
+        ? [{
+            label: pinned ? "Unpin file" : "Pin file",
+            onClick: () => togglePinnedPath(node.path),
+            icon: pinned ? <PushPinSimpleSlash size={14} /> : <PushPinSimple size={14} />,
+          }]
+        : []),
       {
         label: "Copy path",
         onClick: () => {
@@ -180,7 +192,26 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className={`truncate ${isAnchor ? "font-medium" : ""}`}>{displayName}</span>
+          <span className={`min-w-0 flex-1 truncate ${isAnchor ? "font-medium" : ""}`}>{displayName}</span>
+        )}
+        {canPin && !renaming && (
+          <button
+            type="button"
+            className={[
+              "ml-auto flex-none rounded p-0.5 transition-colors",
+              pinned
+                ? "text-text-subtle opacity-100 hover:bg-elevated hover:text-text"
+                : "text-text-subtle opacity-0 hover:bg-elevated hover:text-text group-hover:opacity-100",
+            ].join(" ")}
+            title={pinned ? "Unpin file" : "Pin file"}
+            aria-label={pinned ? `Unpin ${displayName}` : `Pin ${displayName}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              togglePinnedPath(node.path)
+            }}
+          >
+            {pinned ? <PushPinSimpleSlash size={12} /> : <PushPinSimple size={12} />}
+          </button>
         )}
       </div>
       {isDir && expanded && (node as Extract<TN, { kind: "dir" }>).children.map((c) => (

@@ -91,6 +91,7 @@ export function useAutoRename() {
                   : s.openDoc,
               }
             })
+            useStore.getState().remapPinnedPath(fromPath, target)
             return
           } catch {
             // Collision — try the next suffix.

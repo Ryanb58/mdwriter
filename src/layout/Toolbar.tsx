@@ -14,7 +14,7 @@ export function Toolbar({ center }: { center?: ReactNode }) {
   const setRightTab = useStore((s) => s.setRightPaneTab)
   const aiActive = rightOpen && rightTab === "ai"
   const isMacTauri = useIsMacTauri()
-  const { onMouseDown } = useDragRegion()
+  const { onMouseDown, onDoubleClick } = useDragRegion()
 
   function toggleAi() {
     if (aiActive) {
@@ -32,6 +32,7 @@ export function Toolbar({ center }: { center?: ReactNode }) {
       aria-label="Layout controls"
       data-os={isMacTauri ? "mac" : undefined}
       onMouseDown={onMouseDown}
+      onDoubleClick={onDoubleClick}
     >
       <div className="layout-toolbar-group">
         <button

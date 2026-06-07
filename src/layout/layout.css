@@ -52,12 +52,14 @@
   margin-top: 6px;
 }
 
-/* Interactive children stay clickable inside the drag region. */
-.layout-toolbar [data-tauri-drag-region] {
-  -webkit-app-region: drag;
-}
-.layout-toolbar button {
-  -webkit-app-region: no-drag;
+/* Dragging is driven imperatively by useDragRegion (startDragging /
+   toggleMaximize), not via `-webkit-app-region` — WKWebView (Tauri's macOS
+   webview) ignores that Electron-only property. The hook already skips
+   interactive descendants, but we also disable text selection on the bar so a
+   drag never paints a selection over the title/labels. */
+.layout-toolbar {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .layout-toolbar-group {

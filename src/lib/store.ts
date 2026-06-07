@@ -102,6 +102,16 @@ export type AppStore = {
    * editor (block or raw) renders the file first.
    */
   pendingCursorAtEnd: string | null
+  /**
+   * Path of the open doc whose first H1 the block editor has observed the
+   * user move *past* (a block exists after the heading, i.e. Enter was
+   * pressed). Lets auto-rename treat the heading as "committed" in block
+   * mode, where pressing Enter creates an empty trailing paragraph that
+   * BlockNote's markdown export trims — so the doc text never changes and a
+   * text-only signal would never fire. Path-keyed so it can't leak between
+   * documents; cleared/updated by the editor as the document changes.
+   */
+  headingCommittedPath: string | null
 
   setRoot(path: string | null): void
   setTree(tree: TreeNode | null): void
@@ -123,6 +133,7 @@ export type AppStore = {
   setRenamingPath(path: string | null): void
   setPendingScroll(target: PendingScroll | null): void
   setPendingCursorAtEnd(path: string | null): void
+  setHeadingCommittedPath(path: string | null): void
 
   // AI session
   aiAgent: AgentId
@@ -395,6 +406,7 @@ export const useStore = create<AppStore>()(
       renamingPath: null,
       pendingScroll: null,
       pendingCursorAtEnd: null,
+      headingCommittedPath: null,
 
       aiAgent: "claude-code" as AgentId,
       aiPermissionMode: "accept-edits" as PermissionMode,
@@ -471,6 +483,8 @@ export const useStore = create<AppStore>()(
       setRenamingPath: (path) => set({ renamingPath: path }),
       setPendingScroll: (target) => set({ pendingScroll: target }),
       setPendingCursorAtEnd: (path) => set({ pendingCursorAtEnd: path }),
+      setHeadingCommittedPath: (path) =>
+        set((s) => (s.headingCommittedPath === path ? {} : { headingCommittedPath: path })),
 
       setAiAgent: (id) =>
         set((s) => {

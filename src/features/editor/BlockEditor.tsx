@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import type { PartialBlock } from "@blocknote/core"
 import { useCreateBlockNote, SuggestionMenuController } from "@blocknote/react"
 import { BlockNoteView } from "@blocknote/mantine"
@@ -25,6 +25,7 @@ import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
 import { findNthBlockMatch } from "./blockTextSearch"
 import { flashHighlight } from "./flashHighlight"
+import { headingCommitted } from "./headingCommit"
 
 export function BlockEditor({
   initialMarkdown,
@@ -267,6 +268,25 @@ export function BlockEditor({
 
   useLinkActivation(hostRef)
 
+  // Publish the auto-rename "title is done" signal: the first H1 is committed
+  // once the cursor has left the heading block (Enter pressed / clicked away).
+  // Block mode trims the trailing paragraph from the markdown export, so the
+  // doc text never changes — this is the only reliable signal. Path-keyed so
+  // it can't leak to another document.
+  const publishHeadingCommit = useCallback(() => {
+    const path = useStore.getState().openDoc?.path ?? null
+    if (!path) return
+    let cursorBlockId: string | undefined
+    try {
+      cursorBlockId = editor.getTextCursorPosition()?.block?.id
+    } catch {
+      cursorBlockId = undefined
+    }
+    useStore
+      .getState()
+      .setHeadingCommittedPath(headingCommitted(editor.document, cursorBlockId) ? path : null)
+  }, [editor])
+
   // Push the current selection text into the store so the AI composer can
   // surface it as a context chip. Empty selections clear the chip; an unmount
   // (e.g. switching to raw mode) clears as well.
@@ -276,13 +296,15 @@ export function BlockEditor({
       const text = editor.getSelectedText()
       const path = useStore.getState().openDoc?.path ?? null
       setSel(text ? { text, sourcePath: path } : null)
+      // Moving the cursor out of the heading is the "title is done" moment.
+      publishHeadingCommit()
     }
     const unsub = editor.onSelectionChange(fire)
     return () => {
       unsub()
       useStore.getState().setEditorSelection(null)
     }
-  }, [editor])
+  }, [editor, publishHeadingCommit])
 
   return (
     <div ref={hostRef} className="h-full overflow-y-auto">
@@ -290,6 +312,9 @@ export function BlockEditor({
         editor={editor}
         theme={theme}
         onChange={async () => {
+          // Keep the auto-rename commitment signal fresh on structural edits
+          // too (e.g. the Enter that adds the block after the heading).
+          publishHeadingCommit()
           const md = await editor.blocksToMarkdownLossy()
           // The export path emits our wikilinks as bracketed text already
           // (via the inline spec's toExternalHTML); the postprocess only

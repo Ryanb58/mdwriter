@@ -66,6 +66,52 @@ describe("useAutoRename — keystroke sequence", () => {
     })
 
     expect(renamePath).toHaveBeenCalledWith(UNTITLED, `${VAULT}/2026-06-06.md`)
+    // The commitment signal is remapped off the old untitled path, so a future
+    // note reusing "untitled.md" can't inherit a stale "committed" state.
+    expect(useStore.getState().headingCommittedPath).toBe(`${VAULT}/2026-06-06.md`)
+  })
+
+  it("does not treat a reused untitled.md as committed after a prior rename", async () => {
+    renderHook(() => useAutoRename())
+
+    // First note: commit + rename untitled.md → first.md.
+    await act(async () => {
+      setDoc({ path: UNTITLED, text: "# First\n", dirty: false, savedAt: 1 })
+      useStore.getState().setHeadingCommittedPath(UNTITLED)
+    })
+    expect(renamePath).toHaveBeenCalledWith(UNTITLED, `${VAULT}/first.md`)
+    renamePath.mockClear()
+
+    // Second new note reuses the untitled.md path; user has only typed a
+    // partial heading and has NOT committed (signal should not be inherited).
+    await act(async () => {
+      setDoc({ path: UNTITLED, text: "# Secon\n", dirty: false, savedAt: 2 })
+    })
+    expect(renamePath).not.toHaveBeenCalled()
+  })
+
+  it("surfaces a non-collision rename error instead of spinning suffixes", async () => {
+    renamePath.mockRejectedValueOnce({ kind: "Io", message: "permission denied" })
+    renderHook(() => useAutoRename())
+
+    await act(async () => {
+      setDoc({ path: UNTITLED, text: "# Doc\n\nbody", dirty: false, savedAt: 1 })
+    })
+
+    // Exactly one attempt — the real error is thrown, not retried 200×.
+    expect(renamePath).toHaveBeenCalledTimes(1)
+  })
+
+  it("retries the next suffix on a real name collision", async () => {
+    renamePath.mockRejectedValueOnce({ kind: "Io", message: "destination exists: /vault/doc.md" })
+    renderHook(() => useAutoRename())
+
+    await act(async () => {
+      setDoc({ path: UNTITLED, text: "# Doc\n\nbody", dirty: false, savedAt: 1 })
+    })
+
+    expect(renamePath).toHaveBeenNthCalledWith(1, UNTITLED, `${VAULT}/doc.md`)
+    expect(renamePath).toHaveBeenNthCalledWith(2, UNTITLED, `${VAULT}/doc-2.md`)
   })
 
   it("renames in raw mode once body content follows the heading", async () => {

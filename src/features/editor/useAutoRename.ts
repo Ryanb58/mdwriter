@@ -62,6 +62,18 @@ export function slugify(text: string): string {
 }
 
 /**
+ * True for the one retriable `rename_path` failure: the target name is already
+ * taken. The Rust command returns `AppError::Io("destination exists: …")`,
+ * which crosses the IPC boundary as `{ kind: "Io", message: "destination
+ * exists: …" }` (see `src-tauri/src/errors.rs`).
+ */
+function isDestinationExists(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false
+  const { kind, message } = e as { kind?: unknown; message?: unknown }
+  return kind === "Io" && typeof message === "string" && message.startsWith("destination exists:")
+}
+
+/**
  * Renames `fromPath` to `<slug>.md` (or `<slug>-N.md` on collision) and points
  * editor/selection/pinned state that referenced the old path at the new one.
  * State for paths the rename doesn't touch is left alone, so this is safe to
@@ -102,12 +114,21 @@ async function performRename(
               s.openDoc && s.openDoc.path === fromPath
                 ? { ...s.openDoc, path: target }
                 : s.openDoc,
+            // Remap the commitment signal too. Otherwise it stays pinned to the
+            // old `untitled.md`, and since `createNewFile` reuses that name once
+            // this file moves away, the *next* untitled note would look already
+            // committed and get renamed after the first keystroke.
+            headingCommittedPath:
+              s.headingCommittedPath === fromPath ? target : s.headingCommittedPath,
           }
         })
         useStore.getState().remapPinnedPath(fromPath, target)
         return
-      } catch {
-        // Collision — try the next suffix.
+      } catch (e) {
+        // Only a name collision is retriable — try the next suffix. Any other
+        // error (permissions, missing source, …) must surface, not spin 200×.
+        if (isDestinationExists(e)) continue
+        throw e
       }
     }
   } finally {

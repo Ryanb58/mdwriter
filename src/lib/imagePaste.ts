@@ -33,6 +33,16 @@ const ILLEGAL_CHARS = /[<>:"/\\|?*\x00-\x1f]/g
 
 const MAX_ATTEMPTS = 4
 
+// Guard the base64 round-trip (FileReader.readAsDataURL → invoke). Pasted
+// screenshots are well under this; anything larger is almost certainly a
+// mistake (or a hostile clipboard) and would stall the JSON IPC.
+export const MAX_IMAGE_BYTES = 64 * 1024 * 1024 // 64 MiB
+
+// A decoded RGBA buffer must be exactly width * height * 4 bytes. A canvas
+// this large would also exhaust memory during PNG re-encode, so cap the
+// pixel count before we allocate.
+const MAX_IMAGE_PIXELS = 64 * 1024 * 1024 // 64 megapixels
+
 export function mimeToExt(mime: string): string | null {
   return MIME_TO_EXT[mime.toLowerCase()] ?? null
 }
@@ -187,6 +197,13 @@ export async function saveImage(input: SaveImageInput): Promise<SaveImageResult>
   if (!mimeToExt(input.mime)) {
     throw new Error(`unsupported image MIME: ${input.mime}`)
   }
+  if (!input.bytes || input.bytes.length === 0) {
+    throw new Error("Refusing to save an empty image")
+  }
+  if (input.bytes.length > MAX_IMAGE_BYTES) {
+    const mb = (input.bytes.length / (1024 * 1024)).toFixed(1)
+    throw new Error(`Image is too large to paste (${mb} MB)`)
+  }
   const dir = resolveImageDir(input.vaultRoot, input.docPath, input.location)
   const baseFilename = generateFilename(input.mime, input.template, {
     docPath: input.docPath,
@@ -215,23 +232,65 @@ export async function saveImage(input: SaveImageInput): Promise<SaveImageResult>
 // uploadFile. Read the image natively through the clipboard-manager
 // plugin instead and encode RGBA → PNG via canvas so the rest of the
 // pipeline (saveImage / BlockNote) gets a normal PNG Blob.
+//
+// Returns `null` only when the clipboard genuinely holds no image (nothing
+// to paste). Any *failure* to read or re-encode an image that is present is
+// surfaced as a thrown Error so the caller can report it instead of silently
+// dropping the paste.
 export async function readClipboardImageAsPng(): Promise<Uint8Array | null> {
-  const image = await readImage()
-  const [rgba, size] = await Promise.all([image.rgba(), image.size()])
+  let image: Awaited<ReturnType<typeof readImage>>
+  try {
+    image = await readImage()
+  } catch {
+    // No image on the clipboard, or the plugin couldn't read one. Treat as
+    // "nothing to paste" rather than an error — the user may have copied text.
+    return null
+  }
+
+  let rgba: Awaited<ReturnType<typeof image.rgba>>
+  let size: Awaited<ReturnType<typeof image.size>>
+  try {
+    ;[rgba, size] = await Promise.all([image.rgba(), image.size()])
+  } catch (e) {
+    throw new Error(
+      `Failed to read clipboard image data: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
+
   if (!size.width || !size.height) return null
+  if (size.width < 0 || size.height < 0) {
+    throw new Error("Clipboard image has invalid dimensions")
+  }
+  if (size.width * size.height > MAX_IMAGE_PIXELS) {
+    throw new Error("Clipboard image is too large to paste")
+  }
+
+  // A well-formed RGBA buffer is exactly 4 bytes per pixel. A mismatch means
+  // the native read handed us a truncated/garbage buffer — bail loudly rather
+  // than writing a corrupt PNG.
+  const expectedLen = size.width * size.height * 4
+  const rgbaBytes = new Uint8ClampedArray(rgba)
+  if (rgbaBytes.length === 0) return null
+  if (rgbaBytes.length !== expectedLen) {
+    throw new Error(
+      `Clipboard image data is malformed (got ${rgbaBytes.length} bytes, expected ${expectedLen})`,
+    )
+  }
 
   const canvas = document.createElement("canvas")
   canvas.width = size.width
   canvas.height = size.height
   const ctx = canvas.getContext("2d")
-  if (!ctx) return null
+  if (!ctx) throw new Error("Couldn't get a 2D canvas context to encode the image")
   const imageData = ctx.createImageData(size.width, size.height)
-  imageData.data.set(new Uint8ClampedArray(rgba))
+  imageData.data.set(rgbaBytes)
   ctx.putImageData(imageData, 0, 0)
 
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob((b) => resolve(b), "image/png"),
   )
-  if (!blob) return null
-  return new Uint8Array(await blob.arrayBuffer())
+  if (!blob) throw new Error("Couldn't re-encode the clipboard image as PNG")
+  const out = new Uint8Array(await blob.arrayBuffer())
+  if (out.length === 0) throw new Error("PNG re-encode produced no data")
+  return out
 }

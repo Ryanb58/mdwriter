@@ -1,5 +1,40 @@
 import { invoke } from "@tauri-apps/api/core"
 
+/**
+ * Single facade over Tauri's `invoke`. No other frontend module should call
+ * `invoke()` directly (see CLAUDE.md). Each wrapper below mirrors the Rust
+ * command of the same `snake_case` name in `src-tauri/src/commands/*.rs`;
+ * the TS types here are the canonical contract for the frontend and are
+ * cross-checked against the Rust `serde` (de)serialization on each side.
+ *
+ * Naming convention: Rust returns `snake_case` field names (except structs
+ * tagged `#[serde(rename_all = "camelCase")]`). Where a command returns a
+ * snake_case struct, we declare a private `*Raw` interface that matches the
+ * wire shape exactly, then map it to the camelCase type the rest of the app
+ * consumes. `*Raw` interfaces never escape this module.
+ */
+
+/**
+ * Anything Rust can hand back through a `serde_json::Value` return: a fully
+ * arbitrary, but still JSON-shaped, value. Narrower than `unknown` (excludes
+ * `undefined`, functions, symbols, which serde_json cannot emit) while still
+ * forcing callers to narrow before use.
+ */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+
+/**
+ * Mirror of Rust `commands::fs::TreeNode`
+ * (`#[serde(tag = "kind", rename_all = "lowercase")]`). `path` is a Rust
+ * `PathBuf` (serialized as a string). `mtime` is `Option<i64>` with
+ * `skip_serializing_if = "Option::is_none"`, so it is absent (not `null`)
+ * when the filesystem can't report it — hence the optional `?`, not `| null`.
+ */
 export type TreeNode =
   | { kind: "dir"; name: string; path: string; children: TreeNode[] }
   | { kind: "file"; name: string; path: string; mtime?: number }
@@ -58,12 +93,20 @@ export type AgentAvailability = {
   implemented: boolean
 }
 
+/**
+ * Mirror of Rust `commands::agents::AiStreamEvent`
+ * (`#[serde(tag = "kind", rename_all = "kebab-case",
+ * rename_all_fields = "camelCase")]`). Emitted on the `ai-stream` channel,
+ * not returned from an `invoke` — frontend listeners decode this shape.
+ * `input`/`output`/`usage` are Rust `serde_json::Value` (`usage` is an
+ * `Option`, hence `| null`).
+ */
 export type AiStreamEvent =
   | { kind: "text"; text: string }
-  | { kind: "tool-start"; id: string; name: string; input: unknown }
-  | { kind: "tool-result"; id: string; isError: boolean; output: unknown }
+  | { kind: "tool-start"; id: string; name: string; input: JsonValue }
+  | { kind: "tool-result"; id: string; isError: boolean; output: JsonValue }
   | { kind: "error"; message: string }
-  | { kind: "done"; usage: unknown | null }
+  | { kind: "done"; usage: JsonValue | null }
 
 /**
  * Emitted on the `ai-permission` channel when the agent's subprocess is
@@ -74,11 +117,72 @@ export type AiStreamEvent =
 export type AiPermissionRequest = {
   id: string
   tool: string
-  input: unknown
+  /** Rust `serde_json::Value` — the raw tool-call input. */
+  input: JsonValue
   toolUseId: string | null
 }
 
 export type PermissionDecision = "allow" | "deny"
+
+/**
+ * Persisted chat metadata returned by `list_chats`. Mirror of Rust
+ * `commands::chats::ChatSummary` after the snake_case→camelCase mapping in
+ * the `listChats` wrapper. `createdAt`/`updatedAt` are Unix-epoch values
+ * (Rust `i64`).
+ */
+export type ChatSummary = {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+}
+
+// ── Wire-shape (`*Raw`) interfaces ─────────────────────────────────────────
+// These match the exact snake_case JSON emitted by the corresponding Rust
+// command. They are mapped to camelCase app types inside `ipc` and never
+// leave this module.
+
+/** Wire shape of Rust `commands::search::SearchHit`. */
+type SearchHitRaw = {
+  path: string
+  line: number
+  col_start: number
+  col_end: number
+  snippet: string
+}
+
+/** Wire shape of Rust `commands::search::SearchResult`. */
+type SearchResultRaw = {
+  hits: SearchHitRaw[]
+  truncated: boolean
+  files_scanned: number
+}
+
+/** Wire shape of Rust `commands::agents::AgentAvailability`. */
+type AgentAvailabilityRaw = {
+  id: AgentId
+  label: string
+  available: boolean
+  binary_path: string | null
+  implemented: boolean
+}
+
+/** Wire shape of Rust `commands::chats::ChatSummary`. */
+type ChatSummaryRaw = {
+  id: string
+  title: string
+  updated_at: number
+  created_at: number
+}
+
+/** Wire shape of Rust `commands::skills::SkillMeta`. */
+type SkillMetaRaw = {
+  name: string
+  description: string
+  source: SkillSource
+  abs_path: string
+  vault_rel_path: string | null
+}
 
 export const ipc = {
   listTree: (root: string, options?: TreeOptions) =>
@@ -116,18 +220,8 @@ export const ipc = {
     })
     return invoke<void>("import_file", { path, bytesB64 })
   },
-  searchVault: (root: string, query: string, options?: SearchOptions) =>
-    invoke<{
-      hits: Array<{
-        path: string
-        line: number
-        col_start: number
-        col_end: number
-        snippet: string
-      }>
-      truncated: boolean
-      files_scanned: number
-    }>("search_vault", { root, query, options: options ?? null }).then((r) => ({
+  searchVault: (root: string, query: string, options?: SearchOptions): Promise<SearchResult> =>
+    invoke<SearchResultRaw>("search_vault", { root, query, options: options ?? null }).then((r) => ({
       hits: r.hits.map((h) => ({
         path: h.path,
         line: h.line,
@@ -144,14 +238,8 @@ export const ipc = {
     invoke<boolean>("ensure_vault_agents_md", { vaultPath }),
   getRecentFolders: () => invoke<string[]>("get_recent_folders"),
   pushRecentFolder: (folder: string) => invoke<void>("push_recent_folder", { folder }),
-  detectAgents: () =>
-    invoke<Array<{
-      id: AgentId
-      label: string
-      available: boolean
-      binary_path: string | null
-      implemented: boolean
-    }>>("detect_agents").then((rows) =>
+  detectAgents: (): Promise<AgentAvailability[]> =>
+    invoke<AgentAvailabilityRaw[]>("detect_agents").then((rows) =>
       rows.map((r) => ({
         id: r.id,
         label: r.label,
@@ -176,7 +264,7 @@ export const ipc = {
   respondPermission: (
     id: string,
     decision: PermissionDecision,
-    opts?: { message?: string; updatedInput?: unknown },
+    opts?: { message?: string; updatedInput?: JsonValue },
   ) =>
     invoke<boolean>("respond_permission", {
       id,
@@ -196,32 +284,27 @@ export const ipc = {
       tool,
       pathPrefix: pathPrefix ?? null,
     }),
-  listChats: (vaultPath: string) =>
-    invoke<Array<{ id: string; title: string; updated_at: number; created_at: number }>>(
-      "list_chats",
-      { vaultPath },
-    ).then((rows) =>
+  listChats: (vaultPath: string): Promise<ChatSummary[]> =>
+    invoke<ChatSummaryRaw[]>("list_chats", { vaultPath }).then((rows) =>
       rows.map((r) => ({
         id: r.id,
         title: r.title,
         updatedAt: r.updated_at,
         createdAt: r.created_at,
-      })),
+      } satisfies ChatSummary)),
     ),
-  readChat: (vaultPath: string, id: string) =>
-    invoke<unknown>("read_chat", { vaultPath, id }),
-  writeChat: (vaultPath: string, id: string, data: unknown) =>
+  // Rust round-trips opaque JSON (`serde_json::Value`) — the frontend owns the
+  // chat shape. Reads come back as a precise `JsonValue`; writes accept any
+  // serializable value (`unknown`), since callers pass app types whose leaves
+  // are themselves `unknown` and TS can't prove their JSON-ness up front.
+  readChat: (vaultPath: string, id: string): Promise<JsonValue> =>
+    invoke<JsonValue>("read_chat", { vaultPath, id }),
+  writeChat: (vaultPath: string, id: string, data: unknown): Promise<void> =>
     invoke<void>("write_chat", { vaultPath, id, data }),
   deleteChat: (vaultPath: string, id: string) =>
     invoke<void>("delete_chat", { vaultPath, id }),
-  listSkills: (rootPath: string | null) =>
-    invoke<Array<{
-      name: string
-      description: string
-      source: SkillSource
-      abs_path: string
-      vault_rel_path: string | null
-    }>>("list_skills", { rootPath }).then((rows) =>
+  listSkills: (rootPath: string | null): Promise<Skill[]> =>
+    invoke<SkillMetaRaw[]>("list_skills", { rootPath }).then((rows) =>
       rows.map((r) => ({
         name: r.name,
         description: r.description,
@@ -230,11 +313,4 @@ export const ipc = {
         vaultRelPath: r.vault_rel_path,
       } satisfies Skill))
     ),
-}
-
-export type ChatSummary = {
-  id: string
-  title: string
-  createdAt: number
-  updatedAt: number
 }

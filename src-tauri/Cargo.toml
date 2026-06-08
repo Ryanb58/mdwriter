@@ -37,10 +37,13 @@ dirs = "6.0.0"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-window-state = "2"
 base64 = "0.22"
 tempfile = "3"
 tiny_http = "0.12"
 getrandom = "0.2"
+tauri-plugin-log = "2.8.0"
+log = "0.4.32"
 
 [dev-dependencies]
 tempfile = "3"

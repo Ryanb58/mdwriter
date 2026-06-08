@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { check, type Update } from "@tauri-apps/plugin-updater"
 import { relaunch } from "@tauri-apps/plugin-process"
 import { listen } from "@tauri-apps/api/event"
@@ -15,15 +15,53 @@ export type UpdateStatus =
 
 const SILENT_INITIAL_DELAY_MS = 10_000
 
+/**
+ * Turn an updater error into a short, human-readable message. The raw error
+ * coming back from the plugin is often a verbose Rust string (or a reqwest
+ * transport error) that means nothing to a user; map the common failure
+ * shapes to plain language while keeping the original around for context.
+ */
+export function describeUpdateError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  const lower = raw.toLowerCase()
+
+  if (
+    lower.includes("signature") ||
+    lower.includes("verify") ||
+    lower.includes("untrusted") ||
+    lower.includes("minisign")
+  ) {
+    return "The update could not be verified (invalid signature). For your safety it was not installed."
+  }
+  if (
+    lower.includes("network") ||
+    lower.includes("connect") ||
+    lower.includes("dns") ||
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("request error") ||
+    lower.includes("error sending request") ||
+    lower.includes("os error")
+  ) {
+    return "Couldn't reach the update server. Check your connection and try again."
+  }
+  return raw || "Update failed for an unknown reason."
+}
+
 export function useUpdates() {
   const [status, setStatus] = useState<UpdateStatus>({ kind: "idle" })
   const [appVersion, setAppVersion] = useState<string>("")
+  // Guards against overlapping check/install runs (e.g. the 10s silent timer
+  // racing a manual "Check for Updates" click, or a double-click on Install).
+  const busyRef = useRef(false)
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => {})
   }, [])
 
   async function runCheck(silent = false) {
+    if (busyRef.current) return
+    busyRef.current = true
     setStatus({ kind: "checking" })
     try {
       const update = await check()
@@ -33,18 +71,22 @@ export function useUpdates() {
       }
       setStatus({ kind: "available", update })
     } catch (e) {
-      const msg = String(e)
-      // In dev / unsigned local builds the updater can't fetch; stay quiet.
+      // In dev / unsigned local builds the updater can't fetch; stay quiet on
+      // the automatic background check so we never nag with a spurious banner.
       if (silent) {
         setStatus({ kind: "idle" })
         return
       }
-      setStatus({ kind: "error", message: msg })
+      setStatus({ kind: "error", message: describeUpdateError(e) })
+    } finally {
+      busyRef.current = false
     }
   }
 
   async function install() {
     if (status.kind !== "available") return
+    if (busyRef.current) return
+    busyRef.current = true
     const update = status.update
     let bytes = 0
     let total: number | null = null
@@ -64,7 +106,10 @@ export function useUpdates() {
       })
       await relaunch()
     } catch (e) {
-      setStatus({ kind: "error", message: String(e) })
+      setStatus({ kind: "error", message: describeUpdateError(e) })
+    } finally {
+      // relaunch() never returns on success; this only runs if it threw.
+      busyRef.current = false
     }
   }
 

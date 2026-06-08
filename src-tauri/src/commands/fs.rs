@@ -339,7 +339,11 @@ fn write_bytes_atomic_clobber(path: &Path, bytes: &[u8]) -> Result<()> {
     tmp.write_all(bytes)?;
     tmp.as_file().sync_all()?;
     tmp.persist(path)
-        .map_err(|e| AppError::Io(format!("persist: {}", e.error)))?;
+        .map_err(|e| {
+            log::error!("atomic save failed for {}: {}", path.display(), e.error);
+            AppError::Io(format!("persist: {}", e.error))
+        })?;
+    log::debug!("saved {} ({} bytes)", path.display(), bytes.len());
     Ok(())
 }
 

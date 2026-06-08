@@ -18,7 +18,43 @@ pub fn run() {
         return;
     }
 
-    tauri::Builder::default()
+    // Default to Info; bump to Debug in dev builds for richer diagnostics.
+    // Logs fan out to stdout (visible in `tauri dev`) and a rotating file in
+    // the platform log dir so release-build issues can be inspected later.
+    let log_level = if cfg!(debug_assertions) {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+
+    let builder = tauri::Builder::default();
+
+    // single-instance must be registered FIRST in the plugin chain (per the
+    // plugin docs). When a second copy launches, focus the existing window
+    // instead of opening a duplicate that would fight the file watcher on the
+    // same vault. Desktop-only — the plugin doesn't support mobile.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        use tauri::Manager;
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log_level)
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ))
+                .target(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::LogDir { file_name: None },
+                ))
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -26,6 +62,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(state::AppState::default())
         .manage(commands::agents::AgentSession::default())
         .setup(|app| {

@@ -4,6 +4,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }))
 
+const readImage = vi.fn()
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
+  readImage: () => readImage(),
+}))
+
 import { invoke } from "@tauri-apps/api/core"
 import {
   mimeToExt,
@@ -13,6 +18,8 @@ import {
   relativeFromDocDir,
   encodeMarkdownUrl,
   saveImage,
+  readClipboardImageAsPng,
+  MAX_IMAGE_BYTES,
 } from "../imagePaste"
 
 describe("mimeToExt", () => {
@@ -262,5 +269,133 @@ describe("saveImage", () => {
       }),
     ).rejects.toThrow(/unique filename/i)
     expect(invoke).toHaveBeenCalledTimes(4)
+  })
+
+  it("rethrows non-collision write errors immediately", async () => {
+    vi.mocked(invoke).mockRejectedValue({ kind: "Io", message: "permission denied" })
+    await expect(
+      saveImage({
+        bytes: new Uint8Array([1, 2, 3]),
+        mime: "image/png",
+        vaultRoot: "/Vault",
+        docPath: "/Vault/note.md",
+        location: "vault-assets",
+        template: "{rand}",
+        now: new Date("2026-05-10T14:30:52"),
+        rand: () => "a3f1",
+      }),
+    ).rejects.toMatchObject({ message: "permission denied" })
+    expect(invoke).toHaveBeenCalledTimes(1)
+  })
+
+  it("rejects empty byte buffers without calling invoke", async () => {
+    await expect(
+      saveImage({
+        bytes: new Uint8Array([]),
+        mime: "image/png",
+        vaultRoot: "/Vault",
+        docPath: "/Vault/note.md",
+        location: "vault-assets",
+        template: "{rand}",
+      }),
+    ).rejects.toThrow(/empty image/i)
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it("rejects oversize images without calling invoke", async () => {
+    // Avoid actually allocating 64 MiB: fake the length getter.
+    const huge = { length: MAX_IMAGE_BYTES + 1 } as unknown as Uint8Array
+    await expect(
+      saveImage({
+        bytes: huge,
+        mime: "image/png",
+        vaultRoot: "/Vault",
+        docPath: "/Vault/note.md",
+        location: "vault-assets",
+        template: "{rand}",
+      }),
+    ).rejects.toThrow(/too large/i)
+    expect(invoke).not.toHaveBeenCalled()
+  })
+})
+
+describe("readClipboardImageAsPng", () => {
+  beforeEach(() => {
+    readImage.mockReset()
+  })
+
+  function fakeImage(opts: {
+    rgba?: Uint8Array | (() => Promise<Uint8Array>)
+    size?: { width: number; height: number } | (() => Promise<{ width: number; height: number }>)
+  }) {
+    const rgba = opts.rgba
+    const size = opts.size ?? { width: 1, height: 1 }
+    return {
+      rgba: () =>
+        typeof rgba === "function"
+          ? rgba()
+          : Promise.resolve(rgba ?? new Uint8Array(0)),
+      size: () => (typeof size === "function" ? size() : Promise.resolve(size)),
+    }
+  }
+
+  it("returns null when no image is on the clipboard", async () => {
+    readImage.mockRejectedValue(new Error("no image"))
+    expect(await readClipboardImageAsPng()).toBeNull()
+  })
+
+  it("returns null for a zero-dimension image", async () => {
+    readImage.mockResolvedValue(fakeImage({ size: { width: 0, height: 0 } }))
+    expect(await readClipboardImageAsPng()).toBeNull()
+  })
+
+  it("throws when the RGBA buffer length doesn't match the dimensions", async () => {
+    readImage.mockResolvedValue(
+      fakeImage({ size: { width: 2, height: 2 }, rgba: new Uint8Array(8) }), // expected 16
+    )
+    await expect(readClipboardImageAsPng()).rejects.toThrow(/malformed/i)
+  })
+
+  it("throws when reading the image data fails", async () => {
+    readImage.mockResolvedValue({
+      rgba: () => Promise.reject(new Error("boom")),
+      size: () => Promise.resolve({ width: 1, height: 1 }),
+    })
+    await expect(readClipboardImageAsPng()).rejects.toThrow(/Failed to read clipboard image/i)
+  })
+
+  it("throws when the image exceeds the pixel cap", async () => {
+    readImage.mockResolvedValue(
+      fakeImage({ size: { width: 100000, height: 100000 }, rgba: new Uint8Array(4) }),
+    )
+    await expect(readClipboardImageAsPng()).rejects.toThrow(/too large/i)
+  })
+
+  it("encodes a valid RGBA buffer to PNG bytes", async () => {
+    // Stub the canvas pipeline (jsdom has no real 2D/encode backend).
+    const fakeCtx = {
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      putImageData: vi.fn(),
+    }
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => fakeCtx,
+      toBlob: (cb: (b: Blob | null) => void) =>
+        cb(new Blob([new Uint8Array([137, 80, 78, 71])])),
+    }
+    const spy = vi
+      .spyOn(document, "createElement")
+      .mockReturnValue(canvas as unknown as HTMLCanvasElement)
+    try {
+      readImage.mockResolvedValue(
+        fakeImage({ size: { width: 1, height: 1 }, rgba: new Uint8Array(4) }),
+      )
+      const out = await readClipboardImageAsPng()
+      expect(out).toBeInstanceOf(Uint8Array)
+      expect(out!.length).toBeGreaterThan(0)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

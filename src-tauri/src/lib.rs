@@ -27,7 +27,23 @@ pub fn run() {
         log::LevelFilter::Info
     };
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // single-instance must be registered FIRST in the plugin chain (per the
+    // plugin docs). When a second copy launches, focus the existing window
+    // instead of opening a duplicate that would fight the file watcher on the
+    // same vault. Desktop-only — the plugin doesn't support mobile.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        use tauri::Manager;
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log_level)

@@ -15,18 +15,39 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Returns a mousedown handler that triggers Tauri's startDragging().
- * `data-tauri-drag-region` is unreliable on macOS when combined with
- * `titleBarStyle: Overlay` (Tauri 2) — clicks land but dragging never
- * starts. Calling `startDragging()` directly is the documented workaround.
+ * Returns handlers that turn an element into a macOS-correct titlebar drag
+ * region for `titleBarStyle: Overlay` (Tauri 2).
+ *
+ * `data-tauri-drag-region` is unreliable on macOS under Overlay — clicks land
+ * but dragging never starts — and the Electron-style `-webkit-app-region: drag`
+ * CSS is a no-op in WKWebView. Driving the window directly is the documented
+ * workaround:
+ *
+ * - `onMouseDown` starts a native drag via `startDragging()`.
+ * - `onDoubleClick` toggles maximize/zoom, matching the native titlebar's
+ *   double-click behavior.
+ *
+ * Both skip interactive descendants (buttons, inputs, links, `[data-no-drag]`)
+ * so controls embedded in the bar keep working and a double-click on, say, the
+ * sidebar toggle never zooms the window.
  */
 export function useDragRegion() {
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return
     if (isInteractiveTarget(e.target)) return
+    // A double-click's second mousedown must not start a drag, or the
+    // subsequent toggleMaximize fights the drag and the window jitters.
+    if (e.detail > 1) return
     e.preventDefault()
     void getCurrentWindow().startDragging().catch(() => {})
   }, [])
 
-  return { onMouseDown }
+  const onDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    if (isInteractiveTarget(e.target)) return
+    e.preventDefault()
+    void getCurrentWindow().toggleMaximize().catch(() => {})
+  }, [])
+
+  return { onMouseDown, onDoubleClick }
 }

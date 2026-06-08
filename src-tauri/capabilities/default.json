@@ -12,6 +12,7 @@
     "updater:allow-download-and-install",
     "process:allow-restart",
     "clipboard-manager:allow-read-image",
-    "clipboard-manager:allow-read-text"
+    "clipboard-manager:allow-read-text",
+    "window-state:default"
   ]
 }

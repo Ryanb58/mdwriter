@@ -47,6 +47,10 @@ async function insertImageBytes(
     location: settings.imagesLocation,
     template: settings.imageFilenameTemplate,
   })
+  console.debug("[paste] image saved", {
+    relativePath: result.relativePath,
+    absolutePath: result.absolutePath,
+  })
   const insert = `![](${encodeMarkdownUrl(result.relativePath)})`
   const { from, to } = view.state.selection.main
   view.dispatch({

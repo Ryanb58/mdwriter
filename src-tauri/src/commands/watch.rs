@@ -24,7 +24,13 @@ pub fn start_watcher(app: tauri::AppHandle, root: PathBuf) -> Result<()> {
         Duration::from_millis(150),
         None,
         move |result: notify_debouncer_full::DebounceEventResult| {
-            let Ok(events) = result else { return };
+            let events = match result {
+                Ok(events) => events,
+                Err(errors) => {
+                    log::warn!("watcher debounce error: {errors:?}");
+                    return;
+                }
+            };
             let mut paths: Vec<PathBuf> = Vec::new();
             for DebouncedEvent { event, .. } in events {
                 for p in event.paths {
@@ -33,7 +39,10 @@ pub fn start_watcher(app: tauri::AppHandle, root: PathBuf) -> Result<()> {
                 }
             }
             if !paths.is_empty() {
-                let _ = app_for_emit.emit("vault-changed", VaultChangeEvent { paths });
+                log::debug!("vault-changed: {} path(s)", paths.len());
+                if let Err(e) = app_for_emit.emit("vault-changed", VaultChangeEvent { paths }) {
+                    log::error!("failed to emit vault-changed: {e}");
+                }
             }
         },
     ).map_err(|e| AppError::Watcher(e.to_string()))?;
@@ -42,6 +51,7 @@ pub fn start_watcher(app: tauri::AppHandle, root: PathBuf) -> Result<()> {
         .map_err(|e| AppError::Watcher(e.to_string()))?;
     *watcher_lock = Some(debouncer);
 
+    log::info!("watching vault: {}", root.display());
     let mut active = state.active_vault.lock().unwrap();
     *active = Some(root);
     Ok(())

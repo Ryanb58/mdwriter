@@ -70,6 +70,10 @@ export function BlockEditor({
               location: settings.imagesLocation,
               template: settings.imageFilenameTemplate,
             })
+            console.debug("[paste] image saved", {
+              relativePath: result.relativePath,
+              absolutePath: result.absolutePath,
+            })
             return result.relativePath
           } catch (err) {
             // BlockNote leaves its loading block in place when uploadFile
@@ -204,8 +208,29 @@ export function BlockEditor({
     async function onPaste(e: ClipboardEvent) {
       const cd = e.clipboardData
       if (!cd) return
-      if (cd.items.length > 0 || cd.files.length > 0) return
-      if (!Array.from(cd.types).includes("Files")) return
+      // WKWebView surfaces a clipboard image as types=["Files"] with empty
+      // items/files. Anything else (text, html, real files) is left to the
+      // default handler.
+      const types = Array.from(cd.types)
+      const isWkImagePaste =
+        cd.items.length === 0 && cd.files.length === 0 && types.includes("Files")
+      if (!isWkImagePaste) {
+        // Not the WKWebView empty-clipboard case. If the clipboard carries
+        // image bytes directly, BlockNote's own paste plugin handles it via
+        // uploadFile (which logs its own "image saved" line); otherwise the
+        // default handler takes the text/markdown/etc.
+        const hasImage =
+          Array.from(cd.items).some((it) => it.type.startsWith("image/")) ||
+          Array.from(cd.files).some((f) => f.type.startsWith("image/"))
+        if (hasImage) {
+          console.debug("[paste] image → BlockNote uploadFile")
+        } else if (types.includes("text/plain")) {
+          console.debug("[paste] plain text → default handler")
+        } else {
+          console.debug("[paste] non-image paste → default handler", { types })
+        }
+        return
+      }
       const { rootPath, openDoc, settings } = useStore.getState()
       if (!rootPath || !openDoc) return
       e.preventDefault()
@@ -219,6 +244,10 @@ export function BlockEditor({
           docPath: openDoc.path,
           location: settings.imagesLocation,
           template: settings.imageFilenameTemplate,
+        })
+        console.debug("[paste] image saved", {
+          relativePath: result.relativePath,
+          absolutePath: result.absolutePath,
         })
         const cursor = editor.getTextCursorPosition()
         editor.insertBlocks(
@@ -250,6 +279,7 @@ export function BlockEditor({
       try {
         const text = await readText()
         if (!text) return
+        console.debug("[paste] plain text pasted (no-format)", { chars: text.length })
         const { firstLine, tailBlocks } = plainPasteToBlocks(text)
         const cursor = editor.getTextCursorPosition()
         if (firstLine) editor.insertInlineContent(firstLine)

@@ -22,6 +22,10 @@ function ensurePending(): SaveDebounced {
     try {
       noteSelfWrite(path)
       await ipc.writeFile(path, text)
+      // Re-stamp after the bytes land: on a slow write (large doc, slow
+      // disk) the watcher event fires relative to write completion, and a
+      // stamp taken only at write start can age out of the echo window.
+      noteSelfWrite(path)
       const cur = useStore.getState().openDoc
       if (cur && cur.path === path) {
         useStore.getState().patchOpenDoc({ dirty: false, savedAt: Date.now() })
@@ -70,4 +74,5 @@ export async function writeOpenDocNow(path: string, text: string): Promise<void>
   cancelPendingOpenDocSave()
   noteSelfWrite(path)
   await ipc.writeFile(path, text)
+  noteSelfWrite(path)
 }

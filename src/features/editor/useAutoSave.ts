@@ -4,6 +4,7 @@ import {
   scheduleOpenDocSave,
   flushPendingOpenDocSave,
   cancelPendingOpenDocSave,
+  writeOpenDocNow,
 } from "../../lib/writeDoc"
 
 /**
@@ -26,4 +27,35 @@ export function useAutoSave() {
   useEffect(() => {
     return () => { flushPendingOpenDocSave() }
   }, [doc?.path])
+
+  // Flush on window close. The autosave debounce is 500ms — without this,
+  // quitting right after the last keystroke silently drops it. Tauri defers
+  // the close until async close-requested handlers settle, so awaiting the
+  // write here guarantees the bytes are on disk before the process exits.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    let disposed = false
+    ;(async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window")
+        const stop = await getCurrentWindow().onCloseRequested(async () => {
+          const cur = useStore.getState().openDoc
+          if (!cur?.dirty) return
+          try {
+            await writeOpenDocNow(cur.path, cur.text)
+          } catch (e) {
+            console.error("flush-on-close failed", e)
+          }
+        })
+        if (disposed) stop()
+        else unlisten = stop
+      } catch {
+        // Browser dev / e2e — no Tauri window.
+      }
+    })()
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
 }

@@ -14,6 +14,7 @@ import { useAiShortcuts } from "./features/ai/useAiShortcuts"
 import { StatusBar } from "./features/statusbar/StatusBar"
 import { CommandPalette } from "./features/palette/CommandPalette"
 import { SettingsPanel } from "./features/settings/SettingsPanel"
+import { ShortcutsModal } from "./features/help/ShortcutsModal"
 import { useTheme } from "./features/settings/useTheme"
 import { useExternalChanges } from "./features/watcher/useExternalChanges"
 import { useUpdates } from "./features/updates/useUpdates"
@@ -77,6 +78,7 @@ export default function App() {
       </div>
       <CommandPalette />
       <SettingsPanel />
+      <ShortcutsModal />
       <DndModals />
       <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
     </>

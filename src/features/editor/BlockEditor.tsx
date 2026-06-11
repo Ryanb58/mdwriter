@@ -144,10 +144,16 @@ export function BlockEditor({
     }
     initializedKey.current = docKey
     parsing.current = true
+    const myKey = docKey
     ;(async () => {
       const pre = preprocessWikilinks(initialMarkdown)
       const parsed = (await editor.tryParseMarkdownToBlocks(pre)) as PartialBlock[]
       const hydrated = hydrateWikilinkBlocks(parsed)
+      // A newer docKey may have taken over while the parse awaited (file
+      // switch, external reload bumping docRev). Mutating the editor now
+      // would load this stale parse's blocks into the new document. The
+      // newer effect run owns `parsing` — leave it untouched.
+      if (initializedKey.current !== myKey) return
       // Only replace when there's actual content to load. For a brand-new
       // empty file, BlockNote's editor already has the default empty
       // paragraph it created in useCreateBlockNote — replacing it with a

@@ -36,6 +36,7 @@ export default function App() {
   useAiShortcuts()
   const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
+  const startupRestoring = useStore((s) => s.startupRestoring)
 
   // Warm the heavy editor-vendor chunk (BlockNote + markdown rendering)
   // right after first paint so it's ready by the time a document opens.
@@ -45,6 +46,12 @@ export default function App() {
   }, [])
 
   if (!rootPath) {
+    // While startup restore is still deciding whether a recent vault can be
+    // reopened, render a neutral surface instead of flashing "Open a folder"
+    // at someone whose vault is about to appear.
+    if (startupRestoring) {
+      return <div className="h-screen bg-bg" />
+    }
     return (
       <>
         <EmptyFolderState />

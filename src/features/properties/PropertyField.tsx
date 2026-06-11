@@ -32,7 +32,7 @@ export function PropertyField({
       </div>
       <button
         onClick={onRemove}
-        className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-danger transition-all pt-1.5"
+        className="opacity-0 group-hover:opacity-100 text-text-subtle hover:text-danger transition-[opacity,color] duration-150 pt-1.5"
         title="Remove"
       >
         <X size={11} weight="bold" />

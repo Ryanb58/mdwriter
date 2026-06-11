@@ -14,7 +14,7 @@ export function StatusBar() {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
 
   return (
-    <footer className="flex items-center justify-between border-t border-border bg-surface px-2 py-1 text-[11px] text-text-subtle">
+    <footer className="flex items-center justify-between border-t border-border bg-surface px-3 py-1 text-[11px] text-text-subtle">
       <div className="flex items-center gap-2 min-w-0">
         <VaultPicker />
       </div>

@@ -14,10 +14,6 @@ pub struct VaultChangeEvent {
 
 #[tauri::command]
 pub fn start_watcher(app: tauri::AppHandle, root: PathBuf) -> Result<()> {
-    let state = app.state::<AppState>();
-    let mut watcher_lock = state.watcher.lock().unwrap();
-    *watcher_lock = None; // drop any existing watcher first
-
     let app_for_emit = app.clone();
     let root_for_filter = root.clone();
     let mut debouncer = new_debouncer(
@@ -49,11 +45,18 @@ pub fn start_watcher(app: tauri::AppHandle, root: PathBuf) -> Result<()> {
 
     debouncer.watcher().watch(&root, RecursiveMode::Recursive)
         .map_err(|e| AppError::Watcher(e.to_string()))?;
-    *watcher_lock = Some(debouncer);
+
+    // Swap only once the new watcher is fully wired — building it first
+    // means a failed start can't leave the previous watcher already dropped.
+    // The old debouncer (if any) is dropped by the assignment.
+    //
+    // Note: `active_vault` is NOT touched here. `list_tree` is the single
+    // authority for vault scope; a watcher restart must not be able to
+    // redefine which paths the fs commands consider in-bounds.
+    let state = app.state::<AppState>();
+    *state.watcher.lock().unwrap() = Some(debouncer);
 
     log::info!("watching vault: {}", root.display());
-    let mut active = state.active_vault.lock().unwrap();
-    *active = Some(root);
     Ok(())
 }
 

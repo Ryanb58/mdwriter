@@ -29,6 +29,7 @@ const GROUPS: Group[] = [
     title: "Editor",
     shortcuts: [
       { keys: ["⌘", "E"], label: "Toggle block / raw markdown" },
+      { keys: ["⌘", "F"], label: "Find in note" },
     ],
   },
   {

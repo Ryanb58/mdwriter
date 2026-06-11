@@ -270,7 +270,7 @@ function EditableFileName({ fileName }: { fileName: string }) {
         onClick={(e) => e.stopPropagation()}
         aria-label="Rename file"
         title={fileName}
-        className="text-[14px] font-medium text-text bg-elevated border border-border-strong rounded px-1 -mx-1 outline-none min-w-0"
+        className="text-[14px] font-medium text-text bg-elevated border border-border-strong rounded px-1 -mx-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent min-w-0"
         style={{ width: `${Math.max(draft.length + 1, 4)}ch` }}
       />
     )

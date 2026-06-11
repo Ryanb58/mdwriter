@@ -96,7 +96,7 @@ function Downloading({ bytes, total }: { bytes: number; total: number | null }) 
       </div>
       <div className="mt-2 h-1 rounded-full bg-surface overflow-hidden">
         <div
-          className="h-full bg-accent transition-all"
+          className="h-full bg-accent transition-[width] duration-300"
           style={{ width: pct !== null ? `${pct}%` : "33%" }}
         />
       </div>

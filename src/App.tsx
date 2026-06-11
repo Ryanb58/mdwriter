@@ -22,6 +22,7 @@ import { UpdateBanner } from "./features/updates/UpdateBanner"
 import { usePasteDiagnostic } from "./lib/pasteDiagnostic"
 import { useShowWindowOnReady } from "./lib/useShowWindowOnReady"
 import { LayoutShell, useLayout } from "./layout/LayoutShell"
+import { Toasts } from "./components/Toasts"
 import "./App.css"
 
 export default function App() {
@@ -81,6 +82,7 @@ export default function App() {
       <ShortcutsModal />
       <DndModals />
       <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
+      <Toasts />
     </>
   )
 }

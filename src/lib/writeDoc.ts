@@ -1,6 +1,8 @@
 import { ipc } from "./ipc"
 import { useStore } from "./store"
 import { debounce } from "./debounce"
+import { basename } from "./paths"
+import { showToast } from "./toast"
 import { noteSelfWrite } from "../features/watcher/useExternalChanges"
 
 const SAVE_DELAY_MS = 500
@@ -32,6 +34,7 @@ function ensurePending(): SaveDebounced {
       }
     } catch (e) {
       console.error("save failed", e)
+      showToast(`Couldn't save ${basename(path)}`, { kind: "error" })
     }
   }, SAVE_DELAY_MS)
   pending = created

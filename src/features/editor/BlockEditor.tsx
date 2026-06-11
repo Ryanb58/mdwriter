@@ -23,6 +23,7 @@ import {
 import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
+import { showToast, errorText } from "../../lib/toast"
 import { findNthBlockMatch } from "./blockTextSearch"
 import { flashHighlight } from "./flashHighlight"
 import { headingCommitted } from "./headingCommit"
@@ -80,6 +81,7 @@ export function BlockEditor({
             // rejects; without this log a paste failure looks identical
             // to a paste still in flight.
             console.error("[image paste] uploadFile failed:", err)
+            showToast(`Couldn't paste image: ${errorText(err)}`, { kind: "error" })
             throw err
           }
         },
@@ -263,6 +265,7 @@ export function BlockEditor({
         )
       } catch (err) {
         console.error("[image paste] clipboard fallback failed:", err)
+        showToast(`Couldn't paste image: ${errorText(err)}`, { kind: "error" })
       }
     }
     document.addEventListener("paste", onPaste, true)

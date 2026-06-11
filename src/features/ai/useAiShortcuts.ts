@@ -1,5 +1,4 @@
 import { useEffect } from "react"
-import { useStore } from "../../lib/store"
 import { openPanel } from "../../layout/layoutControl"
 
 /**
@@ -29,7 +28,6 @@ export function useAiShortcuts() {
       if (isInEditableElsewhere && !isInComposer) return
 
       e.preventDefault()
-      useStore.getState().setRightPaneTab("ai")
       openPanel("right")
       // Defer focus until the panel has had a render to mount the composer.
       requestAnimationFrame(() => {

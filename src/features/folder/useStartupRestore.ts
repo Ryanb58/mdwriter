@@ -7,6 +7,7 @@ export function useStartupRestore() {
   const setRoot = useStore((s) => s.setRoot)
   const setTree = useStore((s) => s.setTree)
   const setRecent = useStore((s) => s.setRecent)
+  const setStartupRestoring = useStore((s) => s.setStartupRestoring)
 
   useEffect(() => {
     let cancelled = false
@@ -24,8 +25,10 @@ export function useStartupRestore() {
         }
       } catch {
         // Tauri not available (browser dev) — stay on empty state
+      } finally {
+        if (!cancelled) setStartupRestoring(false)
       }
     })()
     return () => { cancelled = true }
-  }, [setRoot, setTree, setRecent])
+  }, [setRoot, setTree, setRecent, setStartupRestoring])
 }

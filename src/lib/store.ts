@@ -68,6 +68,14 @@ export const DEFAULT_SETTINGS: Settings = {
 export type AppStore = {
   rootPath: string | null
   tree: TreeNode | null
+  /**
+   * True from launch until useStartupRestore has decided whether a recent
+   * vault can be reopened. While true the app renders a neutral shell
+   * instead of flashing "Open a folder" at users whose vault is about to
+   * load. Never persisted.
+   */
+  startupRestoring: boolean
+  setStartupRestoring(v: boolean): void
   recentFolders: string[]
   selectedPath: string | null
   // Full set of selected tree rows (multi-select). Invariant: when
@@ -392,6 +400,7 @@ export const useStore = create<AppStore>()(
     (set) => ({
       rootPath: null,
       tree: null,
+      startupRestoring: true,
       recentFolders: [],
       selectedPath: null,
       selectedPaths: new Set<string>(),
@@ -422,6 +431,7 @@ export const useStore = create<AppStore>()(
       activeChatId: null,
 
       setRoot: (path) => set({ rootPath: path }),
+      setStartupRestoring: (v) => set({ startupRestoring: v }),
       setTree: (tree) => set({ tree }),
       setRecent: (list) => set({ recentFolders: list }),
       setSelected: (path) =>

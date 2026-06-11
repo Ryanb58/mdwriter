@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { Robot, Sidebar as SidebarIcon } from "@phosphor-icons/react"
 import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
@@ -35,6 +36,13 @@ export default function App() {
   useAiShortcuts()
   const updates = useUpdates()
   const rootPath = useStore((s) => s.rootPath)
+
+  // Warm the heavy editor-vendor chunk (BlockNote + markdown rendering)
+  // right after first paint so it's ready by the time a document opens.
+  // It's lazy-imported (EditorPane / ChatView) to stay off the critical path.
+  useEffect(() => {
+    void import("./features/editor/BlockEditor")
+  }, [])
 
   if (!rootPath) {
     return (

@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
+import { findNode } from "../tree/findNode"
 
 export function useFolderPicker() {
   const setRoot = useStore((s) => s.setRoot)
@@ -52,6 +53,9 @@ export async function openFolder(
     throw e
   }
 
+  // Drop the user back into the note they were writing in this vault.
+  restoreLastFile(path)
+
   // Bookkeeping that shouldn't block the vault becoming interactive.
   ipc.pushRecentFolder(path)
     .then(() => ipc.getRecentFolders())
@@ -60,4 +64,23 @@ export async function openFolder(
   // Best-effort: seed AGENTS.md if missing so the AI agent has vault
   // conventions on hand. Don't block vault open if this fails.
   ipc.ensureVaultAgentsMd(path).catch(() => {})
+}
+
+/**
+ * Re-select the last file the user had open in this vault (if it still
+ * exists) and expand its ancestor folders so the selection is visible.
+ * Selection drives useOpenFile, which loads the doc from disk.
+ */
+function restoreLastFile(vaultPath: string) {
+  const s = useStore.getState()
+  const saved = s.lastFileByVault[vaultPath]
+  if (!saved || !findNode(s.tree, saved)) return
+  const expanded = new Set(s.expandedFolders)
+  let dir = saved.slice(0, saved.lastIndexOf("/"))
+  while (dir.length > vaultPath.length && dir.startsWith(vaultPath)) {
+    expanded.add(dir)
+    dir = dir.slice(0, dir.lastIndexOf("/"))
+  }
+  useStore.setState({ expandedFolders: expanded })
+  s.setSelected(saved)
 }

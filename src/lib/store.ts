@@ -87,6 +87,12 @@ export type AppStore = {
   // both reason about visibility.
   expandedFolders: Set<string>
   pinnedPaths: string[]
+  /**
+   * Last markdown file that was open in each vault, persisted so relaunch
+   * (and switching back to a vault) drops the user into the note they were
+   * writing instead of an empty editor. Maintained by setOpenDoc.
+   */
+  lastFileByVault: Record<string, string>
   openDoc: OpenDoc | null
   /**
    * Bumped whenever an outside caller (e.g. "Apply to note", file watcher
@@ -406,6 +412,7 @@ export const useStore = create<AppStore>()(
       selectedPaths: new Set<string>(),
       expandedFolders: new Set<string>(),
       pinnedPaths: [],
+      lastFileByVault: {},
       openDoc: null,
       docRev: 0,
       editorMode: "block",
@@ -481,7 +488,15 @@ export const useStore = create<AppStore>()(
           const next = s.pinnedPaths.filter((p) => !isUnderAny(p, paths))
           return next.length === s.pinnedPaths.length ? {} : { pinnedPaths: next }
         }),
-      setOpenDoc: (doc) => set({ openDoc: doc, editorMode: "block" }),
+      setOpenDoc: (doc) =>
+        set((s) => {
+          const next: Partial<AppStore> = { openDoc: doc, editorMode: "block" }
+          // Remember the open file per vault so relaunch can restore it.
+          if (doc && s.rootPath && s.lastFileByVault[s.rootPath] !== doc.path) {
+            next.lastFileByVault = { ...s.lastFileByVault, [s.rootPath]: doc.path }
+          }
+          return next
+        }),
       patchOpenDoc: (patch) =>
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
       bumpDocRev: () => set((s) => ({ docRev: s.docRev + 1 })),
@@ -687,6 +702,7 @@ export const useStore = create<AppStore>()(
         aiAgent: s.aiAgent,
         aiPermissionMode: s.aiPermissionMode,
         pinnedPaths: s.pinnedPaths,
+        lastFileByVault: s.lastFileByVault,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppStore> & {
@@ -707,6 +723,12 @@ export const useStore = create<AppStore>()(
         const pinnedPaths = Array.isArray(p.pinnedPaths)
           ? p.pinnedPaths.filter((path): path is string => typeof path === "string")
           : current.pinnedPaths
+        const lastFileByVault: Record<string, string> = {}
+        if (p.lastFileByVault && typeof p.lastFileByVault === "object") {
+          for (const [vault, file] of Object.entries(p.lastFileByVault)) {
+            if (typeof file === "string") lastFileByVault[vault] = file
+          }
+        }
         // Migrate legacy tab + visibility flags into rightPaneTab. Layout
         // open/closed state is now owned by the layout module, so we only
         // recover the tab choice here.
@@ -725,7 +747,7 @@ export const useStore = create<AppStore>()(
           ...rest
         } = p
         void _pv; void _av; void _rp
-        return { ...current, ...rest, settings, rightPaneTab, pinnedPaths }
+        return { ...current, ...rest, settings, rightPaneTab, pinnedPaths, lastFileByVault }
       },
     },
   ),

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
-import { SidebarSimple, Robot } from "@phosphor-icons/react"
+import { SidebarSimple, Robot, ArrowsInLineHorizontal } from "@phosphor-icons/react"
+import { useStore } from "../lib/store"
 import { useLayout } from "./LayoutContext"
 import { useIsMacTauri } from "./useIsMacTauri"
 import { useDragRegion } from "./useDragRegion"
@@ -48,6 +49,7 @@ export function Toolbar({ center }: { center?: ReactNode }) {
         {center}
       </div>
       <div className="layout-toolbar-group">
+        <FocusModeButton />
         <button
           type="button"
           className="layout-toolbar-btn"
@@ -62,5 +64,23 @@ export function Toolbar({ center }: { center?: ReactNode }) {
         </button>
       </div>
     </div>
+  )
+}
+
+function FocusModeButton() {
+  const focusMode = useStore((s) => s.focusMode)
+  const setFocusMode = useStore((s) => s.setFocusMode)
+  return (
+    <button
+      type="button"
+      className="layout-toolbar-btn"
+      aria-pressed={focusMode}
+      aria-label={focusMode ? "Exit focus mode" : "Focus mode"}
+      title={focusMode ? "Exit focus mode (⌘⇧↩)" : "Focus mode (⌘⇧↩)"}
+      onClick={() => setFocusMode(!focusMode)}
+      data-active={focusMode ? "true" : undefined}
+    >
+      <ArrowsInLineHorizontal size={16} weight={focusMode ? "fill" : "regular"} />
+    </button>
   )
 }

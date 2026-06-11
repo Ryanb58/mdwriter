@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import {
   PANEL_DIMS,
   isDockedMode,
@@ -6,6 +6,7 @@ import {
   type LayoutMode,
   type PanelState,
 } from "./constants"
+import { useStore } from "../lib/store"
 import { useLayoutMode } from "./useLayoutMode"
 import { usePanelStates } from "./usePanelStates"
 import { usePanelWidths } from "./usePanelWidths"
@@ -72,6 +73,41 @@ export function LayoutShell({
     return () => setLayoutController(null)
   }, [setPanelState])
 
+  // Focus mode: ⌘⇧↩ toggles. Entering stashes the current panel states and
+  // hides both sides (rails included — the rail slots are suppressed below);
+  // leaving restores exactly what the user had.
+  const focusMode = useStore((s) => s.focusMode)
+  const focusReturnRef = useRef<{ left: PanelState; right: PanelState } | null>(null)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "Enter") {
+        e.preventDefault()
+        const s = useStore.getState()
+        s.setFocusMode(!s.focusMode)
+      }
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [])
+  useEffect(() => {
+    if (focusMode) {
+      focusReturnRef.current = { left: leftState, right: rightState }
+      const hidden: PanelState = overlay ? "closed" : "rail"
+      setPanelState("left", hidden)
+      setPanelState("right", hidden)
+    } else {
+      const prev = focusReturnRef.current
+      focusReturnRef.current = null
+      if (prev) {
+        setPanelState("left", prev.left)
+        setPanelState("right", prev.right)
+      }
+    }
+    // Stash exactly once per toggle — leftState/rightState here would
+    // re-stash on every panel change while focused.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMode])
+
   const closeDrawers = () => {
     if (leftState === "open") setPanelState("left", "closed")
     if (rightState === "open") setPanelState("right", "closed")
@@ -88,8 +124,12 @@ export function LayoutShell({
   const renderedLeftWidth = Math.min(leftWidth, effectiveLeftMax)
   const renderedRightWidth = Math.min(rightWidth, effectiveRightMax)
 
-  const leftHasRail = leftRail !== undefined
-  const rightHasRail = rightRail !== undefined
+  // Focus mode hides the 48px rail strips entirely rather than leaving
+  // empty gutters at the screen edges.
+  const effLeftRail = focusMode ? undefined : leftRail
+  const effRightRail = focusMode ? undefined : rightRail
+  const leftHasRail = effLeftRail !== undefined
+  const rightHasRail = effRightRail !== undefined
   const widths = computeWidths(
     mode,
     leftState,
@@ -132,7 +172,7 @@ export function LayoutShell({
             mode={mode}
             ariaLabel={leftLabel}
             onRequestClose={() => setPanelState("left", overlay ? "closed" : "rail")}
-            rail={renderSlot(leftRail, leftState, mode)}
+            rail={renderSlot(effLeftRail, leftState, mode)}
           >
             {renderSlot(left, leftState, mode)}
           </SidePanel>
@@ -166,7 +206,7 @@ export function LayoutShell({
             mode={mode}
             ariaLabel={rightLabel}
             onRequestClose={() => setPanelState("right", overlay ? "closed" : "rail")}
-            rail={renderSlot(rightRail, rightState, mode)}
+            rail={renderSlot(effRightRail, rightState, mode)}
           >
             {renderSlot(right, rightState, mode)}
           </SidePanel>

@@ -1,7 +1,7 @@
 import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { ipc, type AiStreamEvent, type AiPermissionRequest } from "../../lib/ipc"
-import { useStore } from "../../lib/store"
+import { useStore, type AssistantMessage } from "../../lib/store"
 import { buildPrompt, extractSkillRefs } from "./buildPrompt"
 
 /**
@@ -140,6 +140,26 @@ export async function cancelSession() {
   const store = useStore.getState()
   store.setAiRunning(false)
   store.clearPendingPermissions()
+  // Finalize the half-streamed assistant turn (mirrors the `done` handler)
+  // so it stops rendering as in-flight and Regenerate's message indexing
+  // stays sound.
+  const msgs = store.aiMessages
+  const idx = msgs.findLastIndex((m) => m.role === "assistant")
+  if (idx < 0) return
+  const last = msgs[idx] as AssistantMessage
+  if (last.finished) return
+  if (!last.text && last.tools.length === 0) {
+    // Nothing streamed before the stop — drop the empty placeholder turn.
+    store.setAiMessages([...msgs.slice(0, idx), ...msgs.slice(idx + 1)])
+    return
+  }
+  store.patchLastAssistantMessage((m) => ({
+    ...m,
+    finished: true,
+    tools: m.tools.map((t) =>
+      t.finished ? t : { ...t, finished: true, isError: t.output == null || t.isError },
+    ),
+  }))
 }
 
 /**

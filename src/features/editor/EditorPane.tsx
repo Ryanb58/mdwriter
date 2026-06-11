@@ -4,7 +4,6 @@ import { useOpenFile } from "./useOpenFile"
 import { useAutoSave } from "./useAutoSave"
 import { useEditorMode } from "./useEditorMode"
 import { useAutoRename } from "./useAutoRename"
-import { BlockEditor } from "./BlockEditor"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
 import { getBody, setBody } from "../../lib/doc"
@@ -12,6 +11,15 @@ import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
 import { targetParentDir } from "../tree/targetDir"
+
+// The block editor pulls the multi-megabyte editor-vendor chunk (BlockNote +
+// ProseMirror + Shiki grammars). Loading it lazily keeps that chunk out of
+// the first-paint critical path — the app shell renders in the small main
+// chunk, then App warms this import up immediately after mount so the editor
+// is ready by the time a document opens.
+const BlockEditor = lazy(() =>
+  import("./BlockEditor").then((m) => ({ default: m.BlockEditor })),
+)
 
 // CodeMirror only loads when the user enters raw mode.
 const RawEditor = lazy(() =>
@@ -73,6 +81,9 @@ export function EditorPane() {
       )}
       <div className="flex-1 overflow-hidden">
         {editorView === "block" ? (
+          // Empty fallback (not a spinner): the chunk is usually warm by the
+          // time a doc opens, so any flash would just be visual noise.
+          <Suspense fallback={<div className="h-full" />}>
           <BlockEditor
             docKey={`${doc.path}#${docRev}`}
             initialMarkdown={getBody(doc.text)}
@@ -87,6 +98,7 @@ export function EditorPane() {
               patch({ text: setBody(cur.text, body), dirty: true })
             }}
           />
+          </Suspense>
         ) : (
           <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>
             <RawEditor

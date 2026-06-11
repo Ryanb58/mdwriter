@@ -12,6 +12,7 @@ import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
 import { targetParentDir } from "../tree/targetDir"
 import { PropertiesSection } from "../properties/PropertiesSection"
+import { FindBar } from "./FindBar"
 
 // The block editor pulls the multi-megabyte editor-vendor chunk (BlockNote +
 // ProseMirror + Shiki grammars). Loading it lazily keeps that chunk out of
@@ -84,12 +85,14 @@ export function EditorPane() {
       )}
       <div
         className={[
-          "flex-1 overflow-hidden",
+          // `relative` anchors the absolutely-positioned find bar (⌘F).
+          "flex-1 overflow-hidden relative",
           // Focus mode: panels are hidden (LayoutShell), so center the text
           // column at a comfortable reading measure instead of full-bleed.
           focusMode ? "w-full max-w-[44rem] mx-auto" : "",
         ].join(" ")}
       >
+        <FindBar />
         {editorView === "block" ? (
           // Empty fallback (not a spinner): the chunk is usually warm by the
           // time a doc opens, so any flash would just be visual noise.

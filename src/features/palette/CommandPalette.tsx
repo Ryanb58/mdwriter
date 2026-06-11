@@ -204,7 +204,6 @@ function AskMode({ initialQuery, close }: { initialQuery: string; close: () => v
   const [trigger, setTrigger] = useState<WikilinkTrigger | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const taRef = useRef<HTMLTextAreaElement>(null)
-  const setRightPaneTab = useStore((s) => s.setRightPaneTab)
   const notes = useVaultNotes()
   const results = useWikilinkResults(notes, trigger?.query ?? "")
 
@@ -243,7 +242,6 @@ function AskMode({ initialQuery, close }: { initialQuery: string; close: () => v
   function send() {
     const t = text.trim()
     if (!t) return
-    setRightPaneTab("ai")
     openPanel("right")
     sendPrompt(t)
     close()

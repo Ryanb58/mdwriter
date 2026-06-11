@@ -20,8 +20,6 @@ export type OpenDoc = {
 
 export type Theme = "light" | "dark" | "system"
 
-export type RightPaneTab = "properties" | "ai"
-
 /**
  * One-shot scroll target consumed by whichever editor is mounted after a doc
  * loads. Set by features that open a file at a specific location (vault
@@ -103,7 +101,12 @@ export type AppStore = {
   docRev: number
   bumpDocRev(): void
   editorMode: EditorMode
-  rightPaneTab: RightPaneTab
+  /**
+   * Whether the in-editor frontmatter section is expanded. Persisted —
+   * writers who never use properties shouldn't see them re-open on every
+   * launch.
+   */
+  propertiesExpanded: boolean
   settingsOpen: boolean
   settings: Settings
   renamingPath: string | null
@@ -141,7 +144,7 @@ export type AppStore = {
   setOpenDoc(doc: OpenDoc | null): void
   patchOpenDoc(patch: Partial<OpenDoc>): void
   setEditorMode(mode: EditorMode): void
-  setRightPaneTab(tab: RightPaneTab): void
+  setPropertiesExpanded(v: boolean): void
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
@@ -416,7 +419,7 @@ export const useStore = create<AppStore>()(
       openDoc: null,
       docRev: 0,
       editorMode: "block",
-      rightPaneTab: "properties",
+      propertiesExpanded: true,
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
@@ -504,7 +507,7 @@ export const useStore = create<AppStore>()(
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
       bumpDocRev: () => set((s) => ({ docRev: s.docRev + 1 })),
       setEditorMode: (mode) => set({ editorMode: mode }),
-      setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
+      setPropertiesExpanded: (v) => set({ propertiesExpanded: v }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
@@ -701,7 +704,7 @@ export const useStore = create<AppStore>()(
       // document are session-scoped and reload from disk on launch.
       partialize: (s) => ({
         settings: s.settings,
-        rightPaneTab: s.rightPaneTab,
+        propertiesExpanded: s.propertiesExpanded,
         aiAgent: s.aiAgent,
         aiPermissionMode: s.aiPermissionMode,
         pinnedPaths: s.pinnedPaths,
@@ -711,7 +714,8 @@ export const useStore = create<AppStore>()(
         const p = (persisted ?? {}) as Partial<AppStore> & {
           propertiesVisible?: boolean
           aiPanelVisible?: boolean
-          rightPane?: RightPaneTab | null
+          rightPane?: string | null
+          rightPaneTab?: string
         }
         // Re-merge settings against DEFAULT_SETTINGS so any field added in a
         // later release picks up its default for users who persisted earlier.
@@ -732,25 +736,20 @@ export const useStore = create<AppStore>()(
             if (typeof file === "string") lastFileByVault[vault] = file
           }
         }
-        // Migrate legacy tab + visibility flags into rightPaneTab. Layout
-        // open/closed state is now owned by the layout module, so we only
-        // recover the tab choice here.
-        let rightPaneTab: RightPaneTab = current.rightPaneTab
-        if (p.rightPaneTab === "properties" || p.rightPaneTab === "ai") {
-          rightPaneTab = p.rightPaneTab
-        } else if (p.rightPane === "ai" || p.aiPanelVisible) {
-          rightPaneTab = "ai"
-        } else if (p.rightPane === "properties" || p.propertiesVisible) {
-          rightPaneTab = "properties"
-        }
+        // Strip retired keys: rightPaneTab (the right pane is now
+        // assistant-only; properties live in the editor) plus the older
+        // visibility flags it had itself migrated from.
         const {
           propertiesVisible: _pv,
           aiPanelVisible: _av,
           rightPane: _rp,
+          rightPaneTab: _rpt,
           ...rest
         } = p
-        void _pv; void _av; void _rp
-        return { ...current, ...rest, settings, rightPaneTab, pinnedPaths, lastFileByVault }
+        void _pv; void _av; void _rp; void _rpt
+        const propertiesExpanded =
+          typeof p.propertiesExpanded === "boolean" ? p.propertiesExpanded : current.propertiesExpanded
+        return { ...current, ...rest, settings, propertiesExpanded, pinnedPaths, lastFileByVault }
       },
     },
   ),

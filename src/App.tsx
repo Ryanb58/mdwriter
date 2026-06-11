@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { Robot, Sidebar as SidebarIcon } from "@phosphor-icons/react"
+import { Robot } from "@phosphor-icons/react"
 import { useStore } from "./lib/store"
 import { EmptyFolderState } from "./features/folder/EmptyFolderState"
 import { useStartupRestore } from "./features/folder/useStartupRestore"
@@ -12,7 +12,6 @@ import { useAiSession } from "./features/ai/useAiSession"
 import { useChatPersistence } from "./features/ai/useChatPersistence"
 import { useAiShortcuts } from "./features/ai/useAiShortcuts"
 import { StatusBar } from "./features/statusbar/StatusBar"
-import { PropertiesPane } from "./features/properties/PropertiesPane"
 import { CommandPalette } from "./features/palette/CommandPalette"
 import { SettingsPanel } from "./features/settings/SettingsPanel"
 import { useTheme } from "./features/settings/useTheme"
@@ -67,9 +66,9 @@ export default function App() {
       <div className="flex flex-col h-screen bg-bg text-text">
         <LayoutShell
           leftLabel="File panel"
-          rightLabel="Sidebar"
+          rightLabel="Assistant"
           left={<TreePane />}
-          right={<RightPanel />}
+          right={<AiPanel />}
           rightRail={<RightRail />}
         >
           <EditorPane />
@@ -84,108 +83,23 @@ export default function App() {
   )
 }
 
-function RightPanel() {
-  const tab = useStore((s) => s.rightPaneTab)
-  const setTab = useStore((s) => s.setRightPaneTab)
-  return (
-    <div className="flex flex-col h-full min-h-0">
-      <div role="tablist" className="flex items-stretch border-b border-border h-9 px-2 flex-none">
-        <TabBtn active={tab === "properties"} onClick={() => setTab("properties")}>
-          Properties
-        </TabBtn>
-        <TabBtn active={tab === "ai"} onClick={() => setTab("ai")}>
-          Assistant
-        </TabBtn>
-      </div>
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {tab === "properties" ? (
-          <div className="h-full overflow-y-auto">
-            <PropertiesPane />
-          </div>
-        ) : (
-          <AiPanel />
-        )}
-      </div>
-    </div>
-  )
-}
-
+// Collapsed-rail affordance for the assistant panel. The right pane hosts
+// only the assistant now — properties moved into the editor as a collapsible
+// section (PropertiesSection), so the old tab strip and dual rail buttons
+// are gone.
 function RightRail() {
   const { setPanelState } = useLayout()
-  const tab = useStore((s) => s.rightPaneTab)
-  const setTab = useStore((s) => s.setRightPaneTab)
-
-  const choose = (next: "properties" | "ai") => {
-    setTab(next)
-    setPanelState("right", "open")
-  }
-
   return (
     <div className="flex flex-col items-center gap-1 pt-2">
-      <RailBtn
-        active={tab === "properties"}
-        onClick={() => choose("properties")}
-        label="Properties"
+      <button
+        type="button"
+        onClick={() => setPanelState("right", "open")}
+        title="Assistant"
+        aria-label="Assistant"
+        className="w-9 h-9 flex items-center justify-center rounded text-text-subtle hover:text-text hover:bg-elevated/60 transition-colors"
       >
-        <SidebarIcon size={16} />
-      </RailBtn>
-      <RailBtn active={tab === "ai"} onClick={() => choose("ai")} label="Assistant">
         <Robot size={16} />
-      </RailBtn>
+      </button>
     </div>
-  )
-}
-
-function TabBtn({
-  active, onClick, children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  // Underline-style tab: the active button's 2px bottom border overlaps
-  // the tablist's own border-b (via -mb-px) so it reads as a tab
-  // "punching through" the strip rather than a floating pill.
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={[
-        "h-9 px-3 -mb-px text-[12px] border-b-2 transition-colors",
-        active
-          ? "text-text border-text font-medium"
-          : "text-text-subtle border-transparent hover:text-text hover:border-border-strong",
-      ].join(" ")}
-    >
-      {children}
-    </button>
-  )
-}
-
-function RailBtn({
-  active, onClick, label, children,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className={[
-        "w-9 h-9 flex items-center justify-center rounded transition-colors",
-        active
-          ? "text-text bg-elevated"
-          : "text-text-subtle hover:text-text hover:bg-elevated/60",
-      ].join(" ")}
-    >
-      {children}
-    </button>
   )
 }

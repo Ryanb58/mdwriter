@@ -22,7 +22,6 @@ export function CommandMode({
   close: () => void
 }) {
   const rootPath = useStore((s) => s.rootPath)
-  const setRightPaneTab = useStore((s) => s.setRightPaneTab)
   const requestSkillInsert = useStore((s) => s.requestAiSkillInsert)
   const [skills, setSkills] = useState<Skill[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -57,7 +56,6 @@ export function CommandMode({
   }, [skills])
 
   function pick(skill: Skill) {
-    setRightPaneTab("ai")
     openPanel("right")
     requestSkillInsert(skill.name)
     close()

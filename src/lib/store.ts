@@ -490,7 +490,10 @@ export const useStore = create<AppStore>()(
         }),
       setOpenDoc: (doc) =>
         set((s) => {
-          const next: Partial<AppStore> = { openDoc: doc, editorMode: "block" }
+          // Any prior editor selection refers to the buffer being replaced
+          // (file switch or watcher reload), so it can't stay attached to the
+          // AI composer — drop it.
+          const next: Partial<AppStore> = { openDoc: doc, editorMode: "block", editorSelection: null }
           // Remember the open file per vault so relaunch can restore it.
           if (doc && s.rootPath && s.lastFileByVault[s.rootPath] !== doc.path) {
             next.lastFileByVault = { ...s.lastFileByVault, [s.rootPath]: doc.path }

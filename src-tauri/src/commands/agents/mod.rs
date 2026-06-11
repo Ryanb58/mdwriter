@@ -117,10 +117,32 @@ pub enum AiStreamEvent {
 /// .kill()) can both reach the same Child. The optional `broker` is the
 /// agent's permission-prompt server for the active session — held here so
 /// the cancel path and the subprocess waiter can both call `shutdown` on it.
+///
+/// `generation` increments every time a session starts. A superseded
+/// session's waiter thread compares its captured generation before touching
+/// shared state — without this, killing-and-restarting left the old waiter
+/// free to emit a bogus `Done` and null out the *new* session's handles.
 #[derive(Default)]
 pub struct AgentSession {
     pub process: Mutex<Option<std::sync::Arc<Mutex<std::process::Child>>>>,
     pub broker: Mutex<Option<Arc<dyn permission::PermissionBroker>>>,
+    pub generation: std::sync::atomic::AtomicU64,
+}
+
+/// Kill the running agent subprocess (if any) and tear down its permission
+/// broker. Used by `stop_ai_session`, by session takeover in
+/// `start_ai_session`, and by the app-exit hook in `lib.rs` so quitting the
+/// app can't orphan a running `claude` process.
+pub fn shutdown_session(app: &AppHandle) {
+    let session = app.state::<AgentSession>();
+    let prev_broker = session.broker.lock().unwrap().take();
+    if let Some(b) = prev_broker {
+        b.shutdown();
+    }
+    let prev_proc = session.process.lock().unwrap().take();
+    if let Some(child_arc) = prev_proc {
+        let _ = child_arc.lock().unwrap().kill();
+    }
 }
 
 /// Trait that each adapter implements.
@@ -284,12 +306,15 @@ pub async fn start_ai_session(
     // Stop any session already running. Both the process and any active
     // permission broker hold state from the prior turn — drain both so
     // pending approval cards resolve to deny rather than stranding.
-    let prev_proc = app.state::<AgentSession>().process.lock().unwrap().take();
-    if let Some(child_arc) = prev_proc {
-        let _ = child_arc.lock().unwrap().kill();
-    }
-    let prev_broker = app.state::<AgentSession>().broker.lock().unwrap().take();
-    if let Some(b) = prev_broker { b.shutdown(); }
+    shutdown_session(&app);
+    // Claim a new generation so the superseded session's waiter thread
+    // (still draining the killed child) can tell it no longer owns the
+    // shared state and must not emit Done or clear our handles.
+    let my_generation = app
+        .state::<AgentSession>()
+        .generation
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        + 1;
 
     let mode = permission_mode.unwrap_or_default();
     let mut cmd = adapter.build_command(&binary, &vault_path, &prompt, mode);
@@ -405,14 +430,22 @@ pub async fn start_ai_session(
         };
         log::info!("agent session exited (code: {exit_code:?})");
         if let Some(b) = &broker_for_wait { b.shutdown(); }
+        // A newer session may have taken over while this child was being
+        // killed. Only the waiter that still owns the current generation may
+        // emit Done and clear the shared handles — otherwise it would
+        // terminate the new session's UI state from under it.
+        let session = app_wait.state::<AgentSession>();
+        if session.generation.load(std::sync::atomic::Ordering::SeqCst) != my_generation {
+            return;
+        }
         let _ = app_wait.emit(
             "ai-stream",
             AiStreamEvent::Done {
                 usage: exit_code.map(|c| serde_json::json!({ "exit_code": c })),
             },
         );
-        *app_wait.state::<AgentSession>().process.lock().unwrap() = None;
-        *app_wait.state::<AgentSession>().broker.lock().unwrap() = None;
+        *session.process.lock().unwrap() = None;
+        *session.broker.lock().unwrap() = None;
     });
 
     Ok(())
@@ -420,12 +453,7 @@ pub async fn start_ai_session(
 
 #[tauri::command]
 pub fn stop_ai_session(app: AppHandle) -> Result<()> {
-    let prev_broker = app.state::<AgentSession>().broker.lock().unwrap().take();
-    if let Some(b) = prev_broker { b.shutdown(); }
-    let prev = app.state::<AgentSession>().process.lock().unwrap().take();
-    if let Some(child_arc) = prev {
-        let _ = child_arc.lock().unwrap().kill();
-    }
+    shutdown_session(&app);
     Ok(())
 }
 

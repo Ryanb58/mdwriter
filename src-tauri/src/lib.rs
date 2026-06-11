@@ -203,6 +203,14 @@ pub fn run() {
             commands::chats::delete_chat,
             commands::skills::list_skills,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Quitting must not orphan a running agent subprocess — the
+            // reader/waiter threads die with the app, but the spawned
+            // `claude` child would keep running without this.
+            if let tauri::RunEvent::Exit = event {
+                commands::agents::shutdown_session(app_handle);
+            }
+        });
 }

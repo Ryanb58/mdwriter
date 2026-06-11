@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>mdwriter</title>
+    <style>
+      /* Pre-paint background so the window never flashes white while the JS
+         bundle loads. Values mirror --color-bg in App.css; an inline <style>
+         (not a script) keeps this within the CSP's script-src 'self'. A user
+         theme that overrides the system scheme corrects itself as soon as
+         the app CSS + useTheme take over. */
+      html {
+        background-color: #fbfaf8;
+      }
+      @media (prefers-color-scheme: dark) {
+        html {
+          background-color: #141518;
+        }
+      }
+    </style>
   </head>
 
   <body>

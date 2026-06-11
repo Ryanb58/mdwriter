@@ -19,10 +19,12 @@ import { useExternalChanges } from "./features/watcher/useExternalChanges"
 import { useUpdates } from "./features/updates/useUpdates"
 import { UpdateBanner } from "./features/updates/UpdateBanner"
 import { usePasteDiagnostic } from "./lib/pasteDiagnostic"
+import { useShowWindowOnReady } from "./lib/useShowWindowOnReady"
 import { LayoutShell, useLayout } from "./layout/LayoutShell"
 import "./App.css"
 
 export default function App() {
+  useShowWindowOnReady()
   useStartupRestore()
   useExternalChanges()
   useTheme()

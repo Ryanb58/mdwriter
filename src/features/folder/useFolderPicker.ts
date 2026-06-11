@@ -23,35 +23,24 @@ export async function openFolder(
     setRecent: (l: string[]) => void
   },
 ) {
-  const prev = useStore.getState()
-  const prevRoot = prev.rootPath
-  const prevTree = prev.tree
-
   // Switching vaults: drop any open file so the editor doesn't carry stale
   // state from the previous vault. useAutoSave's cleanup flushes pending
   // writes when openDoc.path changes, so unsaved edits aren't lost.
   useStore.setState({ selectedPath: null, selectedPaths: new Set(), expandedFolders: new Set(), openDoc: null })
 
-  // Paint the vault shell immediately — the toolbar/status bar don't need
-  // the tree, which on a large vault is the slow part of opening.
+  await ipc.stopWatcher().catch(() => {})
+  const opts = treeOptionsFromSettings(useStore.getState().settings)
+  // The watcher doesn't depend on the tree listing — start it in parallel.
+  // listTree is also what establishes the vault scope on the Rust side, so
+  // rootPath must only be set once it has succeeded (hooks keyed on
+  // rootPath — chat hydration, autosave — immediately issue vault-scoped
+  // commands).
+  const [tree] = await Promise.all([
+    ipc.listTree(path, opts),
+    ipc.startWatcher(path),
+  ])
   deps.setRoot(path)
-
-  try {
-    await ipc.stopWatcher().catch(() => {})
-    const opts = treeOptionsFromSettings(useStore.getState().settings)
-    // The watcher doesn't depend on the tree listing — start it in parallel.
-    const [tree] = await Promise.all([
-      ipc.listTree(path, opts),
-      ipc.startWatcher(path),
-    ])
-    deps.setTree(tree)
-  } catch (e) {
-    // Folder unreadable — roll the shell back so the UI doesn't show a
-    // vault frame over nothing.
-    deps.setRoot(prevRoot)
-    useStore.setState({ tree: prevTree })
-    throw e
-  }
+  deps.setTree(tree)
 
   // Drop the user back into the note they were writing in this vault.
   restoreLastFile(path)

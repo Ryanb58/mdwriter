@@ -42,6 +42,7 @@ export function EditorPane() {
   const setEditorView = useStore((s) => s.setEditorMode)
   const patch = useStore((s) => s.patchOpenDoc)
   const rootPath = useStore((s) => s.rootPath)
+  const focusMode = useStore((s) => s.focusMode)
 
   if (!doc) {
     return <EmptyEditorState />
@@ -81,7 +82,14 @@ export function EditorPane() {
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-hidden">
+      <div
+        className={[
+          "flex-1 overflow-hidden",
+          // Focus mode: panels are hidden (LayoutShell), so center the text
+          // column at a comfortable reading measure instead of full-bleed.
+          focusMode ? "w-full max-w-[44rem] mx-auto" : "",
+        ].join(" ")}
+      >
         {editorView === "block" ? (
           // Empty fallback (not a spinner): the chunk is usually warm by the
           // time a doc opens, so any flash would just be visual noise.

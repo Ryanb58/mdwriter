@@ -107,6 +107,13 @@ export type AppStore = {
    * launch.
    */
   propertiesExpanded: boolean
+  /**
+   * Focus mode: both side panels hidden, editor centered at a comfortable
+   * measure. Session-scoped (never persisted) — toggled with ⌘⇧↩ or the
+   * toolbar button; LayoutShell owns the panel stash/restore.
+   */
+  focusMode: boolean
+  setFocusMode(v: boolean): void
   settingsOpen: boolean
   settings: Settings
   renamingPath: string | null
@@ -420,6 +427,7 @@ export const useStore = create<AppStore>()(
       docRev: 0,
       editorMode: "block",
       propertiesExpanded: true,
+      focusMode: false,
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
@@ -508,6 +516,7 @@ export const useStore = create<AppStore>()(
       bumpDocRev: () => set((s) => ({ docRev: s.docRev + 1 })),
       setEditorMode: (mode) => set({ editorMode: mode }),
       setPropertiesExpanded: (v) => set({ propertiesExpanded: v }),
+      setFocusMode: (v) => set({ focusMode: v }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),

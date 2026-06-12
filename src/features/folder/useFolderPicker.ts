@@ -62,7 +62,7 @@ export async function openFolder(
  */
 function restoreLastFile(vaultPath: string) {
   const s = useStore.getState()
-  const saved = s.lastFileByVault[vaultPath]
+  const saved = s.recentFilesByVault[vaultPath]?.[0]
   if (!saved || !findNode(s.tree, saved)) return
   const expanded = new Set(s.expandedFolders)
   let dir = saved.slice(0, saved.lastIndexOf("/"))

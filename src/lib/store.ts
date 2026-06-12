@@ -86,11 +86,13 @@ export type AppStore = {
   expandedFolders: Set<string>
   pinnedPaths: string[]
   /**
-   * Last markdown file that was open in each vault, persisted so relaunch
-   * (and switching back to a vault) drops the user into the note they were
-   * writing instead of an empty editor. Maintained by setOpenDoc.
+   * Files most recently *opened in the app* per vault, newest first,
+   * persisted. Drives the tree's Recent section ("what was I working on"),
+   * and entry [0] is what relaunch restores. Maintained by setOpenDoc.
+   * Deliberately not disk-mtime based — externally-touched files (git,
+   * sync) shouldn't claim recency the user doesn't recognise.
    */
-  lastFileByVault: Record<string, string>
+  recentFilesByVault: Record<string, string[]>
   openDoc: OpenDoc | null
   /**
    * Bumped whenever an outside caller (e.g. "Apply to note", file watcher
@@ -311,6 +313,9 @@ export function addUsage(prev: ChatUsage, turn: Partial<ChatUsage>): ChatUsage {
   }
 }
 
+/** Per-vault cap on the recently-opened list (Recent shows the top 5). */
+const MAX_RECENT_FILES = 8
+
 const TITLE_FROM_MESSAGE_LEN = 60
 
 /**
@@ -422,7 +427,7 @@ export const useStore = create<AppStore>()(
       selectedPaths: new Set<string>(),
       expandedFolders: new Set<string>(),
       pinnedPaths: [],
-      lastFileByVault: {},
+      recentFilesByVault: {},
       openDoc: null,
       docRev: 0,
       editorMode: "block",
@@ -505,9 +510,15 @@ export const useStore = create<AppStore>()(
           // (file switch or watcher reload), so it can't stay attached to the
           // AI composer — drop it.
           const next: Partial<AppStore> = { openDoc: doc, editorMode: "block", editorSelection: null }
-          // Remember the open file per vault so relaunch can restore it.
-          if (doc && s.rootPath && s.lastFileByVault[s.rootPath] !== doc.path) {
-            next.lastFileByVault = { ...s.lastFileByVault, [s.rootPath]: doc.path }
+          // Record the open in this vault's recency list (newest first,
+          // deduped, capped) so the Recent section and relaunch restore
+          // both reflect what the user actually opened.
+          if (doc && s.rootPath) {
+            const cur = s.recentFilesByVault[s.rootPath] ?? []
+            if (cur[0] !== doc.path) {
+              const updated = [doc.path, ...cur.filter((p) => p !== doc.path)].slice(0, MAX_RECENT_FILES)
+              next.recentFilesByVault = { ...s.recentFilesByVault, [s.rootPath]: updated }
+            }
           }
           return next
         }),
@@ -717,7 +728,7 @@ export const useStore = create<AppStore>()(
         aiAgent: s.aiAgent,
         aiPermissionMode: s.aiPermissionMode,
         pinnedPaths: s.pinnedPaths,
-        lastFileByVault: s.lastFileByVault,
+        recentFilesByVault: s.recentFilesByVault,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppStore> & {
@@ -739,10 +750,24 @@ export const useStore = create<AppStore>()(
         const pinnedPaths = Array.isArray(p.pinnedPaths)
           ? p.pinnedPaths.filter((path): path is string => typeof path === "string")
           : current.pinnedPaths
-        const lastFileByVault: Record<string, string> = {}
-        if (p.lastFileByVault && typeof p.lastFileByVault === "object") {
-          for (const [vault, file] of Object.entries(p.lastFileByVault)) {
-            if (typeof file === "string") lastFileByVault[vault] = file
+        const recentFilesByVault: Record<string, string[]> = {}
+        if (p.recentFilesByVault && typeof p.recentFilesByVault === "object") {
+          for (const [vault, files] of Object.entries(p.recentFilesByVault)) {
+            if (Array.isArray(files)) {
+              recentFilesByVault[vault] = files
+                .filter((f): f is string => typeof f === "string")
+                .slice(0, MAX_RECENT_FILES)
+            }
+          }
+        }
+        // Migrate the short-lived lastFileByVault shape (single path per
+        // vault) into a one-element recency list.
+        const legacyLast = (p as { lastFileByVault?: Record<string, unknown> }).lastFileByVault
+        if (legacyLast && typeof legacyLast === "object") {
+          for (const [vault, file] of Object.entries(legacyLast)) {
+            if (typeof file === "string" && !recentFilesByVault[vault]) {
+              recentFilesByVault[vault] = [file]
+            }
           }
         }
         // Strip retired keys: rightPaneTab (the right pane is now
@@ -753,12 +778,13 @@ export const useStore = create<AppStore>()(
           aiPanelVisible: _av,
           rightPane: _rp,
           rightPaneTab: _rpt,
+          lastFileByVault: _lfv,
           ...rest
-        } = p
-        void _pv; void _av; void _rp; void _rpt
+        } = p as typeof p & { lastFileByVault?: unknown }
+        void _pv; void _av; void _rp; void _rpt; void _lfv
         const propertiesExpanded =
           typeof p.propertiesExpanded === "boolean" ? p.propertiesExpanded : current.propertiesExpanded
-        return { ...current, ...rest, settings, propertiesExpanded, pinnedPaths, lastFileByVault }
+        return { ...current, ...rest, settings, propertiesExpanded, pinnedPaths, recentFilesByVault }
       },
     },
   ),

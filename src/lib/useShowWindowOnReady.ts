@@ -14,13 +14,17 @@ export function useShowWindowOnReady() {
       requestAnimationFrame(() => {
         if (cancelled) return
         ;(async () => {
+          // Outside Tauri (browser dev / e2e) there's no window to show.
+          if (!("__TAURI_INTERNALS__" in window)) return
           try {
             const { getCurrentWindow } = await import("@tauri-apps/api/window")
             const w = getCurrentWindow()
             await w.show()
             await w.setFocus()
-          } catch {
-            // Browser dev / e2e — no Tauri window to show.
+          } catch (e) {
+            // Loud on purpose: a denied window:allow-show capability leaves
+            // the app invisible until the Rust failsafe fires 5s later.
+            console.error("show-on-ready failed — window stays hidden until failsafe", e)
           }
         })()
       })

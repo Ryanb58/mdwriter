@@ -6,7 +6,7 @@ function reset() {
     openDoc: null,
     editorSelection: null,
     rootPath: null,
-    lastFileByVault: {},
+    recentFilesByVault: {},
   })
 }
 

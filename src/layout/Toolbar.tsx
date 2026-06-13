@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { SidebarSimple, Robot, ArrowsInLineHorizontal } from "@phosphor-icons/react"
+import { SidebarSimple, ArrowsInLineHorizontal } from "@phosphor-icons/react"
 import { useStore } from "../lib/store"
 import { useLayout } from "./LayoutContext"
 import { useIsMacTauri } from "./useIsMacTauri"
@@ -9,14 +9,14 @@ import { isOverlayMode } from "./constants"
 export function Toolbar({ center }: { center?: ReactNode }) {
   const { leftState, rightState, mode, togglePanel, setPanelState } = useLayout()
   const leftOpen = leftState === "open"
-  // The right pane hosts only the assistant, so one toggle covers it — the
-  // old separate "sidebar" chevron duplicated this exact action.
-  const aiActive = rightState === "open"
+  // The right pane is tabbed (Properties / Assistant), so this toggle just
+  // shows or hides the pane — tab selection lives in the pane and its rail.
+  const rightOpen = rightState === "open"
   const isMacTauri = useIsMacTauri()
   const { onMouseDown, onDoubleClick } = useDragRegion()
 
-  function toggleAi() {
-    if (aiActive) {
+  function toggleRight() {
+    if (rightOpen) {
       setPanelState("right", isOverlayMode(mode) ? "closed" : "rail")
       return
     }
@@ -53,14 +53,14 @@ export function Toolbar({ center }: { center?: ReactNode }) {
         <button
           type="button"
           className="layout-toolbar-btn"
-          aria-expanded={aiActive}
+          aria-expanded={rightOpen}
           aria-controls="layout-panel-right"
-          aria-label={aiActive ? "Hide assistant" : "Show assistant"}
-          title={aiActive ? "Hide assistant" : "Show assistant"}
-          onClick={toggleAi}
-          data-active={aiActive ? "true" : undefined}
+          aria-label={rightOpen ? "Hide sidebar" : "Show sidebar"}
+          title={rightOpen ? "Hide sidebar" : "Show sidebar"}
+          onClick={toggleRight}
+          data-active={rightOpen ? "true" : undefined}
         >
-          <Robot size={16} weight={aiActive ? "fill" : "regular"} />
+          <SidebarSimple size={16} weight={rightOpen ? "fill" : "regular"} className="-scale-x-100" />
         </button>
       </div>
     </div>

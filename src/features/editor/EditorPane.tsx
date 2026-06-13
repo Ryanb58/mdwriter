@@ -11,7 +11,6 @@ import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
 import { targetParentDir } from "../tree/targetDir"
-import { PropertiesSection } from "../properties/PropertiesSection"
 import { FindBar } from "./FindBar"
 
 // The block editor pulls the multi-megabyte editor-vendor chunk (BlockNote +
@@ -73,7 +72,6 @@ export function EditorPane() {
           <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
         </div>
       </div>
-      <PropertiesSection />
       {doc.parseError && (
         <div className="flex items-start gap-2 border-b border-border bg-danger/10 text-danger px-5 py-2 text-[13px]">
           <Warning size={14} className="flex-none mt-0.5" />

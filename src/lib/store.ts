@@ -4,6 +4,9 @@ import type { TreeNode, AgentId, AgentAvailability, PermissionMode, AiPermission
 
 export type EditorMode = "block" | "raw"
 
+/** Which tab the right sidebar pane is showing. */
+export type RightPaneTab = "properties" | "ai"
+
 export type OpenDoc = {
   path: string
   /**
@@ -104,11 +107,10 @@ export type AppStore = {
   bumpDocRev(): void
   editorMode: EditorMode
   /**
-   * Whether the in-editor frontmatter section is expanded. Persisted —
-   * writers who never use properties shouldn't see them re-open on every
-   * launch.
+   * Which tab the right sidebar shows — frontmatter Properties for the open
+   * file, or the AI Assistant. Persisted so the choice survives launches.
    */
-  propertiesExpanded: boolean
+  rightPaneTab: RightPaneTab
   /**
    * Focus mode: both side panels hidden, editor centered at a comfortable
    * measure. Session-scoped (never persisted) — toggled with ⌘⇧↩ or the
@@ -153,7 +155,7 @@ export type AppStore = {
   setOpenDoc(doc: OpenDoc | null): void
   patchOpenDoc(patch: Partial<OpenDoc>): void
   setEditorMode(mode: EditorMode): void
-  setPropertiesExpanded(v: boolean): void
+  setRightPaneTab(tab: RightPaneTab): void
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
@@ -431,7 +433,7 @@ export const useStore = create<AppStore>()(
       openDoc: null,
       docRev: 0,
       editorMode: "block",
-      propertiesExpanded: true,
+      rightPaneTab: "properties",
       focusMode: false,
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
@@ -526,7 +528,7 @@ export const useStore = create<AppStore>()(
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
       bumpDocRev: () => set((s) => ({ docRev: s.docRev + 1 })),
       setEditorMode: (mode) => set({ editorMode: mode }),
-      setPropertiesExpanded: (v) => set({ propertiesExpanded: v }),
+      setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
       setFocusMode: (v) => set({ focusMode: v }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setSetting: (key, value) =>
@@ -724,7 +726,7 @@ export const useStore = create<AppStore>()(
       // document are session-scoped and reload from disk on launch.
       partialize: (s) => ({
         settings: s.settings,
-        propertiesExpanded: s.propertiesExpanded,
+        rightPaneTab: s.rightPaneTab,
         aiAgent: s.aiAgent,
         aiPermissionMode: s.aiPermissionMode,
         pinnedPaths: s.pinnedPaths,
@@ -735,7 +737,7 @@ export const useStore = create<AppStore>()(
           propertiesVisible?: boolean
           aiPanelVisible?: boolean
           rightPane?: string | null
-          rightPaneTab?: string
+          propertiesExpanded?: boolean
         }
         // Re-merge settings against DEFAULT_SETTINGS so any field added in a
         // later release picks up its default for users who persisted earlier.
@@ -770,21 +772,30 @@ export const useStore = create<AppStore>()(
             }
           }
         }
-        // Strip retired keys: rightPaneTab (the right pane is now
-        // assistant-only; properties live in the editor) plus the older
-        // visibility flags it had itself migrated from.
+        // Recover the right-pane tab choice, migrating from the older
+        // visibility flags (and from the short-lived propertiesExpanded key
+        // that briefly replaced this when properties lived in the editor).
+        // Layout open/closed state is owned by the layout module — we only
+        // restore which *tab* the pane shows.
+        let rightPaneTab: RightPaneTab = current.rightPaneTab
+        if (p.rightPaneTab === "properties" || p.rightPaneTab === "ai") {
+          rightPaneTab = p.rightPaneTab
+        } else if (p.rightPane === "ai" || p.aiPanelVisible) {
+          rightPaneTab = "ai"
+        } else if (p.rightPane === "properties" || p.propertiesVisible) {
+          rightPaneTab = "properties"
+        }
+        // Strip legacy/retired keys so they don't leak into the live store.
         const {
           propertiesVisible: _pv,
           aiPanelVisible: _av,
           rightPane: _rp,
-          rightPaneTab: _rpt,
+          propertiesExpanded: _pe,
           lastFileByVault: _lfv,
           ...rest
         } = p as typeof p & { lastFileByVault?: unknown }
-        void _pv; void _av; void _rp; void _rpt; void _lfv
-        const propertiesExpanded =
-          typeof p.propertiesExpanded === "boolean" ? p.propertiesExpanded : current.propertiesExpanded
-        return { ...current, ...rest, settings, propertiesExpanded, pinnedPaths, recentFilesByVault }
+        void _pv; void _av; void _rp; void _pe; void _lfv
+        return { ...current, ...rest, settings, rightPaneTab, pinnedPaths, recentFilesByVault }
       },
     },
   ),

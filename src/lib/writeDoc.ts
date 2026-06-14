@@ -1,6 +1,8 @@
 import { ipc } from "./ipc"
 import { useStore } from "./store"
 import { debounce } from "./debounce"
+import { basename } from "./paths"
+import { showToast } from "./toast"
 import { noteSelfWrite } from "../features/watcher/useExternalChanges"
 
 const SAVE_DELAY_MS = 500
@@ -22,12 +24,17 @@ function ensurePending(): SaveDebounced {
     try {
       noteSelfWrite(path)
       await ipc.writeFile(path, text)
+      // Re-stamp after the bytes land: on a slow write (large doc, slow
+      // disk) the watcher event fires relative to write completion, and a
+      // stamp taken only at write start can age out of the echo window.
+      noteSelfWrite(path)
       const cur = useStore.getState().openDoc
       if (cur && cur.path === path) {
         useStore.getState().patchOpenDoc({ dirty: false, savedAt: Date.now() })
       }
     } catch (e) {
       console.error("save failed", e)
+      showToast(`Couldn't save ${basename(path)}`, { kind: "error" })
     }
   }, SAVE_DELAY_MS)
   pending = created
@@ -70,4 +77,5 @@ export async function writeOpenDocNow(path: string, text: string): Promise<void>
   cancelPendingOpenDocSave()
   noteSelfWrite(path)
   await ipc.writeFile(path, text)
+  noteSelfWrite(path)
 }

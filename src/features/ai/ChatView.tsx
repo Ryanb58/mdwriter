@@ -1,11 +1,17 @@
-import { useEffect, useRef } from "react"
+import { lazy, Suspense, useEffect, useRef } from "react"
 import { useStore, type AssistantMessage } from "../../lib/store"
 import { basename } from "../../lib/paths"
-import { MarkdownView } from "./MarkdownView"
 import { MessageActions } from "./MessageActions"
 import { PermissionApprovalCard } from "./PermissionApprovalCard"
 import { ToolActionCard } from "./ToolActionCard"
 import { sendPrompt } from "./useAiSession"
+
+// react-markdown + remark/rehype live in the heavy editor-vendor chunk; a
+// lazy import keeps the chat panel from dragging that chunk into the app's
+// first paint. Fallback renders the raw text so streaming never blanks.
+const MarkdownView = lazy(() =>
+  import("./MarkdownView").then((m) => ({ default: m.MarkdownView })),
+)
 
 export function ChatView() {
   const messages = useStore((s) => s.aiMessages)
@@ -119,7 +125,11 @@ function AssistantBlock({
       {isLast && running && !msg.finished && msg.text === "" && msg.tools.length === 0 && (
         <SpinnerIfNoPending />
       )}
-      {msg.text && <MarkdownView text={msg.text} />}
+      {msg.text && (
+        <Suspense fallback={<div className="text-text whitespace-pre-wrap break-words">{msg.text}</div>}>
+          <MarkdownView text={msg.text} />
+        </Suspense>
+      )}
       {/* Only show actions once the message has *something* — copy of an empty
           message isn't useful, and regenerate while streaming is unsafe. */}
       {(msg.finished || msg.text.length > 0) && (

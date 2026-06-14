@@ -96,6 +96,31 @@ export function setFrontmatterField(text: string, key: string, value: unknown): 
   return spliceYamlKey(text, key, formatYamlKv(key, value))
 }
 
+/**
+ * Rename a frontmatter key in place, preserving its value and its position
+ * in the block. Refuses to clobber an existing key and is a no-op when the
+ * key is absent or unchanged. Only the key token on the `key:` line is
+ * rewritten; the value and any continuation lines pass through untouched.
+ */
+export function renameFrontmatterField(text: string, oldKey: string, newKey: string): string {
+  const trimmed = newKey.trim()
+  if (!trimmed || trimmed === oldKey) return text
+  const r = parseDoc(text)
+  if (!r.frontmatterRange || !(oldKey in r.values) || trimmed in r.values) return text
+
+  const m = text.match(FM_RE)
+  if (!m) return text
+  const yamlSrc = m[1]
+  const lines = yamlSrc.split("\n")
+  const idx = findKeyLine(lines, oldKey)
+  if (idx === -1) return text
+  // findKeyLine guarantees lines[idx] starts with `${oldKey}:`; swap only the
+  // key token and keep the `: value` remainder verbatim.
+  lines[idx] = trimmed + lines[idx].slice(oldKey.length)
+  const newYamlSrc = lines.join("\n")
+  return text.slice(0, YAML_CONTENT_START) + newYamlSrc + text.slice(YAML_CONTENT_START + yamlSrc.length)
+}
+
 export function removeFrontmatterField(text: string, key: string): string {
   const r = parseDoc(text)
   if (!r.frontmatterRange) return text
@@ -226,12 +251,17 @@ function parseSimpleYaml(yaml: string): Record<string, unknown> {
         i = j
         continue
       }
-      // Skip any indented continuation lines so they don't get
-      // mis-parsed as siblings of the outer block.
+      // No bullet items. If indented lines follow, it's a nested mapping /
+      // block scalar we don't model — skip them and leave the key out of
+      // `out` so the splice mutators preserve it byte-for-byte.
       let k = i + 1
       while (k < lines.length && /^\s+\S/.test(lines[k])) k++
-      // Don't add `key` to `out` — the value shape is something we don't
-      // model, so leave it untouched on edits via the splice path.
+      if (k === i + 1) {
+        // Nothing followed the `key:` — it's a bare empty scalar, e.g. a
+        // freshly added `name:` field. Record it as an empty string so it
+        // surfaces as an editable property instead of silently vanishing.
+        out[key] = ""
+      }
       i = k
       continue
     }

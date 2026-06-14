@@ -3,9 +3,8 @@ mod errors;
 mod state;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
-#[cfg(debug_assertions)]
-use tauri::Manager;
 use tauri::Emitter;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -62,7 +61,18 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                // Never restore visibility: the window starts hidden
+                // (`visible: false` in tauri.conf.json) and the frontend
+                // shows it after first paint so launch never flashes an
+                // unpainted frame.
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        .difference(tauri_plugin_window_state::StateFlags::VISIBLE),
+                )
+                .build(),
+        )
         .manage(state::AppState::default())
         .manage(commands::agents::AgentSession::default())
         .setup(|app| {
@@ -125,6 +135,23 @@ pub fn run() {
 
             app.set_menu(menu)?;
 
+            // Failsafe for the hidden-until-first-paint launch flow: if the
+            // webview never boots (frontend crash, asset load failure), show
+            // the window anyway after a grace period so the app can't end up
+            // running invisibly.
+            {
+                let app_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        if !w.is_visible().unwrap_or(true) {
+                            log::warn!("frontend never signaled ready; showing window via failsafe");
+                            let _ = w.show();
+                        }
+                    }
+                });
+            }
+
             app.on_menu_event(move |app_handle, event| {
                 match event.id().as_ref() {
                     "settings" => {
@@ -176,6 +203,14 @@ pub fn run() {
             commands::chats::delete_chat,
             commands::skills::list_skills,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Quitting must not orphan a running agent subprocess — the
+            // reader/waiter threads die with the app, but the spawned
+            // `claude` child would keep running without this.
+            if let tauri::RunEvent::Exit = event {
+                commands::agents::shutdown_session(app_handle);
+            }
+        });
 }

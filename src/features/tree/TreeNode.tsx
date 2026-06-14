@@ -134,7 +134,7 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
       <div
         className={[
           "group relative flex items-center gap-1.5 px-2 py-[3px] rounded-md cursor-pointer select-none",
-          "transition-colors",
+          "transition-[color,background-color,opacity] duration-150",
           fileSelected || dirSelected
             ? "bg-accent-soft text-text"
             : "hover:bg-elevated text-text-muted hover:text-text",
@@ -192,7 +192,7 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className={`min-w-0 flex-1 truncate ${isAnchor ? "font-medium" : ""}`}>{displayName}</span>
+          <span className={`min-w-0 flex-1 truncate ${isAnchor ? "font-medium" : ""}`} title={displayName}>{displayName}</span>
         )}
         {canPin && !renaming && (
           <button

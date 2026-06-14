@@ -81,6 +81,10 @@ impl Agent for ClaudeCodeAgent {
 
     fn parse_line(&self, line: &str) -> Vec<AiStreamEvent> {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            // Don't silently drop protocol garbage — a malformed line here
+            // is the only trace of an agent-side bug or a truncated stream.
+            let preview: String = line.chars().take(200).collect();
+            log::warn!("unparseable agent NDJSON line ({} bytes): {preview}", line.len());
             return Vec::new();
         };
 

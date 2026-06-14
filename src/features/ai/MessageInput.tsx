@@ -548,13 +548,25 @@ function SlashPopover({
 }
 
 /**
+ * Templated prompts for the selection chip's quick actions. The selection
+ * itself rides along via the chip, so the templates don't embed the text.
+ */
+const SELECTION_QUICK_ACTIONS = [
+  { label: "Summarize", prompt: "Summarize the selected text in 3–5 bullet points." },
+  { label: "Improve", prompt: "Rewrite the selected text to be clearer and tighter. Keep the meaning and tone." },
+  { label: "Explain", prompt: "Explain the selected text in plain language." },
+] as const
+
+/**
  * Floats above the textarea when the user has text selected in either editor
  * mode. The chip's X marks the selection as detached (`attached: false`); the
- * next non-empty selection re-attaches automatically.
+ * next non-empty selection re-attaches automatically. Quick-action buttons
+ * pre-fill the composer with a templated prompt — they never auto-send.
  */
 function SelectionChip() {
   const selection = useStore((s) => s.editorSelection)
   const detach = useStore((s) => s.detachEditorSelection)
+  const requestAiDraft = useStore((s) => s.requestAiDraft)
   if (!selection || !selection.text || !selection.attached) return null
 
   const lineCount = selection.text.split("\n").length
@@ -576,6 +588,19 @@ function SelectionChip() {
           <span className="text-text-subtle">· {summary}</span>
         </div>
         <div className="text-text-subtle truncate font-mono text-[11px]">{preview}</div>
+        <div className="mt-0.5 flex items-center gap-2">
+          {SELECTION_QUICK_ACTIONS.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={() => requestAiDraft(action.prompt)}
+              className="text-[10px] text-text-subtle hover:text-text transition-colors"
+              title={action.prompt}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
       </div>
       <button
         type="button"

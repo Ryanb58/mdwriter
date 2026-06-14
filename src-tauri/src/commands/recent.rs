@@ -13,10 +13,20 @@ fn recent_path(app: &tauri::AppHandle) -> Result<PathBuf> {
 }
 
 fn load(path: &std::path::Path) -> Vec<String> {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    match std::fs::read_to_string(path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_else(|e| {
+            // A corrupt file (partial write, manual edit) resets the list —
+            // leave a trace so the vanished history is explainable.
+            log::warn!("recent.json unreadable, resetting: {e}");
+            Vec::new()
+        }),
+        Err(e) => {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("failed to read recent.json: {e}");
+            }
+            Vec::new()
+        }
+    }
 }
 
 fn save(path: &std::path::Path, list: &[String]) -> Result<()> {

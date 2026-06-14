@@ -22,6 +22,7 @@
     "@codemirror/language": "^6.12.3",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.42.1",
+    "@fontsource/ia-writer-quattro": "^5.2.5",
     "@phosphor-icons/react": "^2.1.10",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",

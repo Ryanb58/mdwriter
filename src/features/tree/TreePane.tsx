@@ -21,7 +21,7 @@ export function TreePane() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-end gap-1 px-2 py-1.5">
+      <div className="flex items-center justify-end gap-1 px-2 py-2">
         <button
           onClick={() => target && actions.newFile(target)}
           className="p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"

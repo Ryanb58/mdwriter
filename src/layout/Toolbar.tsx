@@ -1,27 +1,25 @@
 import type { ReactNode } from "react"
-import { SidebarSimple, Sidebar, Robot } from "@phosphor-icons/react"
+import { SidebarSimple, ArrowsInLineHorizontal } from "@phosphor-icons/react"
+import { useStore } from "../lib/store"
 import { useLayout } from "./LayoutContext"
 import { useIsMacTauri } from "./useIsMacTauri"
 import { useDragRegion } from "./useDragRegion"
-import { useStore } from "../lib/store"
 import { isOverlayMode } from "./constants"
 
 export function Toolbar({ center }: { center?: ReactNode }) {
   const { leftState, rightState, mode, togglePanel, setPanelState } = useLayout()
   const leftOpen = leftState === "open"
+  // The right pane is tabbed (Properties / Assistant), so this toggle just
+  // shows or hides the pane — tab selection lives in the pane and its rail.
   const rightOpen = rightState === "open"
-  const rightTab = useStore((s) => s.rightPaneTab)
-  const setRightTab = useStore((s) => s.setRightPaneTab)
-  const aiActive = rightOpen && rightTab === "ai"
   const isMacTauri = useIsMacTauri()
   const { onMouseDown, onDoubleClick } = useDragRegion()
 
-  function toggleAi() {
-    if (aiActive) {
+  function toggleRight() {
+    if (rightOpen) {
       setPanelState("right", isOverlayMode(mode) ? "closed" : "rail")
       return
     }
-    setRightTab("ai")
     setPanelState("right", "open")
   }
 
@@ -51,29 +49,38 @@ export function Toolbar({ center }: { center?: ReactNode }) {
         {center}
       </div>
       <div className="layout-toolbar-group">
-        <button
-          type="button"
-          className="layout-toolbar-btn"
-          aria-pressed={aiActive}
-          aria-label={aiActive ? "Hide assistant" : "Show assistant"}
-          title={aiActive ? "Hide assistant" : "Show assistant"}
-          onClick={toggleAi}
-          data-active={aiActive ? "true" : undefined}
-        >
-          <Robot size={16} weight={aiActive ? "fill" : "regular"} />
-        </button>
+        <FocusModeButton />
         <button
           type="button"
           className="layout-toolbar-btn"
           aria-expanded={rightOpen}
           aria-controls="layout-panel-right"
-          aria-label={rightOpen ? "Collapse sidebar" : "Expand sidebar"}
-          title={rightOpen ? "Collapse sidebar" : "Expand sidebar"}
-          onClick={() => togglePanel("right")}
+          aria-label={rightOpen ? "Hide sidebar" : "Show sidebar"}
+          title={rightOpen ? "Hide sidebar" : "Show sidebar"}
+          onClick={toggleRight}
+          data-active={rightOpen ? "true" : undefined}
         >
-          <Sidebar size={16} weight={rightOpen ? "fill" : "regular"} />
+          <SidebarSimple size={16} weight={rightOpen ? "fill" : "regular"} className="-scale-x-100" />
         </button>
       </div>
     </div>
+  )
+}
+
+function FocusModeButton() {
+  const focusMode = useStore((s) => s.focusMode)
+  const setFocusMode = useStore((s) => s.setFocusMode)
+  return (
+    <button
+      type="button"
+      className="layout-toolbar-btn"
+      aria-pressed={focusMode}
+      aria-label={focusMode ? "Exit focus mode" : "Focus mode"}
+      title={focusMode ? "Exit focus mode (⌘⇧↩)" : "Focus mode (⌘⇧↩)"}
+      onClick={() => setFocusMode(!focusMode)}
+      data-active={focusMode ? "true" : undefined}
+    >
+      <ArrowsInLineHorizontal size={16} weight={focusMode ? "fill" : "regular"} />
+    </button>
   )
 }

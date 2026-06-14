@@ -5,6 +5,7 @@ import {
   setBody,
   getFrontmatterValues,
   setFrontmatterField,
+  renameFrontmatterField,
   removeFrontmatterField,
 } from "../doc"
 
@@ -238,6 +239,67 @@ describe("invariant: unmodeled YAML survives mutations of other keys", () => {
     const next = setFrontmatterField(text, "added", "y")
     expect(parseDoc(next).values).toEqual({ existing: "x", added: "y" })
     expect(getBody(next)).toBe("body")
+  })
+})
+
+describe("empty-scalar fields", () => {
+  it("surfaces a bare empty key as an empty string (freshly added field)", () => {
+    // Regression: `name:` with no value was dropped from the values map, so a
+    // just-added field vanished from the properties UI even though the YAML
+    // had been written.
+    expect(getFrontmatterValues("---\nname:\n---\nbody")).toEqual({ name: "" })
+  })
+
+  it("treats a trailing-space empty key as empty too", () => {
+    expect(getFrontmatterValues("---\nname: \ntitle: T\n---\nbody"))
+      .toEqual({ name: "", title: "T" })
+  })
+
+  it("still skips a key followed by an indented nested mapping", () => {
+    // The empty-scalar fix must not start recording unmodeled nested values.
+    expect(getFrontmatterValues("---\nnested:\n  a: 1\ntitle: T\n---\nbody"))
+      .toEqual({ title: "T" })
+  })
+
+  it("round-trips setting a value on a previously empty field", () => {
+    const text = "---\nname:\n---\nbody"
+    const next = setFrontmatterField(text, "name", "Ada")
+    expect(parseDoc(next).values).toEqual({ name: "Ada" })
+    expect(getBody(next)).toBe("body")
+  })
+})
+
+describe("renameFrontmatterField", () => {
+  it("renames a key, preserving its value and position", () => {
+    const text = "---\na: 1\nname: Ada\nb: 2\n---\nbody"
+    const next = renameFrontmatterField(text, "name", "author")
+    expect(parseDoc(next).values).toEqual({ a: 1, author: "Ada", b: 2 })
+    // Position preserved: still the middle line.
+    expect(next).toContain("a: 1\nauthor: Ada\nb: 2")
+    expect(getBody(next)).toBe("body")
+  })
+
+  it("renames an empty field", () => {
+    const next = renameFrontmatterField("---\nname:\n---\nbody", "name", "title")
+    expect(parseDoc(next).values).toEqual({ title: "" })
+  })
+
+  it("refuses to clobber an existing key", () => {
+    const text = "---\na: 1\nb: 2\n---\nbody"
+    expect(renameFrontmatterField(text, "a", "b")).toBe(text)
+  })
+
+  it("is a no-op for an absent key, an unchanged name, or an empty name", () => {
+    const text = "---\na: 1\n---\nbody"
+    expect(renameFrontmatterField(text, "missing", "x")).toBe(text)
+    expect(renameFrontmatterField(text, "a", "a")).toBe(text)
+    expect(renameFrontmatterField(text, "a", "  ")).toBe(text)
+  })
+
+  it("leaves the body untouched", () => {
+    const text = "---\nk: v\n---\n\n# Heading\n\ntext"
+    const next = renameFrontmatterField(text, "k", "key")
+    expect(getBody(next)).toBe("# Heading\n\ntext")
   })
 })
 

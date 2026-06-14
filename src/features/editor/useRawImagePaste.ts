@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import type { EditorView } from "@codemirror/view"
 import { useStore } from "../../lib/store"
+import { showToast, errorText } from "../../lib/toast"
 import {
   saveImage,
   mimeToExt,
@@ -81,6 +82,7 @@ export function useRawImagePaste(
         e.preventDefault()
         void insertImage(view!, file).catch((err) => {
           console.error("[image paste] raw paste failed:", err)
+          showToast(`Couldn't paste image: ${errorText(err)}`, { kind: "error" })
         })
         return
       }
@@ -98,6 +100,7 @@ export function useRawImagePaste(
             if (bytes) await insertImageBytes(view!, bytes, "image/png")
           } catch (err) {
             console.error("[image paste] raw clipboard fallback failed:", err)
+            showToast(`Couldn't paste image: ${errorText(err)}`, { kind: "error" })
           }
         })()
       }
@@ -118,6 +121,7 @@ export function useRawImagePaste(
       e.preventDefault()
       void insertImage(view!, file).catch((err) => {
         console.error("[image paste] drop failed:", err)
+        showToast(`Couldn't paste image: ${errorText(err)}`, { kind: "error" })
       })
     }
 

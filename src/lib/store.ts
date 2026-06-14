@@ -4,6 +4,9 @@ import type { TreeNode, AgentId, AgentAvailability, PermissionMode, AiPermission
 
 export type EditorMode = "block" | "raw"
 
+/** Which tab the right sidebar pane is showing. */
+export type RightPaneTab = "properties" | "ai"
+
 export type OpenDoc = {
   path: string
   /**
@@ -19,8 +22,6 @@ export type OpenDoc = {
 }
 
 export type Theme = "light" | "dark" | "system"
-
-export type RightPaneTab = "properties" | "ai"
 
 /**
  * One-shot scroll target consumed by whichever editor is mounted after a doc
@@ -68,6 +69,14 @@ export const DEFAULT_SETTINGS: Settings = {
 export type AppStore = {
   rootPath: string | null
   tree: TreeNode | null
+  /**
+   * True from launch until useStartupRestore has decided whether a recent
+   * vault can be reopened. While true the app renders a neutral shell
+   * instead of flashing "Open a folder" at users whose vault is about to
+   * load. Never persisted.
+   */
+  startupRestoring: boolean
+  setStartupRestoring(v: boolean): void
   recentFolders: string[]
   selectedPath: string | null
   // Full set of selected tree rows (multi-select). Invariant: when
@@ -79,6 +88,14 @@ export type AppStore = {
   // both reason about visibility.
   expandedFolders: Set<string>
   pinnedPaths: string[]
+  /**
+   * Files most recently *opened in the app* per vault, newest first,
+   * persisted. Drives the tree's Recent section ("what was I working on"),
+   * and entry [0] is what relaunch restores. Maintained by setOpenDoc.
+   * Deliberately not disk-mtime based — externally-touched files (git,
+   * sync) shouldn't claim recency the user doesn't recognise.
+   */
+  recentFilesByVault: Record<string, string[]>
   openDoc: OpenDoc | null
   /**
    * Bumped whenever an outside caller (e.g. "Apply to note", file watcher
@@ -89,7 +106,18 @@ export type AppStore = {
   docRev: number
   bumpDocRev(): void
   editorMode: EditorMode
+  /**
+   * Which tab the right sidebar shows — frontmatter Properties for the open
+   * file, or the AI Assistant. Persisted so the choice survives launches.
+   */
   rightPaneTab: RightPaneTab
+  /**
+   * Focus mode: both side panels hidden, editor centered at a comfortable
+   * measure. Session-scoped (never persisted) — toggled with ⌘⇧↩ or the
+   * toolbar button; LayoutShell owns the panel stash/restore.
+   */
+  focusMode: boolean
+  setFocusMode(v: boolean): void
   settingsOpen: boolean
   settings: Settings
   renamingPath: string | null
@@ -287,6 +315,9 @@ export function addUsage(prev: ChatUsage, turn: Partial<ChatUsage>): ChatUsage {
   }
 }
 
+/** Per-vault cap on the recently-opened list (Recent shows the top 5). */
+const MAX_RECENT_FILES = 8
+
 const TITLE_FROM_MESSAGE_LEN = 60
 
 /**
@@ -392,15 +423,18 @@ export const useStore = create<AppStore>()(
     (set) => ({
       rootPath: null,
       tree: null,
+      startupRestoring: true,
       recentFolders: [],
       selectedPath: null,
       selectedPaths: new Set<string>(),
       expandedFolders: new Set<string>(),
       pinnedPaths: [],
+      recentFilesByVault: {},
       openDoc: null,
       docRev: 0,
       editorMode: "block",
       rightPaneTab: "properties",
+      focusMode: false,
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
@@ -422,6 +456,7 @@ export const useStore = create<AppStore>()(
       activeChatId: null,
 
       setRoot: (path) => set({ rootPath: path }),
+      setStartupRestoring: (v) => set({ startupRestoring: v }),
       setTree: (tree) => set({ tree }),
       setRecent: (list) => set({ recentFolders: list }),
       setSelected: (path) =>
@@ -471,12 +506,30 @@ export const useStore = create<AppStore>()(
           const next = s.pinnedPaths.filter((p) => !isUnderAny(p, paths))
           return next.length === s.pinnedPaths.length ? {} : { pinnedPaths: next }
         }),
-      setOpenDoc: (doc) => set({ openDoc: doc, editorMode: "block" }),
+      setOpenDoc: (doc) =>
+        set((s) => {
+          // Any prior editor selection refers to the buffer being replaced
+          // (file switch or watcher reload), so it can't stay attached to the
+          // AI composer — drop it.
+          const next: Partial<AppStore> = { openDoc: doc, editorMode: "block", editorSelection: null }
+          // Record the open in this vault's recency list (newest first,
+          // deduped, capped) so the Recent section and relaunch restore
+          // both reflect what the user actually opened.
+          if (doc && s.rootPath) {
+            const cur = s.recentFilesByVault[s.rootPath] ?? []
+            if (cur[0] !== doc.path) {
+              const updated = [doc.path, ...cur.filter((p) => p !== doc.path)].slice(0, MAX_RECENT_FILES)
+              next.recentFilesByVault = { ...s.recentFilesByVault, [s.rootPath]: updated }
+            }
+          }
+          return next
+        }),
       patchOpenDoc: (patch) =>
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
       bumpDocRev: () => set((s) => ({ docRev: s.docRev + 1 })),
       setEditorMode: (mode) => set({ editorMode: mode }),
       setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
+      setFocusMode: (v) => set({ focusMode: v }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
       setSetting: (key, value) =>
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
@@ -677,12 +730,14 @@ export const useStore = create<AppStore>()(
         aiAgent: s.aiAgent,
         aiPermissionMode: s.aiPermissionMode,
         pinnedPaths: s.pinnedPaths,
+        recentFilesByVault: s.recentFilesByVault,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppStore> & {
           propertiesVisible?: boolean
           aiPanelVisible?: boolean
-          rightPane?: RightPaneTab | null
+          rightPane?: string | null
+          propertiesExpanded?: boolean
         }
         // Re-merge settings against DEFAULT_SETTINGS so any field added in a
         // later release picks up its default for users who persisted earlier.
@@ -697,9 +752,31 @@ export const useStore = create<AppStore>()(
         const pinnedPaths = Array.isArray(p.pinnedPaths)
           ? p.pinnedPaths.filter((path): path is string => typeof path === "string")
           : current.pinnedPaths
-        // Migrate legacy tab + visibility flags into rightPaneTab. Layout
-        // open/closed state is now owned by the layout module, so we only
-        // recover the tab choice here.
+        const recentFilesByVault: Record<string, string[]> = {}
+        if (p.recentFilesByVault && typeof p.recentFilesByVault === "object") {
+          for (const [vault, files] of Object.entries(p.recentFilesByVault)) {
+            if (Array.isArray(files)) {
+              recentFilesByVault[vault] = files
+                .filter((f): f is string => typeof f === "string")
+                .slice(0, MAX_RECENT_FILES)
+            }
+          }
+        }
+        // Migrate the short-lived lastFileByVault shape (single path per
+        // vault) into a one-element recency list.
+        const legacyLast = (p as { lastFileByVault?: Record<string, unknown> }).lastFileByVault
+        if (legacyLast && typeof legacyLast === "object") {
+          for (const [vault, file] of Object.entries(legacyLast)) {
+            if (typeof file === "string" && !recentFilesByVault[vault]) {
+              recentFilesByVault[vault] = [file]
+            }
+          }
+        }
+        // Recover the right-pane tab choice, migrating from the older
+        // visibility flags (and from the short-lived propertiesExpanded key
+        // that briefly replaced this when properties lived in the editor).
+        // Layout open/closed state is owned by the layout module — we only
+        // restore which *tab* the pane shows.
         let rightPaneTab: RightPaneTab = current.rightPaneTab
         if (p.rightPaneTab === "properties" || p.rightPaneTab === "ai") {
           rightPaneTab = p.rightPaneTab
@@ -708,14 +785,17 @@ export const useStore = create<AppStore>()(
         } else if (p.rightPane === "properties" || p.propertiesVisible) {
           rightPaneTab = "properties"
         }
+        // Strip legacy/retired keys so they don't leak into the live store.
         const {
           propertiesVisible: _pv,
           aiPanelVisible: _av,
           rightPane: _rp,
+          propertiesExpanded: _pe,
+          lastFileByVault: _lfv,
           ...rest
-        } = p
-        void _pv; void _av; void _rp
-        return { ...current, ...rest, settings, rightPaneTab, pinnedPaths }
+        } = p as typeof p & { lastFileByVault?: unknown }
+        void _pv; void _av; void _rp; void _pe; void _lfv
+        return { ...current, ...rest, settings, rightPaneTab, pinnedPaths, recentFilesByVault }
       },
     },
   ),

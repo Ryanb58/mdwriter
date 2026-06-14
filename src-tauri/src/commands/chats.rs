@@ -9,9 +9,11 @@
 //! filename stem — the on-disk `id` field is treated as untrusted metadata.
 
 use crate::errors::{AppError, Result};
+use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use tauri::State;
 
 const CHATS_SUBDIR: &str = ".mdwriter/chats";
 
@@ -58,8 +60,36 @@ struct ChatFile {
     updated_at: i64,
 }
 
+// The #[tauri::command] wrappers validate the frontend-supplied vault path
+// against the active vault (set by list_tree) before touching disk, so a
+// compromised webview can't aim the chat store at an arbitrary directory.
+// The *_impl functions hold the real logic and stay directly unit-testable.
+
 #[tauri::command]
-pub fn list_chats(vault_path: String) -> Result<Vec<ChatSummary>> {
+pub fn list_chats(state: State<'_, AppState>, vault_path: String) -> Result<Vec<ChatSummary>> {
+    state.ensure_within_active_vault(Path::new(&vault_path))?;
+    list_chats_impl(vault_path)
+}
+
+#[tauri::command]
+pub fn read_chat(state: State<'_, AppState>, vault_path: String, id: String) -> Result<serde_json::Value> {
+    state.ensure_within_active_vault(Path::new(&vault_path))?;
+    read_chat_impl(vault_path, id)
+}
+
+#[tauri::command]
+pub fn write_chat(state: State<'_, AppState>, vault_path: String, id: String, data: serde_json::Value) -> Result<()> {
+    state.ensure_within_active_vault(Path::new(&vault_path))?;
+    write_chat_impl(vault_path, id, data)
+}
+
+#[tauri::command]
+pub fn delete_chat(state: State<'_, AppState>, vault_path: String, id: String) -> Result<()> {
+    state.ensure_within_active_vault(Path::new(&vault_path))?;
+    delete_chat_impl(vault_path, id)
+}
+
+pub fn list_chats_impl(vault_path: String) -> Result<Vec<ChatSummary>> {
     let root = chats_dir(Path::new(&vault_path));
     let mut summaries: Vec<ChatSummary> = Vec::new();
     let read = match std::fs::read_dir(&root) {
@@ -91,8 +121,7 @@ pub fn list_chats(vault_path: String) -> Result<Vec<ChatSummary>> {
     Ok(summaries)
 }
 
-#[tauri::command]
-pub fn read_chat(vault_path: String, id: String) -> Result<serde_json::Value> {
+pub fn read_chat_impl(vault_path: String, id: String) -> Result<serde_json::Value> {
     let path = chat_path(Path::new(&vault_path), &id)?;
     let text = std::fs::read_to_string(&path)?;
     let value: serde_json::Value =
@@ -100,8 +129,7 @@ pub fn read_chat(vault_path: String, id: String) -> Result<serde_json::Value> {
     Ok(value)
 }
 
-#[tauri::command]
-pub fn write_chat(vault_path: String, id: String, data: serde_json::Value) -> Result<()> {
+pub fn write_chat_impl(vault_path: String, id: String, data: serde_json::Value) -> Result<()> {
     let dir = chats_dir(Path::new(&vault_path));
     std::fs::create_dir_all(&dir)?;
     let path = chat_path(Path::new(&vault_path), &id)?;
@@ -126,8 +154,7 @@ fn write_json_atomic(path: &Path, data: &serde_json::Value) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command]
-pub fn delete_chat(vault_path: String, id: String) -> Result<()> {
+pub fn delete_chat_impl(vault_path: String, id: String) -> Result<()> {
     let path = chat_path(Path::new(&vault_path), &id)?;
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
@@ -160,15 +187,15 @@ mod tests {
             "updatedAt": 2,
             "messages": ["m1"],
         });
-        write_chat(vault.clone(), "abc".into(), data.clone()).unwrap();
-        let read_back = read_chat(vault, "abc".into()).unwrap();
+        write_chat_impl(vault.clone(), "abc".into(), data.clone()).unwrap();
+        let read_back = read_chat_impl(vault, "abc".into()).unwrap();
         assert_eq!(read_back, data);
     }
 
     #[test]
     fn list_returns_empty_when_dir_missing() {
         let tmp = tempdir().unwrap();
-        let list = list_chats(tmp.path().to_string_lossy().to_string()).unwrap();
+        let list = list_chats_impl(tmp.path().to_string_lossy().to_string()).unwrap();
         assert!(list.is_empty());
     }
 
@@ -176,19 +203,19 @@ mod tests {
     fn list_sorts_newest_first() {
         let tmp = tempdir().unwrap();
         let vault = tmp.path().to_string_lossy().to_string();
-        write_chat(
+        write_chat_impl(
             vault.clone(),
             "older".into(),
             serde_json::json!({ "id": "older", "title": "Older", "updatedAt": 100, "createdAt": 1 }),
         )
         .unwrap();
-        write_chat(
+        write_chat_impl(
             vault.clone(),
             "newer".into(),
             serde_json::json!({ "id": "newer", "title": "Newer", "updatedAt": 500, "createdAt": 2 }),
         )
         .unwrap();
-        let list = list_chats(vault).unwrap();
+        let list = list_chats_impl(vault).unwrap();
         assert_eq!(list[0].id, "newer");
         assert_eq!(list[1].id, "older");
     }
@@ -199,13 +226,13 @@ mod tests {
         let vault = tmp.path().to_string_lossy().to_string();
         // JSON id deliberately disagrees with the filename — we trust the
         // filename so callers' subsequent read/delete calls still work.
-        write_chat(
+        write_chat_impl(
             vault.clone(),
             "correct-id".into(),
             serde_json::json!({ "id": "different-id", "title": "X", "updatedAt": 1, "createdAt": 0 }),
         )
         .unwrap();
-        let list = list_chats(vault).unwrap();
+        let list = list_chats_impl(vault).unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, "correct-id");
     }
@@ -214,13 +241,13 @@ mod tests {
     fn list_accepts_legacy_snake_case_timestamps() {
         let tmp = tempdir().unwrap();
         let vault = tmp.path().to_string_lossy().to_string();
-        write_chat(
+        write_chat_impl(
             vault.clone(),
             "legacy".into(),
             serde_json::json!({ "id": "legacy", "title": "L", "updated_at": 42, "created_at": 1 }),
         )
         .unwrap();
-        let list = list_chats(vault).unwrap();
+        let list = list_chats_impl(vault).unwrap();
         assert_eq!(list[0].updated_at, 42);
     }
 
@@ -231,11 +258,11 @@ mod tests {
         // both succeed and leave the second value on disk.
         let tmp = tempdir().unwrap();
         let vault = tmp.path().to_string_lossy().to_string();
-        write_chat(vault.clone(), "x".into(), serde_json::json!({ "id": "x", "title": "first" }))
+        write_chat_impl(vault.clone(), "x".into(), serde_json::json!({ "id": "x", "title": "first" }))
             .unwrap();
-        write_chat(vault.clone(), "x".into(), serde_json::json!({ "id": "x", "title": "second" }))
+        write_chat_impl(vault.clone(), "x".into(), serde_json::json!({ "id": "x", "title": "second" }))
             .unwrap();
-        let value = read_chat(vault, "x".into()).unwrap();
+        let value = read_chat_impl(vault, "x".into()).unwrap();
         assert_eq!(value.get("title").and_then(|v| v.as_str()), Some("second"));
     }
 
@@ -243,8 +270,8 @@ mod tests {
     fn delete_is_idempotent() {
         let tmp = tempdir().unwrap();
         let vault = tmp.path().to_string_lossy().to_string();
-        delete_chat(vault.clone(), "nope".into()).unwrap();
+        delete_chat_impl(vault.clone(), "nope".into()).unwrap();
         // Second call must also succeed.
-        delete_chat(vault, "nope".into()).unwrap();
+        delete_chat_impl(vault, "nope".into()).unwrap();
     }
 }

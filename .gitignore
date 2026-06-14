@@ -30,3 +30,6 @@ pnpm-debug.log*
 target/
 yarn-debug.log*
 yarn-error.log*
+
+# Playwright artifacts
+test-results/

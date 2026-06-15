@@ -1,23 +1,23 @@
 {
   "version": "2026.6.15",
-  "notes": "See https://github.com/Ryanb58/mdwriter/releases/tag/v2026-06-15.155207.5cc9cfb for the full changelog.",
-  "pub_date": "2026-06-15T15:57:26Z",
+  "notes": "See https://github.com/Ryanb58/mdwriter/releases/tag/v2026-06-15.181648.bcb8912 for the full changelog.",
+  "pub_date": "2026-06-15T18:24:50Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlc4T3JBeVdBMHNqQ3puRHNVZ20yQ2xqYUZJbzBMY3FBcS9tbXVnaHhWSGt2QndsazZJNVNxR2lRRkZQT3JhSWRSaUhPOHR3TnBLOWI1VW1Yc1FER0FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNTM4OTQ3CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negptRnJLajcvVHdhWVlhRjZieTFrV3Y4aklzTnlwcDQ3dmR0NmluaGpBZ3Jaai8wNVg4RjA3Q2d3emxrL2pidEJpZzhKWkMwcm82OStXT0NnbjgyS0pEUT09Cg==",
-      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-06-15.155207.5cc9cfb/mdwriter_2026.6.15_macOS_Silicon.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlpkc0E1VlI1SkhhOTA3VWtyamM2UW9HRVdLMHlxQlVFWXdUa0loZzRpQWFNcGI5UkRGQVA4UWlBZmhOaDgzSUJLcWtBcytOd2JrOWdQRXZJTVUwS2dBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNTQ3NTk4CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpKYnFoL3ZjQkJPTE53WGQvaEROQmw5ejlWWFRvNDNxck90LzFFc1VtSzJoaW9VejN3RTRmbkt6SVpaMUtranlHcWNjR3F5YWVqdHJ6MXpoM2lRT0xCUT09Cg==",
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-06-15.181648.bcb8912/mdwriter_2026.6.15_macOS_Silicon.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQmNlSlZnSkpzVnZqR2RGQy9kSVNoZHIrRjVJL3pSYnl0ZDIvb0VBY3hCSG5odFlRWUtnS2FmZ3ZTQnR4NGwxakRwUzZSK3JnSGhiN2RBRWhrTUp6elEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNTM4OTQ3CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negovS0xWSlFlTkZPNnFMbzY2NTQyajRheko2N3hKbjZqY3ZSMHNpTmI4OHYwR3I3OStESGNSK1BMZjBtY1BqVm9ndHpkSXd4TnJQR1FBbmJrMUR3NDVBdz09Cg==",
-      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-06-15.155207.5cc9cfb/mdwriter_2026.6.15_macOS_Intel.app.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlYydEtwZTZHV2NXaXY0cDQ4UWtsalNxOUFPcGRlYitHaStpSzY5OXJoTmh6R2F6RUR5aFA5dDFwdGtJRDRXM082OEZPMW5WQlc4WGNDdE82R1BaUkFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNTQ3NTQ5CWZpbGU6bWR3cml0ZXIuYXBwLnRhci5negpsQUtCUVYwYzM5Z2R2ZWtIV2lYeVFHeWVVZWhvSGpramVvN25pYkhDZjg3TTMwNVBMUXhTQXVrQU0zRFVMbXFLVW9zTkFtNmZFSlRVM0NhZ0ZRMFpDZz09Cg==",
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-06-15.181648.bcb8912/mdwriter_2026.6.15_macOS_Intel.app.tar.gz"
     },
     "windows-x86_64": {
       "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlU1WDlPQk5maXB2NkF4SG5zZGl6WnAyYTdtbkU4MzF3dENrZGo3blMrQWtGMzlzbFBIZC9iVzZXU2VrSW9vLzluNkdrNU5QNlpBL3NHTW50MndJc0FRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4OTk5NTYwCWZpbGU6bWR3cml0ZXJfMjAyNi41LjE3X3g2NC1zZXR1cC5leGUKcEN0YXl2SDFvbmdxRGtlc1oxSFBCZHY2L0RvOGlxVnN2bHY1SjBwUU1vbUpNVWd1amNxUkRzRFQ5RnlOSUkveFJKRVVMQjh4MnFqYXV4TURtRHRyREE9PQo=",
-      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-06-15.155207.5cc9cfb/mdwriter_2026.6.15_x64-setup.exe"
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-06-15.181648.bcb8912/mdwriter_2026.6.15_x64-setup.exe"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlMwZ2JvQVZwQ2o4OURsWTRubEplS2ZHVjRLYTBQNzU4bGt2TDBDekZJRzFNVTk1UHd3SFBnTmtCK0E4YjlMVnljK0pjMEZwUWlsZDBScWd3TjROYVFBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNTM4OTYzCWZpbGU6bWR3cml0ZXJfMjAyNi42LjE1X2FtZDY0LkFwcEltYWdlClRodlZMMEVvLytHejRkWlJoN1dCcUswSjh4ajBzZFVvTUFKS0ZpMTVLR0ZsTnhhZ0JIWHBZam9ZTXpoZWttZEY5N1RzRXdsMSszQ1hmcHUyZHRTMERBPT0K",
-      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-06-15.155207.5cc9cfb/mdwriter_2026.6.15_amd64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTZkZpU3JuYWpjQlh5UzJLSE9UaUNCS2ZUUDV5TEI0dmdqS3NHbTVER2ZiTERWRTF0cjMrTTFITHBpdkU3ZWQvWm42aCt0eTVFOHRzMkV6MmtsSU5SUURZRmhQTzNwVXdvPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgxNTQ3ODU5CWZpbGU6bWR3cml0ZXJfMjAyNi42LjE1X2FtZDY0LkFwcEltYWdlCmkxNFBlY1JZTXZYV0x2bE4xNEZ3Z3lERytwN216WVdTVXp2UDVnT1dRT1RMeFByekt6YlpLREhhMmF1WXNjN1JlK3JVZHFRZkJsSUdRS1VobExad0F3PT0K",
+      "url": "https://github.com/Ryanb58/mdwriter/releases/download/v2026-06-15.181648.bcb8912/mdwriter_2026.6.15_amd64.AppImage"
     }
   }
 }

@@ -260,6 +260,24 @@ body {
 .cm-activeLine, .cm-activeLineGutter { background: var(--color-surface) !important; }
 .cm-content { padding: 24px 16px !important; }
 
+/* CodeMirror lays out the line-number gutter beside the content with flexbox,
+   injecting these rules at runtime via style-mod. In production WebKit builds
+   (Tauri's WKWebView) that injection doesn't win the cascade, so .cm-scroller
+   never becomes a flex row — the gutter and content stack and the numbers drop
+   ~88px below their lines. (Dev injects all CSS synchronously, so it only
+   reproduces in prod.) Pin the layout-critical subset of @codemirror/view's
+   baseTheme here, in a stylesheet that always loads, so raw mode aligns
+   regardless. Values mirror that baseTheme — keep them in sync on CM upgrades. */
+.cm-editor { display: flex !important; flex-direction: column !important; }
+.cm-scroller {
+  display: flex !important;
+  align-items: flex-start !important;
+  line-height: 1.4 !important;
+}
+.cm-content { flex-grow: 2 !important; flex-shrink: 0 !important; }
+.cm-gutters { display: flex !important; flex-shrink: 0 !important; }
+.cm-gutter { display: flex !important; flex-direction: column !important; }
+
 /* Regular markdown links inside the BlockNote editor. Without these the
    accent color is the only visual cue, but BlockNote's inline links don't
    set a color, so links would render as plain text. Solid underline pairs

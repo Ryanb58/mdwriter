@@ -48,8 +48,8 @@ The workflow is **manually triggered** from the Actions tab.
 
 That's it. The workflow:
 
-1. Computes today's UTC date + time and the short SHA of the chosen commit, builds the tag `vYYYY-MM-DD.HHMMSS.<short-sha>`, and pushes it (e.g. `v2026-05-10.034106.a1b2c3d`). Bails if the tag already exists.
-2. Stamps `2026.5.10` into `tauri.conf.json`, `Cargo.toml`, and `package.json`.
+1. Computes today's UTC date + time and the short SHA of the chosen commit, builds the tag `vYYYY-MM-DD.HHMMSS.<short-sha>`, and pushes it (e.g. `v2026-05-10.034106.a1b2c3d`). Bails if the tag already exists. It also computes the semver version `YEAR.MONTH.<build-n>` (e.g. `2026.5.4`) — see [Version format](#version-format).
+2. Stamps that version into `tauri.conf.json`, `Cargo.toml`, and `package.json`.
 3. Builds bundles in parallel for macOS arm64, macOS x86_64, Windows x64, and Linux x64. macOS bundles are ad-hoc codesigned during the build (`APPLE_SIGNING_IDENTITY=-`).
 4. Uploads every artifact to a draft GitHub Release.
 5. **Only after every platform succeeds:** promotes the draft to a published release, then publishes `latest.json` to `gh-pages/updates/`. This is what makes running mdwriter installs see the new version on their next check.
@@ -61,13 +61,19 @@ Watch it at `Actions → Release`. ~10-20 minutes.
 
 `vYYYY-MM-DD.HHMMSS.<git-short-sha>` (UTC time), e.g. `v2026-05-10.034106.a1b2c3d`. Created automatically by the workflow.
 
-The version baked into the bundle is `YYYY.M.D` (no leading zeros — semver doesn't allow them). The hash lives only in the tag and the release name for traceability. The `HHMMSS` component is what keeps the GitHub Releases page in recency order: tags aren't semver, so GitHub falls back to lex-sorting tag names — without a time component, two same-day releases would be ordered by their SHA letters instead of when they were cut.
+The hash and exact date/time live only in the tag and the release name for traceability. The `HHMMSS` component is what keeps the GitHub Releases page in recency order: tags aren't semver, so GitHub falls back to lex-sorting tag names — without a time component, two same-day releases would be ordered by their SHA letters instead of when they were cut.
 
-## Same-day re-release
+## Version format
 
-Two tags on the same day produce the same `YYYY.M.D` version, and Tauri's updater compares versions with semver — so a same-day re-release won't notify existing installs as a new update.
+The version baked into the bundle is `YEAR.MONTH.<build-n>` (no leading zeros — semver forbids them), e.g. `2026.6.7`. It's **not** the date — `<build-n>` is a per-month build counter, not the day.
 
-If you need to ship twice in one day, prefer rolling the date forward. If you really must ship the same date, push the second `latest.json` and the updater will pick it up on the next check (the Update plugin caches a tiny bit; a force-quit + relaunch clears it).
+The `tag` job computes `<build-n>` as **one higher than the highest version already released that month**: it lists existing releases (titles are `mdwriter <version> (<tag>)`), takes the max patch for the current `YEAR.MONTH`, and adds 1. A fresh month starts at `.1`.
+
+Using max-plus-one (rather than a simple count) means the version can never go backwards — even if a release was rolled back, or when an older release that month used the previous `YYYY.M.D` scheme (whose patch happened to be the day-of-month). The updater compares versions with semver precedence, so a strictly-increasing version is what makes it recognize each release as newer.
+
+## Same-day / same-month re-release
+
+No longer a special case. Cut as many releases per day or month as you like — each gets the next consecutive `<build-n>` and the updater treats it as a newer version. (Two releases *from the same commit on the same UTC second* would collide on the tag, not the version; the `tag` job bails on a duplicate tag, so just re-run a moment later or from a new commit.)
 
 ## Rollback / emergency revert
 

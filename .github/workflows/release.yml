@@ -29,11 +29,23 @@ concurrency:
 jobs:
   # ──────────────────────────────────────────────────────────────
   # Job 1: Create the release tag from today's date + current short SHA.
-  # Tag form: vYYYY-MM-DD.HHMMSS.<short-sha>; version YYYY.M.D (no leading
-  # zeros). The HHMMSS component is what keeps the GitHub Releases page in
-  # recency order: tags aren't semver, so GitHub falls back to lex-sorting
-  # tag names — without a time component, two same-day releases would be
-  # ordered by their SHA letters instead of when they were cut.
+  #
+  # Tag form: vYYYY-MM-DD.HHMMSS.<short-sha> (e.g. v2026-06-15.181648.bcb8912).
+  # The HHMMSS component keeps the GitHub Releases page in recency order:
+  # tags aren't semver, so GitHub falls back to lex-sorting tag names —
+  # without a time component, two same-day releases would be ordered by
+  # their SHA letters instead of when they were cut.
+  #
+  # Version form: YEAR.MONTH.<build-n>, e.g. 2026.6.7 (no leading zeros —
+  # semver forbids them). <build-n> is a monotonically increasing per-month
+  # build counter, computed as (highest existing patch for this YEAR.MONTH)
+  # + 1. This is what makes the updater work: it compares versions with
+  # semver precedence, so each release MUST be strictly greater than the
+  # last. A pure date version (the old YYYY.M.D) collided whenever two
+  # releases were cut on the same day — both became e.g. 2026.6.15, and the
+  # second was invisible to already-updated installs. The build counter
+  # removes the one-release-per-day ceiling. The exact date/time/SHA still
+  # live in the tag and release title for traceability.
   # ──────────────────────────────────────────────────────────────
   tag:
     name: Create release tag
@@ -53,13 +65,37 @@ jobs:
       - name: Compute tag and version
         id: compute
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y-%m-%d)
           TIME=$(date -u +%H%M%S)
           TAG="v${DATE}.${TIME}.${SHORT_SHA}"
-          VERSION=$(echo "$DATE" | awk -F- '{printf "%d.%d.%d", $1, $2, $3}')
+
+          # Version is YEAR.MONTH.<build-n>. 10# forces base-10 so a leading
+          # zero in the month (e.g. "06") isn't parsed as octal, and printing
+          # the result strips the zero ("06" -> 6) since semver forbids it.
+          YEAR=$(date -u +%Y)
+          MONTH=$((10#$(date -u +%m)))
+
+          # <build-n> = highest existing patch for this YEAR.MONTH, plus one.
+          # We take max+1 rather than count+1 so the version can never regress:
+          # if a release is rolled back or deleted, or when migrating from the
+          # old YYYY.M.D scheme (whose patch was the day-of-month), the next
+          # build still lands strictly above every version already shipped this
+          # month. Release titles are "mdwriter <version> (<tag>)"; the list
+          # endpoint includes drafts (the token has push access), so an
+          # in-flight or failed-but-not-yet-cleaned release is counted too.
+          MAX_PATCH=$(gh release list --limit 200 --json name -R "$GITHUB_REPOSITORY" \
+            | jq -r --arg y "$YEAR" --arg m "$MONTH" '
+                [ .[].name
+                  | scan("^mdwriter " + $y + "\\." + $m + "\\.([0-9]+)")[0]
+                  | tonumber
+                ] | max // 0')
+          BUILD=$((MAX_PATCH + 1))
+          VERSION="${YEAR}.${MONTH}.${BUILD}"
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "::error::Tag $TAG already exists. If a release was already cut today from this commit, push a new commit before running again."
@@ -195,9 +231,9 @@ jobs:
             arch: x86_64
             target: x86_64-pc-windows-msvc
             # Skip MSI — MSI's version major is limited to u8 (0-255), and
-            # our YYYY.M.D versioning would always blow that out. NSIS has
-            # no such limit and is the .exe form the updater manifest
-            # already references.
+            # our YEAR.MONTH.<build-n> versioning uses the year as the major,
+            # which always blows that out. NSIS has no such limit and is the
+            # .exe form the updater manifest already references.
             bundles: nsis,updater
           - os: ubuntu-latest
             arch: x86_64

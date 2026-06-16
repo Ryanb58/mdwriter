@@ -28,13 +28,12 @@ concurrency:
 
 jobs:
   # ──────────────────────────────────────────────────────────────
-  # Job 1: Create the release tag from today's date + current short SHA.
+  # Job 1: Compute the version, then create the tag and draft release.
   #
-  # Tag form: vYYYY-MM-DD.HHMMSS.<short-sha> (e.g. v2026-06-15.181648.bcb8912).
-  # The HHMMSS component keeps the GitHub Releases page in recency order:
-  # tags aren't semver, so GitHub falls back to lex-sorting tag names —
-  # without a time component, two same-day releases would be ordered by
-  # their SHA letters instead of when they were cut.
+  # ONE identifier is used everywhere so nothing can be mismatched:
+  #   version       2026.6.16
+  #   git tag       v2026.6.16        (the version, with a leading v)
+  #   release title mdwriter 2026.6.16 (bcb8912)   (short SHA for traceability)
   #
   # Version form: YEAR.MONTH.<build-n>, e.g. 2026.6.7 (no leading zeros —
   # semver forbids them). <build-n> is a monotonically increasing per-month
@@ -44,8 +43,13 @@ jobs:
   # last. A pure date version (the old YYYY.M.D) collided whenever two
   # releases were cut on the same day — both became e.g. 2026.6.15, and the
   # second was invisible to already-updated installs. The build counter
-  # removes the one-release-per-day ceiling. The exact date/time/SHA still
-  # live in the tag and release title for traceability.
+  # removes the one-release-per-day ceiling.
+  #
+  # The tag used to be vYYYY-MM-DD.HHMMSS.<sha> with a time component purely
+  # so GitHub (which lex-sorts non-semver tags) listed same-day releases in
+  # the right order. Now the tag IS the semver version, so GitHub orders by
+  # semver precedence and that hack is gone. The commit is still reachable:
+  # the tag points at it, and the short SHA is in the release title.
   # ──────────────────────────────────────────────────────────────
   tag:
     name: Create release tag
@@ -71,8 +75,6 @@ jobs:
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y-%m-%d)
-          TIME=$(date -u +%H%M%S)
-          TAG="v${DATE}.${TIME}.${SHORT_SHA}"
 
           # Version is YEAR.MONTH.<build-n>. 10# forces base-10 so a leading
           # zero in the month (e.g. "06") isn't parsed as octal, and printing
@@ -85,7 +87,7 @@ jobs:
           # if a release is rolled back or deleted, or when migrating from the
           # old YYYY.M.D scheme (whose patch was the day-of-month), the next
           # build still lands strictly above every version already shipped this
-          # month. Release titles are "mdwriter <version> (<tag>)"; the list
+          # month. Release titles are "mdwriter <version> (<sha>)"; the list
           # endpoint includes drafts (the token has push access), so an
           # in-flight or failed-but-not-yet-cleaned release is counted too.
           MAX_PATCH=$(gh release list --limit 200 --json name -R "$GITHUB_REPOSITORY" \
@@ -97,8 +99,15 @@ jobs:
           BUILD=$((MAX_PATCH + 1))
           VERSION="${YEAR}.${MONTH}.${BUILD}"
 
+          # The tag IS the version (with a leading v): v2026.6.16. Because the
+          # version is valid semver and strictly increasing, the tag is unique
+          # on its own — no date/time/sha needed for disambiguation — and
+          # GitHub orders releases by semver precedence (v2026.6.16 > v2026.6.9)
+          # instead of lex-sorting, so the "Latest" badge is always right.
+          TAG="v${VERSION}"
+
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $TAG already exists. If a release was already cut today from this commit, push a new commit before running again."
+            echo "::error::Tag $TAG already exists for version $VERSION. This usually means two releases raced; re-run and the build number will advance."
             exit 1
           fi
 
@@ -111,6 +120,7 @@ jobs:
             echo "- Tag: \`$TAG\`"
             echo "- Version: \`$VERSION\`"
             echo "- Source SHA: \`$SHORT_SHA\`"
+            echo "- Date (UTC): $DATE"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create tag via GitHub API
@@ -195,14 +205,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.compute.outputs.tag }}
           VERSION: ${{ steps.compute.outputs.version }}
+          SHA: ${{ steps.compute.outputs.sha }}
           BODY: ${{ steps.body.outputs.body }}
         run: |
           set -euo pipefail
           # Create the draft release ONCE here so the four parallel build
           # jobs just attach artifacts to it instead of racing to create it.
+          # Title leads with the version (which equals the tag) and carries the
+          # short SHA for at-a-glance commit traceability — NOT the tag, which
+          # would just repeat the version. The build-number computation parses
+          # this title, so it must stay "mdwriter <version> (...)".
           gh release create "$TAG" \
             --draft \
-            --title "mdwriter ${VERSION} (${TAG})" \
+            --title "mdwriter ${VERSION} (${SHA})" \
             --notes "$BODY"
 
   # ──────────────────────────────────────────────────────────────
@@ -334,7 +349,11 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
         with:
           tagName: ${{ needs.tag.outputs.tag }}
-          releaseName: 'mdwriter ${{ needs.tag.outputs.version }} (${{ needs.tag.outputs.tag }})'
+          # Must match the draft title created in the `tag` job exactly, and
+          # stay in the "mdwriter <version> (...)" shape the build-number
+          # computation parses. The parenthetical is the short SHA, not the tag
+          # (the tag just repeats the version).
+          releaseName: 'mdwriter ${{ needs.tag.outputs.version }} (${{ needs.tag.outputs.sha }})'
           # Pass through the exact body the `tag` job already wrote (auto-
           # generated changelog + footer). tauri-action updates the existing
           # draft release's body on every build, so if we left this blank or

@@ -96,7 +96,7 @@ If you change one side, change the other and update `inferType.test.ts` / the Ru
 
 ### Updater
 
-`tauri.conf.json` points the updater at `https://ryanb58.github.io/mdwriter/updates/latest.json`. The bundle version is `YEAR.MONTH.<build-n>` (no leading zeros — semver doesn't allow them), e.g. `2026.6.7`, stamped into `Cargo.toml`/`tauri.conf.json`/`package.json` by the release workflow. `<build-n>` is a per-month build counter the `tag` job computes as `(highest existing patch for this YEAR.MONTH) + 1`, so every release is strictly greater than the last — which is what the updater's semver comparison requires. Multiple releases in the same day/month are fine; they just get consecutive build numbers. The exact date/time/SHA live only in the tag (`vYYYY-MM-DD.HHMMSS.<sha>`) and the release title.
+`tauri.conf.json` points the updater at `https://ryanb58.github.io/mdwriter/updates/latest.json`. The bundle version is `YEAR.MONTH.<build-n>` (no leading zeros — semver doesn't allow them), e.g. `2026.6.7`, stamped into `Cargo.toml`/`tauri.conf.json`/`package.json` by the release workflow. `<build-n>` is a per-month build counter the `tag` job computes as `(highest existing patch for this YEAR.MONTH) + 1`, so every release is strictly greater than the last — which is what the updater's semver comparison requires. Multiple releases in the same day/month are fine; they just get consecutive build numbers. The git tag *is* the version with a leading `v` (e.g. `v2026.6.16`), and the release is titled `mdwriter 2026.6.16 (<short-sha>)` — version, tag, and title all carry the same number so they can't be mismatched. The commit stays reachable via the tag (it points at the commit) and the short SHA in the title.
 
 ### E2E test scope
 

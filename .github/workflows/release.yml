@@ -271,6 +271,19 @@ jobs:
           # package.json
           node -e "const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p));j.version='${VERSION}';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
 
+      # The cargo cache (above) restores src-tauri/target, which includes
+      # the bundle/ output dir from every previous release — Tauri never
+      # cleans it. Left alone, target/<triple>/release/bundle/ accumulates
+      # one .sig per past version (e.g. mdwriter_2026.5.17_x64-setup.exe.sig
+      # alongside the current one). The signature upload glob (**/*.sig) then
+      # grabs all of them and `read_sig`'s `find | head -1` in publish-manifest
+      # picks a filesystem-arbitrary — frequently STALE — signature, so the
+      # published manifest can sign the wrong version's binary. Wipe the
+      # bundle dir so only THIS run's artifacts exist.
+      - name: Clean stale bundle output
+        shell: bash
+        run: rm -rf "src-tauri/target/${{ matrix.target }}/release/bundle"
+
       - name: Build with tauri-action
         uses: tauri-apps/tauri-action@v0
         env:
@@ -363,7 +376,10 @@ jobs:
           name: sigs-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
-          if-no-files-found: warn
+          # A build that produced no .sig means the updater bundle silently
+          # didn't generate — fail here rather than letting publish-manifest
+          # drop the platform from latest.json unnoticed.
+          if-no-files-found: error
 
   # ──────────────────────────────────────────────────────────────
   # Job 3: Generate latest.json from the .sig files and publish it
@@ -433,7 +449,16 @@ jobs:
             FIRST=1
             emit() {
               local key="$1" sig="$2" url="$3"
-              if [[ -z "$sig" ]]; then return; fi
+              # Every one of the four platforms is required. An empty sig means
+              # its build produced no signature artifact (or it failed to
+              # download). Publishing latest.json without it would silently roll
+              # that platform's installed apps onto a manifest that omits them —
+              # exactly the "half-broken update" this job exists to prevent.
+              # Fail instead; cleanup-on-failure then rolls back the tag/draft.
+              if [[ -z "$sig" ]]; then
+                echo "::error::No signature for platform '${key}'. Refusing to publish a partial manifest." >&2
+                exit 1
+              fi
               if [[ $FIRST -eq 0 ]]; then echo ','; fi
               FIRST=0
               # `printf '%s'` (not herestring) avoids appending a

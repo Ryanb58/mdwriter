@@ -96,11 +96,17 @@ export function EditorPane() {
           // time a doc opens, so any flash would just be visual noise.
           <Suspense fallback={<div className="h-full" />}>
           <BlockEditor
+            key={docRev}
             docKey={`${doc.path}#${docRev}`}
             initialMarkdown={getBody(doc.text)}
             onChangeMarkdown={(body) => {
-              const cur = useStore.getState().openDoc
-              if (!cur) return
+              const state = useStore.getState()
+              const cur = state.openDoc
+              // BlockNote's markdown export is asynchronous. If this editor
+              // was replaced while it awaited serialization, its result
+              // belongs to the previous buffer and must not touch the newly
+              // opened note. Renames intentionally keep the same revision.
+              if (!cur || state.docRev !== docRev) return
               // Idempotent emit guard: BlockNote re-fires onChange after
               // its own renders even when the resulting markdown is
               // byte-identical. Suppress the patch entirely so we don't
@@ -113,6 +119,7 @@ export function EditorPane() {
         ) : (
           <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>
             <RawEditor
+              key={docRev}
               value={doc.text}
               onChange={editOpenDoc}
             />

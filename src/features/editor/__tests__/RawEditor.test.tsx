@@ -12,14 +12,27 @@ const harness = vi.hoisted(() => ({
   links: { name: "links" },
   completion: { name: "completion" },
   theme: { name: "theme" },
+  rawFindField: { name: "raw-find-field" },
+  rawFindTheme: { name: "raw-find-theme" },
   updateListener: { name: "update-listener" },
   focus: vi.fn(),
   destroy: vi.fn(),
   useRawImagePaste: vi.fn(),
   useLinkActivation: vi.fn(),
+  applyRawFindHighlight: vi.fn(),
+  scrollViewToMatch: vi.fn(),
   storeState: {
-    pendingCursorAtEnd: null,
-    pendingScroll: null,
+    pendingCursorAtEnd: null as string | null,
+    pendingScroll: null as null | {
+      kind: "find-raw" | "vault-reveal"
+      path: string
+      from?: number
+      to?: number
+      requestId?: number
+      matchText?: string
+      occurrence?: number
+      line?: number
+    },
     openDoc: { path: "/vault/note.md" },
     setPendingCursorAtEnd: vi.fn(),
     setPendingScroll: vi.fn(),
@@ -112,11 +125,17 @@ vi.mock("../RawWikilinkPopup", () => ({
 }))
 
 vi.mock("../scrollViewToMatch", () => ({
-  scrollViewToMatch: vi.fn(),
+  scrollViewToMatch: harness.scrollViewToMatch,
 }))
 
 vi.mock("../flashHighlight", () => ({
   flashHighlight: vi.fn(),
+}))
+
+vi.mock("../rawFindHighlight", () => ({
+  rawFindHighlightField: harness.rawFindField,
+  rawFindHighlightTheme: harness.rawFindTheme,
+  applyRawFindHighlight: harness.applyRawFindHighlight,
 }))
 
 import { RawEditor } from "../RawEditor"
@@ -126,6 +145,8 @@ describe("RawEditor", () => {
     vi.clearAllMocks()
     harness.extensions = []
     harness.raf = null
+    harness.storeState.pendingCursorAtEnd = null
+    harness.storeState.pendingScroll = null
     vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
       harness.raf = callback
       return 1
@@ -149,6 +170,8 @@ describe("RawEditor", () => {
       harness.links,
       harness.completion,
       harness.lineWrapping,
+      harness.rawFindField,
+      harness.rawFindTheme,
       harness.theme,
       harness.updateListener,
     ]))
@@ -165,5 +188,61 @@ describe("RawEditor", () => {
     act(() => harness.raf?.(0))
 
     expect(harness.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps Find focused while placing a new note cursor at the end", () => {
+    harness.storeState.pendingCursorAtEnd = "/vault/note.md"
+    const find = render(<div data-find-bar><input aria-label="Find in note" /></div>)
+    const input = find.getByRole("textbox", { name: "Find in note" })
+    input.focus()
+
+    render(<RawEditor value="# Note" onChange={vi.fn()} />)
+    act(() => harness.raf?.(0))
+
+    expect(input).toHaveFocus()
+    expect(harness.focus).not.toHaveBeenCalled()
+    expect(harness.storeState.setPendingCursorAtEnd).toHaveBeenCalledWith(null)
+  })
+
+  it("applies an exact raw Find target without consuming it", () => {
+    harness.storeState.pendingScroll = {
+      kind: "find-raw",
+      path: "/vault/note.md",
+      from: 3,
+      to: 7,
+      requestId: 1,
+    }
+
+    render(<RawEditor value="# Note" onChange={vi.fn()} />)
+    act(() => harness.raf?.(0))
+
+    expect(harness.applyRawFindHighlight).toHaveBeenCalledWith(
+      expect.anything(),
+      { from: 3, to: 7 },
+    )
+    expect(harness.storeState.setPendingScroll).not.toHaveBeenCalled()
+    expect(harness.focus).not.toHaveBeenCalled()
+  })
+
+  it("preserves the vault reveal fallback and consumes that one-shot target", () => {
+    harness.storeState.pendingScroll = {
+      kind: "vault-reveal",
+      path: "/vault/note.md",
+      line: 4,
+      matchText: "Note",
+      occurrence: 0,
+    }
+    harness.scrollViewToMatch.mockReturnValue(null)
+
+    render(<RawEditor value="# Note" onChange={vi.fn()} />)
+    act(() => harness.raf?.(0))
+
+    expect(harness.scrollViewToMatch).toHaveBeenCalledWith(
+      expect.anything(),
+      "Note",
+      0,
+      4,
+    )
+    expect(harness.storeState.setPendingScroll).toHaveBeenCalledWith(null)
   })
 })

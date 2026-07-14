@@ -10,6 +10,11 @@ import { useStore } from "../../lib/store"
 import { scrollViewToMatch } from "./scrollViewToMatch"
 import { flashHighlight } from "./flashHighlight"
 import {
+  applyRawFindHighlight,
+  rawFindHighlightField,
+  rawFindHighlightTheme,
+} from "./rawFindHighlight"
+import {
   decorateLinks,
   rebuildLinkDecorations,
   wikilinkCompletion,
@@ -55,6 +60,8 @@ export function RawEditor({
           EditorView.lineWrapping,
           decorateLinks(() => notesRef.current),
           completion.extension,
+          rawFindHighlightField,
+          rawFindHighlightTheme,
           EditorView.theme({ "&": { height: "100%" } }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChange(u.state.doc.toString())
@@ -64,7 +71,9 @@ export function RawEditor({
       }),
     })
     viewRef.current = view
-    const focusFrame = requestAnimationFrame(() => view.focus())
+    const focusFrame = requestAnimationFrame(() => {
+      if (!document.activeElement?.closest("[data-find-bar]")) view.focus()
+    })
     return () => {
       cancelAnimationFrame(focusFrame)
       view.destroy()
@@ -93,7 +102,7 @@ export function RawEditor({
 
   useRawImagePaste(viewRef)
   useLinkActivation(hostRef)
-  usePendingScroll(viewRef, value)
+  usePendingScroll(viewRef)
   useConsumePendingCursorAtEnd(viewRef, value)
 
   return (
@@ -146,25 +155,55 @@ function useConsumePendingCursorAtEnd(viewRef: React.RefObject<EditorView | null
       if (!view) return
       const len = view.state.doc.length
       view.dispatch({ selection: { anchor: len } })
-      view.focus()
+      if (!document.activeElement?.closest("[data-find-bar]")) view.focus()
       clear(null)
     })
     return () => cancelAnimationFrame(raf)
   }, [pending, openPath, value, viewRef, clear])
 }
 
-function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: string) {
+const FIND_HIGHLIGHT_MS = 1700
+
+function usePendingScroll(viewRef: React.RefObject<EditorView | null>) {
   const pending = useStore((s) => s.pendingScroll)
   const setPending = useStore((s) => s.setPendingScroll)
   const openPath = useStore((s) => s.openDoc?.path ?? null)
+  const activeRequest = useRef<number | null>(null)
+  const clearTimer = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!pending || !openPath || pending.path !== openPath) return
+    const view = viewRef.current
+    if (clearTimer.current !== null) {
+      window.clearTimeout(clearTimer.current)
+      clearTimer.current = null
+    }
+    if (!pending || !openPath || pending.path !== openPath) {
+      if (view && activeRequest.current !== null) applyRawFindHighlight(view, null)
+      activeRequest.current = null
+      return
+    }
     // Defer a frame so the value-sync effect upstream has applied the new
     // file's content before we walk the doc for the match.
     const raf = requestAnimationFrame(() => {
       const view = viewRef.current
       if (!view) return
+      if (pending.kind === "find-raw") {
+        activeRequest.current = pending.requestId
+        applyRawFindHighlight(view, { from: pending.from, to: pending.to })
+        clearTimer.current = window.setTimeout(() => {
+          if (activeRequest.current !== pending.requestId) return
+          const currentView = viewRef.current
+          if (currentView) applyRawFindHighlight(currentView, null)
+          activeRequest.current = null
+          clearTimer.current = null
+        }, FIND_HIGHLIGHT_MS)
+        return
+      }
+      if (pending.kind !== "vault-reveal") return
+      if (activeRequest.current !== null) {
+        applyRawFindHighlight(view, null)
+        activeRequest.current = null
+      }
       const pos = scrollViewToMatch(view, pending.matchText, pending.occurrence, pending.line)
       if (pos) {
         requestAnimationFrame(() => {
@@ -176,5 +215,9 @@ function usePendingScroll(viewRef: React.RefObject<EditorView | null>, value: st
       setPending(null)
     })
     return () => cancelAnimationFrame(raf)
-  }, [pending, openPath, value, viewRef, setPending])
+  }, [pending, openPath, viewRef, setPending])
+
+  useEffect(() => () => {
+    if (clearTimer.current !== null) window.clearTimeout(clearTimer.current)
+  }, [])
 }

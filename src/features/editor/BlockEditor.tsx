@@ -24,8 +24,9 @@ import { useLinkActivation } from "./useLinkActivation"
 import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
 import { showToast, errorText } from "../../lib/toast"
-import { findNthBlockMatch } from "./blockTextSearch"
+import { buildBlockTextIndex, findRenderedBlockMatches } from "./blockTextSearch"
 import { flashHighlight } from "./flashHighlight"
+import { highlightBlockFindTarget } from "./blockFindHighlight"
 import { headingCommitted } from "./headingCommit"
 import { filterMarkdownSlashMenuItems } from "./markdownSlashMenu"
 import { MarkdownTableHandles } from "./markdownTables"
@@ -59,6 +60,9 @@ export function BlockEditor({
   const lastEmitted = useRef<string>("")
   const theme = useResolvedTheme()
   const hostRef = useRef<HTMLDivElement | null>(null)
+  const activeFindCleanup = useRef<(() => void) | null>(null)
+  const activeFindTimer = useRef<number | null>(null)
+  const handledFindRequest = useRef<number | null>(null)
   const notes = useVaultNotes()
 
   // Keep the inline-content renderer's module-local note list in sync with
@@ -119,29 +123,85 @@ export function BlockEditor({
     ),
   )
 
+  const publishBlockTextIndex = useCallback(() => {
+    const { openDoc, setBlockTextIndex } = useStore.getState()
+    if (!openDoc) return
+    setBlockTextIndex(buildBlockTextIndex(openDoc.path, docKey, editor.document))
+  }, [docKey, editor])
+
+  const clearBlockFindHighlight = useCallback(() => {
+    activeFindCleanup.current?.()
+    activeFindCleanup.current = null
+    if (activeFindTimer.current !== null) {
+      window.clearTimeout(activeFindTimer.current)
+      activeFindTimer.current = null
+    }
+  }, [])
+
   function tryConsumePendingScroll() {
     const { pendingScroll, openDoc, setPendingScroll } = useStore.getState()
     if (!pendingScroll || !openDoc || openDoc.path !== pendingScroll.path) return
-    const docBlocks = editor.document as Parameters<typeof findNthBlockMatch>[0]
+    if (pendingScroll.kind === "find-raw") return
+
+    if (pendingScroll.kind === "find-block") {
+      if (handledFindRequest.current === pendingScroll.requestId) return
+      handledFindRequest.current = pendingScroll.requestId
+      // A newly-selected result supersedes the old visual immediately, even
+      // if its own BlockNote node is still rendering (or disappeared).
+      clearBlockFindHighlight()
+      const request = pendingScroll
+      waitForBlockNode(hostRef, request.blockId, () => {
+        const current = useStore.getState().pendingScroll
+        if (
+          current?.kind !== "find-block" ||
+          current.path !== request.path ||
+          current.requestId !== request.requestId
+        ) {
+          return
+        }
+        const host = hostRef.current
+        if (!host) return
+        const result = highlightBlockFindTarget(host, {
+          blockId: request.blockId,
+          from: request.from,
+          to: request.to,
+        })
+        activeFindCleanup.current = result.cleanup
+        activeFindTimer.current = window.setTimeout(() => {
+          if (handledFindRequest.current !== request.requestId) return
+          activeFindCleanup.current?.()
+          activeFindCleanup.current = null
+          activeFindTimer.current = null
+        }, 1700)
+      })
+      return
+    }
+
+    clearBlockFindHighlight()
+    handledFindRequest.current = null
+    const docBlocks = editor.document as unknown as SearchableEditorBlock[]
+    const index = buildBlockTextIndex(openDoc.path, docKey, docBlocks)
+    const matches = findRenderedBlockMatches(index.blocks, pendingScroll.matchText)
+    const match = matches[Math.min(pendingScroll.occurrence, matches.length - 1)]
     // Fall back to the first block when the match isn't in any block — the
     // matchText may live in frontmatter (which BlockNote strips on parse)
     // or in a block type our text extractor doesn't reach.
-    let target = findNthBlockMatch(docBlocks, pendingScroll.matchText, pendingScroll.occurrence)
+    let target = match ? findEditorBlockById(docBlocks, match.blockId) : null
     if (!target) {
-      const first = (docBlocks as Array<{ id?: string }> | null | undefined)?.[0]
+      const first = docBlocks[0]
       if (!first?.id) {
         setPendingScroll(null)
         return
       }
-      target = { block: first as never, localIndex: 0 }
+      target = first
     }
     try {
-      editor.setTextCursorPosition(target.block as never, "start")
+      editor.setTextCursorPosition(target as never, "start")
     } catch {
       // Block may have been removed in a race; clearing pendingScroll below
       // still lets the next hit succeed.
     }
-    const id = (target.block as { id?: string }).id
+    const id = target.id
     setPendingScroll(null)
     if (!id) return
     waitForBlockNode(hostRef, id, (node) => {
@@ -169,6 +229,7 @@ export function BlockEditor({
       initializedKey.current = docKey
       parsing.current = false
       finishHydration(hydrationGate.current, generation)
+      publishBlockTextIndex()
       return
     }
     initializedKey.current = docKey
@@ -195,6 +256,7 @@ export function BlockEditor({
       lastEmitted.current = initialMarkdown
       parsing.current = false
       finishHydration(hydrationGate.current, generation)
+      publishBlockTextIndex()
       // If a search/palette jump is queued, it owns cursor + focus. Also bail
       // when the editor is already focused — happens when an external reload
       // (file watcher / AI apply) lands while the user is typing. Otherwise
@@ -202,7 +264,11 @@ export function BlockEditor({
       // goes somewhere.
       const hadPendingScroll = !!useStore.getState().pendingScroll
       tryConsumePendingScroll()
-      if (!hadPendingScroll && !editor.isFocused()) {
+      if (
+        !hadPendingScroll &&
+        !editor.isFocused() &&
+        !document.activeElement?.closest("[data-find-bar]")
+      ) {
         // For freshly-created files (createNewFile sets pendingCursorAtEnd
         // to the new path), land the cursor at the end of the first block —
         // which for a `# ` seed is inside the empty H1, ready for the user's
@@ -218,7 +284,9 @@ export function BlockEditor({
             editor.setTextCursorPosition(firstBlock as never, placement)
             focusFrame = requestAnimationFrame(() => {
               focusFrame = null
-              if (!disposed) editor.focus()
+              if (!disposed && !document.activeElement?.closest("[data-find-bar]")) {
+                editor.focus()
+              }
             })
           } catch {
             // Block went away mid-frame; nothing to recover.
@@ -231,19 +299,33 @@ export function BlockEditor({
       if (focusFrame !== null) cancelAnimationFrame(focusFrame)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docKey, initialMarkdown, editor])
+  }, [docKey, initialMarkdown, editor, publishBlockTextIndex])
 
   // `parsing` guards against racing the init effect — when switching files,
   // the new blocks aren't in `editor.document` until the async parse above
   // resolves, so firing earlier would walk the previous file's tree.
   const pendingScroll = useStore((s) => s.pendingScroll)
   useEffect(() => {
-    if (!pendingScroll) return
+    if (!pendingScroll) {
+      handledFindRequest.current = null
+      clearBlockFindHighlight()
+      return
+    }
     if (initializedKey.current !== docKey) return
     if (parsing.current) return
     tryConsumePendingScroll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingScroll, docKey])
+  }, [pendingScroll, docKey, clearBlockFindHighlight])
+
+  useEffect(() => () => {
+    // Invalidate any markdown export still awaiting BlockNote serialization.
+    // Without a successor hydration generation, an unmounted editor's async
+    // onChange could otherwise publish into the next open note.
+    beginHydration(hydrationGate.current)
+    clearBlockFindHighlight()
+    const { blockTextIndex, setBlockTextIndex } = useStore.getState()
+    if (blockTextIndex?.docKey === docKey) setBlockTextIndex(null)
+  }, [docKey, clearBlockFindHighlight])
 
   // WKWebView reports clipboard images as types=["Files"] with empty
   // items/files. BlockNote's paste plugin never fires uploadFile, so
@@ -396,7 +478,7 @@ export function BlockEditor({
   }, [editor, publishHeadingCommit])
 
   return (
-    <div ref={hostRef} className="h-full overflow-y-auto">
+    <div ref={hostRef} className="relative h-full overflow-y-auto">
       <BlockNoteView
         editor={editor}
         theme={theme}
@@ -408,6 +490,7 @@ export function BlockEditor({
         onChange={async () => {
           const generation = hydrationGate.current.generation
           if (!canEmitHydrationChange(hydrationGate.current, generation)) return
+          publishBlockTextIndex()
           // Keep the auto-rename commitment signal fresh on structural edits
           // too (e.g. the Enter that adds the block after the heading).
           publishHeadingCommit()
@@ -456,6 +539,26 @@ export function BlockEditor({
       </BlockNoteView>
     </div>
   )
+}
+
+type SearchableEditorBlock = {
+  id?: string
+  content?: unknown
+  children?: SearchableEditorBlock[]
+}
+
+function findEditorBlockById(
+  blocks: readonly SearchableEditorBlock[],
+  blockId: string,
+): SearchableEditorBlock | null {
+  for (const block of blocks) {
+    if (block.id === blockId) return block
+    if (block.children) {
+      const child = findEditorBlockById(block.children, blockId)
+      if (child) return child
+    }
+  }
+  return null
 }
 
 // Even after `replaceBlocks`, BlockNote may not have rendered the new block

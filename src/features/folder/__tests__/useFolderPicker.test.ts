@@ -139,14 +139,21 @@ describe("openFolder transaction", () => {
     expect(harness.startWatcher).not.toHaveBeenCalled()
   })
 
-  it("leaves the old watcher and store untouched when listing fails", async () => {
-    harness.listTree.mockRejectedValue(new Error("not readable"))
+  it("restores the old scope and watcher when the new listing fails", async () => {
+    harness.listTree.mockImplementation((path: string) => path === "/old"
+      ? Promise.resolve(oldTree)
+      : Promise.reject(new Error("not readable")))
 
     await expect(openFolder("/new", deps())).rejects.toThrow("not readable")
 
     expectOldVaultIntact()
-    expect(harness.stopWatcher).not.toHaveBeenCalled()
-    expect(harness.startWatcher).not.toHaveBeenCalled()
+    expect(harness.stopWatcher).toHaveBeenCalledTimes(1)
+    expect(harness.listTree.mock.calls.map(([path]) => path)).toEqual([
+      "/old",
+      "/new",
+      "/old",
+    ])
+    expect(harness.startWatcher).toHaveBeenCalledWith("/old")
     expect(harness.release).toHaveBeenCalledTimes(1)
   })
 
@@ -169,15 +176,32 @@ describe("openFolder transaction", () => {
     await expect(openFolder("/new", deps())).rejects.toThrow("final save failed")
 
     expectOldVaultIntact()
-    expect(harness.stopWatcher).toHaveBeenCalledTimes(2)
-    expect(harness.startWatcher.mock.calls).toEqual([["/new"], ["/old"]])
+    expect(harness.stopWatcher).toHaveBeenCalledTimes(1)
+    expect(harness.startWatcher.mock.calls).toEqual([["/old"]])
+    expect(harness.listTree.mock.calls.map(([path]) => path)).toEqual([
+      "/old",
+      "/old",
+    ])
     expect(harness.discard).not.toHaveBeenCalled()
     expect(harness.release).toHaveBeenCalledTimes(1)
   })
 
   it("flushes edits made during setup, commits once, then restores the recent file", async () => {
     const listing = deferred<typeof newTree>()
-    harness.listTree.mockReturnValue(listing.promise)
+    let activeVault: string | null = "/old"
+    let newListings = 0
+    harness.listTree.mockImplementation((path: string) => {
+      activeVault = path
+      if (path === "/new" && newListings++ === 0) return listing.promise
+      return Promise.resolve(path === "/old" ? oldTree : newTree)
+    })
+    harness.stopWatcher.mockImplementation(async () => {
+      activeVault = null
+    })
+    harness.flush.mockImplementation(async () => {
+      expect(activeVault).toBe("/old")
+      useStore.getState().patchOpenDoc({ dirty: false, saveStatus: "clean" })
+    })
 
     const switching = openFolder("/new", deps())
     await vi.waitFor(() => expect(harness.listTree).toHaveBeenCalledWith("/new", expect.anything()))
@@ -187,6 +211,8 @@ describe("openFolder transaction", () => {
 
     expect(harness.begin).toHaveBeenCalledWith(["/old"])
     expect(harness.flush).toHaveBeenCalledWith("/old/draft.md")
+    expect(harness.listTree).toHaveBeenCalledWith("/old", expect.anything())
+    expect(activeVault).toBe("/new")
     expect(harness.discard).toHaveBeenCalledWith(["/old"])
     expect(harness.release).toHaveBeenCalledTimes(1)
     const state = useStore.getState()
@@ -198,6 +224,30 @@ describe("openFolder transaction", () => {
     expect(state.expandedFolders.has("/new/notes")).toBe(true)
     expect(state.blockModeOverrides).toEqual({})
     expect(state.blockTextIndex).toBeNull()
+  })
+
+  it("leaves the new vault as the backend filesystem scope after switching", async () => {
+    let activeVault: string | null = "/old"
+    const order: string[] = []
+    harness.listTree.mockImplementation(async (path: string) => {
+      order.push(`list:${path}`)
+      activeVault = path
+      return path === "/old" ? oldTree : newTree
+    })
+    harness.stopWatcher.mockImplementation(async () => {
+      order.push("stop")
+      activeVault = null
+    })
+    harness.startWatcher.mockImplementation(async (path: string) => {
+      order.push(`start:${path}`)
+      // Rust start_watcher deliberately does not establish active_vault.
+    })
+
+    await openFolder("/new", deps())
+
+    expect(activeVault).toBe("/new")
+    expect(order.at(-1)).toBe("start:/new")
+    expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("list:/new"))
   })
 })
 

@@ -34,30 +34,43 @@ export async function openFolder(
   let oldWatcherStopped = false
   let newWatcherStarted = false
   let committed = false
+  const opts = treeOptionsFromSettings(useStore.getState().settings)
 
   try {
-    const opts = treeOptionsFromSettings(useStore.getState().settings)
-
-    // Read the new vault while the old watcher and all old-vault UI state are
-    // still intact. A listing failure is therefore a true no-op.
-    const tree = await ipc.listTree(path, opts)
-
     if (oldRoot) {
       await ipc.stopWatcher()
       oldWatcherStopped = true
     }
-    await ipc.startWatcher(path)
-    newWatcherStarted = true
 
-    // The user can keep typing while the new vault is prepared. Flush the
-    // latest old-vault document one final time while the guard remains paused
-    // and immediately before clearing it from the store.
-    const currentDoc = useStore.getState().openDoc
-    if (
-      currentDoc &&
-      (!oldRoot || pathIsWithin(currentDoc.path, oldRoot))
-    ) {
-      await guard.flush(currentDoc.path)
+    let tree: Awaited<ReturnType<typeof ipc.listTree>>
+    while (true) {
+      // `stopWatcher` clears Rust's active-vault scope, while `startWatcher`
+      // deliberately does not restore it. Re-establish the old scope before
+      // the final old-note flush, then make the new list the last authority.
+      const currentDoc = useStore.getState().openDoc
+      if (oldRoot && currentDoc && pathIsWithin(currentDoc.path, oldRoot)) {
+        await ipc.listTree(oldRoot, opts)
+        await guard.flush(currentDoc.path)
+      }
+
+      tree = await ipc.listTree(path, opts)
+      await ipc.startWatcher(path)
+      newWatcherStarted = true
+
+      // The old editor remains usable while the async setup runs. If it was
+      // edited after the final flush, tear down the provisional new watcher
+      // and repeat the scope/flush/switch cycle. Once this check is clean, the
+      // store commit below is synchronous, so no later old-path edit can land.
+      const latestDoc = useStore.getState().openDoc
+      const hasLateOldEdit = Boolean(
+        latestDoc?.dirty &&
+        oldRoot &&
+        pathIsWithin(latestDoc.path, oldRoot),
+      )
+      if (!hasLateOldEdit) break
+
+      await ipc.stopWatcher()
+      newWatcherStarted = false
     }
 
     guard.discard(oldRoots)
@@ -91,13 +104,17 @@ export async function openFolder(
     // conventions on hand. Don't block vault open if this fails.
     ipc.ensureVaultAgentsMd(path).catch(() => {})
   } catch (error) {
-    // Once the old watcher has been stopped, any setup/save failure rolls the
-    // watcher back before the guard releases and old-vault editing resumes.
-    if (!committed && (oldWatcherStopped || newWatcherStarted)) {
+    // Once the old watcher has been stopped, any setup/save failure restores
+    // both Rust's filesystem scope (listTree) and the watcher before the guard
+    // releases and old-vault editing resumes.
+    if (!committed && oldWatcherStopped) {
       if (newWatcherStarted) {
         await ipc.stopWatcher().catch(() => {})
       }
       if (oldRoot) {
+        await ipc.listTree(oldRoot, opts).catch((restoreError) => {
+          console.error("failed to restore previous vault scope", restoreError)
+        })
         await ipc.startWatcher(oldRoot).catch((restoreError) => {
           console.error("failed to restore previous vault watcher", restoreError)
         })

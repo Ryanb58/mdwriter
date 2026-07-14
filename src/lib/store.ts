@@ -36,23 +36,42 @@ export type OpenDocLifecyclePatch = Partial<
 
 export type Theme = "light" | "dark" | "system"
 
-/**
- * One-shot scroll target consumed by whichever editor is mounted after a doc
- * loads. Set by features that open a file at a specific location (vault
- * search, future "go to backlink", etc). The active editor consumes it and
- * clears it back to null — pending scrolls are *not* persisted.
- *
- * Both editors walk `matchText` occurrences in document order and stop at
- * `occurrence` (0-indexed) — this disambiguates when the same text appears
- * many times in a file. `line` is carried for the raw editor as a primary
- * positioning hint when an occurrence walk can't be completed (e.g. doc was
- * edited since the search ran).
- */
-export type PendingScroll = {
+export type VaultRevealTarget = {
+  kind: "vault-reveal"
   path: string
   line: number
   matchText: string
   occurrence: number
+}
+
+export type RawFindTarget = {
+  kind: "find-raw"
+  path: string
+  from: number
+  to: number
+  requestId: number
+}
+
+export type BlockFindTarget = {
+  kind: "find-block"
+  path: string
+  blockId: string
+  from: number
+  to: number
+  requestId: number
+}
+
+/** Session-only navigation request consumed or observed by the active editor. */
+export type PendingScroll = VaultRevealTarget | RawFindTarget | BlockFindTarget
+
+export type RenderedBlockEntry = { blockId: string; text: string }
+
+export type RenderedBlockMatch = RenderedBlockEntry & { from: number; to: number }
+
+export type BlockTextIndex = {
+  path: string
+  docKey: string
+  blocks: RenderedBlockEntry[]
 }
 
 export type ImagesLocation = "vault-assets" | "same-folder"
@@ -138,6 +157,8 @@ export type AppStore = {
   settings: Settings
   renamingPath: string | null
   pendingScroll: PendingScroll | null
+  /** Session-only rendered text published by the mounted BlockNote editor. */
+  blockTextIndex: BlockTextIndex | null
   /**
    * One-shot signal that the next editor mount for this path should
    * land the cursor at the end of the document instead of the start.
@@ -182,6 +203,7 @@ export type AppStore = {
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
   setPendingScroll(target: PendingScroll | null): void
+  setBlockTextIndex(index: BlockTextIndex | null): void
   setPendingCursorAtEnd(path: string | null): void
   setHeadingCommittedPath(path: string | null): void
 
@@ -464,6 +486,7 @@ export const useStore = create<AppStore>()(
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
       pendingScroll: null,
+      blockTextIndex: null,
       pendingCursorAtEnd: null,
       headingCommittedPath: null,
 
@@ -578,9 +601,15 @@ export const useStore = create<AppStore>()(
           }
           const next: Partial<AppStore> = {
             openDoc: doc,
+            docRev: s.docRev + 1,
             editorMode,
             loadError: null,
             blockModeOverrides,
+            blockTextIndex: null,
+            pendingScroll:
+              s.pendingScroll?.kind === "find-raw" || s.pendingScroll?.kind === "find-block"
+                ? null
+                : s.pendingScroll,
             editorSelection: null,
           }
 
@@ -674,6 +703,7 @@ export const useStore = create<AppStore>()(
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
       setRenamingPath: (path) => set({ renamingPath: path }),
       setPendingScroll: (target) => set({ pendingScroll: target }),
+      setBlockTextIndex: (index) => set({ blockTextIndex: index }),
       setPendingCursorAtEnd: (path) => set({ pendingCursorAtEnd: path }),
       setHeadingCommittedPath: (path) =>
         set((s) => (s.headingCommittedPath === path ? {} : { headingCommittedPath: path })),

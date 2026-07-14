@@ -1,15 +1,4 @@
-/**
- * Pure helpers for the in-document find bar (⌘F). Occurrence semantics
- * deliberately mirror the two consumers of `pendingScroll`:
- *
- * - `scrollViewToMatch` (raw mode) walks the full CM doc text.
- * - `findNthBlockMatch` (block mode) walks block text in document order.
- *
- * Both count case-insensitively and advance by the needle's length after a
- * hit (no overlapping matches), so we do the same here to keep the
- * occurrence index the find bar computes aligned with what each editor
- * lands on.
- */
+/** Pure helpers for case-insensitive, non-overlapping in-note Find. */
 
 /**
  * Start offsets of every case-insensitive, non-overlapping occurrence of
@@ -26,6 +15,14 @@ export function findOccurrences(text: string, query: string): number[] {
     i += needle.length
   }
   return out
+}
+
+/** Exact source ranges for raw-mode Find. */
+export function findRanges(text: string, query: string): Array<{ from: number; to: number }> {
+  return findOccurrences(text, query).map((from) => ({
+    from,
+    to: from + query.length,
+  }))
 }
 
 /** 1-based line number containing character offset `pos` in `text`. */

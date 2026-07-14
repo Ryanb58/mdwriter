@@ -41,4 +41,19 @@ describe("store persistence boundaries", () => {
       selectedPath: null,
     })
   })
+
+  it("never persists the rendered block Find index", () => {
+    useStore.setState({
+      blockTextIndex: {
+        path: "/vault/note.md",
+        docKey: "/vault/note.md#1",
+        blocks: [{ blockId: "a", text: "Visible" }],
+      },
+    })
+
+    const partialize = useStore.persist.getOptions().partialize
+    const persisted = partialize?.(useStore.getState()) as Record<string, unknown>
+
+    expect(persisted).not.toHaveProperty("blockTextIndex")
+  })
 })

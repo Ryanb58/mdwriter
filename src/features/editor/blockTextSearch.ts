@@ -1,103 +1,108 @@
-// Defensive walker over BlockNote's block tree. We deliberately type these
-// as `unknown`/`any` and probe shapes at runtime — BlockNote's generated
-// Block type depends on schema generics that don't apply cleanly outside
-// the BlockEditor, and a permissive walker is easier to keep stable.
+import type {
+  BlockTextIndex,
+  RenderedBlockEntry,
+  RenderedBlockMatch,
+} from "../../lib/store"
 
-type AnyBlock = {
+// BlockNote's Block type carries schema-dependent generics that make a small,
+// read-only text walker needlessly hard to reuse. Keep this boundary narrow
+// and probe only the stable runtime fields needed by Find.
+type SearchableBlock = {
   id?: string
   type?: string
   content?: unknown
-  children?: AnyBlock[]
-  props?: Record<string, unknown>
+  children?: SearchableBlock[]
 }
 
-/**
- * Pulls plain text out of a block's inline content. Handles BlockNote's text
- * runs, links (which carry a nested content array), and our wikilink atom
- * (which renders `alias || target`).
- */
-export function extractBlockText(block: AnyBlock | null | undefined): string {
+/** Extract the text BlockNote renders for one block, excluding source-only data. */
+export function extractBlockText(block: SearchableBlock | null | undefined): string {
   if (!block) return ""
-  const content = block.content
+  return extractInlineText(block.content)
+}
+
+/** Build the session-only, display-order index used by Find in block mode. */
+export function buildBlockTextIndex(
+  path: string,
+  docKey: string,
+  blocks: readonly SearchableBlock[] | null | undefined,
+): BlockTextIndex {
+  const entries: RenderedBlockEntry[] = []
+
+  function visit(list: readonly SearchableBlock[]) {
+    for (const block of list) {
+      if (typeof block.id === "string" && block.id) {
+        entries.push({ blockId: block.id, text: extractBlockText(block) })
+      }
+      if (Array.isArray(block.children)) visit(block.children)
+    }
+  }
+
+  if (blocks) visit(blocks)
+  return { path, docKey, blocks: entries }
+}
+
+/** Find exact, case-insensitive, non-overlapping ranges in rendered block text. */
+export function findRenderedBlockMatches(
+  blocks: readonly RenderedBlockEntry[] | null | undefined,
+  query: string,
+): RenderedBlockMatch[] {
+  if (!blocks || !query) return []
+  const needle = query.toLowerCase()
+  if (!needle) return []
+  const matches: RenderedBlockMatch[] = []
+
+  for (const block of blocks) {
+    const haystack = block.text.toLowerCase()
+    let from = 0
+    while ((from = haystack.indexOf(needle, from)) >= 0) {
+      const to = from + query.length
+      matches.push({ ...block, from, to })
+      from = to
+    }
+  }
+
+  return matches
+}
+
+function extractInlineText(content: unknown): string {
   if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  let out = ""
-  for (const c of content) {
-    if (!c || typeof c !== "object") continue
-    const item = c as Record<string, unknown>
+  if (!Array.isArray(content)) {
+    const value = asRecord(content)
+    if (value.type === "tableCell" && Array.isArray(value.content)) {
+      return extractInlineText(value.content)
+    }
+    if (value.type !== "tableContent" || !Array.isArray(value.rows)) return ""
+    let tableText = ""
+    for (const rowValue of value.rows) {
+      const row = asRecord(rowValue)
+      if (!Array.isArray(row.cells)) continue
+      for (const cell of row.cells) tableText += extractInlineText(cell)
+    }
+    return tableText
+  }
+
+  let text = ""
+  for (const candidate of content) {
+    if (!candidate || typeof candidate !== "object") continue
+    const item = candidate as Record<string, unknown>
     if (typeof item.text === "string") {
-      out += item.text
+      text += item.text
       continue
     }
     if (item.type === "wikilink") {
-      const props = (item.props ?? {}) as Record<string, unknown>
+      const props = asRecord(item.props)
       const alias = typeof props.alias === "string" ? props.alias : ""
       const target = typeof props.target === "string" ? props.target : ""
-      out += alias || target
+      text += alias || target
       continue
     }
-    // Links and other inline containers carry their own content array.
-    if (Array.isArray(item.content)) {
-      out += extractBlockText({ content: item.content })
-    }
+    if (Array.isArray(item.content)) text += extractInlineText(item.content)
   }
-  return out
+  return text
 }
 
-/**
- * Walk blocks in document order, counting case-insensitive occurrences of
- * `needle`. Returns the block containing the `occurrence`-th match (0-indexed)
- * and its `localIndex` — which match within that block to highlight.
- *
- * When the doc has been edited since the search ran and the requested
- * occurrence no longer exists, falls back to the last available match so the
- * user still lands somewhere reasonable. Returns null only when there are no
- * matches at all.
- */
-export function findNthBlockMatch<T extends AnyBlock>(
-  blocks: readonly T[] | undefined | null,
-  needle: string,
-  occurrence: number,
-): { block: T; localIndex: number } | null {
-  if (!blocks || !needle) return null
-  const n = needle.toLowerCase()
-  if (!n) return null
-  const target = Math.max(0, Math.floor(occurrence))
-
-  let cumulative = 0
-  let lastMatch: { block: T; localIndex: number } | null = null
-
-  function walk(list: readonly T[]): { block: T; localIndex: number } | null {
-    for (const b of list) {
-      const text = extractBlockText(b).toLowerCase()
-      const inBlock = countOccurrences(text, n)
-      if (inBlock > 0) {
-        // The Nth global match might be inside this block.
-        const local = target - cumulative
-        if (local >= 0 && local < inBlock) {
-          return { block: b, localIndex: local }
-        }
-        lastMatch = { block: b, localIndex: inBlock - 1 }
-        cumulative += inBlock
-      }
-      if (Array.isArray(b.children) && b.children.length > 0) {
-        const inner = walk(b.children as unknown as readonly T[])
-        if (inner) return inner
-      }
-    }
-    return null
-  }
-
-  return walk(blocks) ?? lastMatch
-}
-
-function countOccurrences(haystack: string, needle: string): number {
-  if (!needle) return 0
-  let count = 0
-  let i = 0
-  while ((i = haystack.indexOf(needle, i)) >= 0) {
-    count++
-    i += needle.length
-  }
-  return count
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {}
 }

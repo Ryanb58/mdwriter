@@ -25,6 +25,19 @@ describe("document analysis store transitions", () => {
     expect(useStore.getState().openDoc?.markdownRisks).toEqual([])
   })
 
+  it("advances the editor revision for every loaded or externally replaced buffer", () => {
+    useStore.setState({ docRev: 8 })
+
+    useStore.getState().openAnalyzedDocument("/vault/a.md", "Same body", "disk")
+    expect(useStore.getState().docRev).toBe(9)
+
+    useStore.getState().openAnalyzedDocument("/vault/b.md", "Same body", "disk")
+    expect(useStore.getState().docRev).toBe(10)
+
+    useStore.getState().openAnalyzedDocument("/vault/b.md", "", "external")
+    expect(useStore.getState().docRev).toBe(11)
+  })
+
   it("atomically opens a risky document in raw mode", () => {
     const snapshots: Array<{ path: string | null; mode: string }> = []
     const unsubscribe = useStore.subscribe((state) => {

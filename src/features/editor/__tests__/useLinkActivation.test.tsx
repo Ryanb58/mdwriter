@@ -19,7 +19,13 @@ function Host() {
   const ref = useRef<HTMLDivElement>(null)
   useLinkActivation(ref)
   return (
-    <div ref={ref} data-testid="host" contentEditable suppressContentEditableWarning>
+    <div
+      ref={ref}
+      className="ProseMirror"
+      data-testid="host"
+      contentEditable
+      suppressContentEditableWarning
+    >
       <p>
         <span className="wikilink" data-target="Three laws of motion">3LoM</span>
       </p>
@@ -36,6 +42,18 @@ function Host() {
   )
 }
 
+function CodeMirrorHost() {
+  const ref = useRef<HTMLDivElement>(null)
+  useLinkActivation(ref)
+  return (
+    <div ref={ref}>
+      <div className="cm-content" contentEditable suppressContentEditableWarning>
+        <span className="wikilink" data-target="Three laws of motion">3LoM</span>
+      </div>
+    </div>
+  )
+}
+
 function clickHTMLElement(
   el: HTMLElement,
   opts: { metaKey?: boolean; ctrlKey?: boolean } = {},
@@ -43,6 +61,44 @@ function clickHTMLElement(
   const ev = new MouseEvent("click", { bubbles: true, cancelable: true, ...opts })
   el.dispatchEvent(ev)
   return ev
+}
+
+function clickFromPointer(
+  el: HTMLElement,
+  opts: { metaKey?: boolean; ctrlKey?: boolean } = {},
+) {
+  el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, ...opts }))
+  el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, ...opts }))
+  return clickHTMLElement(el, opts)
+}
+
+function placeCaret(el: HTMLElement, offset: number) {
+  const text = el.firstChild
+  if (!(text instanceof Text)) throw new Error("Expected link text")
+
+  const range = document.createRange()
+  range.setStart(text, offset)
+  range.collapse(true)
+
+  const selection = window.getSelection()
+  if (!selection) throw new Error("Expected a DOM selection")
+  selection.removeAllRanges()
+  selection.addRange(range)
+
+  return {
+    anchorNode: selection.anchorNode,
+    anchorOffset: selection.anchorOffset,
+    focusNode: selection.focusNode,
+    focusOffset: selection.focusOffset,
+  }
+}
+
+function expectCaretToEqual(expected: ReturnType<typeof placeCaret>) {
+  const selection = window.getSelection()
+  expect(selection?.anchorNode).toBe(expected.anchorNode)
+  expect(selection?.anchorOffset).toBe(expected.anchorOffset)
+  expect(selection?.focusNode).toBe(expected.focusNode)
+  expect(selection?.focusOffset).toBe(expected.focusOffset)
 }
 
 describe("useLinkActivation", () => {
@@ -58,14 +114,28 @@ describe("useLinkActivation", () => {
   })
 
   afterEach(() => {
+    window.getSelection()?.removeAllRanges()
     Reflect.deleteProperty(window.navigator, "platform")
   })
 
-  it("keeps a bare wikilink click as an editing gesture", () => {
+  it("keeps a bare BlockNote wikilink click as an editing gesture without moving the caret", () => {
     const { getByText } = render(<Host />)
-    const event = clickHTMLElement(getByText("3LoM"))
+    const link = getByText("3LoM")
+    const caret = placeCaret(link, 2)
+    const event = clickFromPointer(link)
     expect(event.defaultPrevented).toBe(false)
     expect(useStore.getState().selectedPath).toBeNull()
+    expectCaretToEqual(caret)
+  })
+
+  it("keeps a bare CodeMirror wikilink click as an editing gesture without moving the caret", () => {
+    const { getByText } = render(<CodeMirrorHost />)
+    const link = getByText("3LoM")
+    const caret = placeCaret(link, 2)
+    const event = clickFromPointer(link)
+    expect(event.defaultPrevented).toBe(false)
+    expect(useStore.getState().selectedPath).toBeNull()
+    expectCaretToEqual(caret)
   })
 
   it("opens a resolved wikilink on Ctrl-click outside Apple platforms", () => {

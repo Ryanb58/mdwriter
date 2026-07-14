@@ -293,4 +293,21 @@ describe("detectMarkdownRisks", () => {
       "link-title",
     ])
   })
+
+  it.each([
+    "before <div>after</div>",
+    "before <table><tr><td>after</td></tr></table>",
+  ])("treats block-tag HTML in the middle of prose as inline HTML: %#", (markdown) => {
+    expect(codes(markdown)).toEqual(["inline-html"])
+  })
+
+  it("detects a link title separated from its destination by a line ending", () => {
+    expect(codes('[Docs](https://example.test/docs\n  "Reference")')).toEqual([
+      "link-title",
+    ])
+  })
+
+  it("detects a link title after a nested-bracket label", () => {
+    expect(codes('[outer [inner]](/docs "Title")')).toEqual(["link-title"])
+  })
 })

@@ -275,6 +275,7 @@ body {
   line-height: 1.4 !important;
 }
 .cm-content { flex-grow: 2 !important; flex-shrink: 0 !important; }
+.cm-content.cm-lineWrapping { flex-shrink: 1 !important; min-width: 0; }
 .cm-gutters { display: flex !important; flex-shrink: 0 !important; }
 .cm-gutter { display: flex !important; flex-direction: column !important; }
 

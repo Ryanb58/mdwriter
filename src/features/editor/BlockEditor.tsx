@@ -155,6 +155,8 @@ export function BlockEditor({
   useEffect(() => {
     if (initializedKey.current === docKey) return
     const generation = beginHydration(hydrationGate.current)
+    let disposed = false
+    let focusFrame: number | null = null
     // docKey embeds the file path, so a rename (e.g. autoRename-from-H1)
     // changes the key even though the doc body is identical to what the
     // editor just emitted. Re-parsing in that case clobbers the user's
@@ -179,7 +181,7 @@ export function BlockEditor({
       // switch, external reload bumping docRev). Mutating the editor now
       // would load this stale parse's blocks into the new document. The
       // newer effect run owns `parsing` — leave it untouched.
-      if (!isCurrentHydration(hydrationGate.current, generation)) return
+      if (disposed || !isCurrentHydration(hydrationGate.current, generation)) return
       // Only replace when there's actual content to load. For a brand-new
       // empty file, BlockNote's editor already has the default empty
       // paragraph it created in useCreateBlockNote — replacing it with a
@@ -214,13 +216,20 @@ export function BlockEditor({
         if (firstBlock) {
           try {
             editor.setTextCursorPosition(firstBlock as never, placement)
-            editor.focus()
+            focusFrame = requestAnimationFrame(() => {
+              focusFrame = null
+              if (!disposed) editor.focus()
+            })
           } catch {
             // Block went away mid-frame; nothing to recover.
           }
         }
       }
     })()
+    return () => {
+      disposed = true
+      if (focusFrame !== null) cancelAnimationFrame(focusFrame)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey, initialMarkdown, editor])
 

@@ -17,6 +17,8 @@ const harness = vi.hoisted(() => {
     replaceBlocks: vi.fn(),
     blocksToMarkdownLossy: vi.fn(),
     isFocused: vi.fn(() => true),
+    setTextCursorPosition: vi.fn(),
+    focus: vi.fn(),
     onSelectionChange: vi.fn(() => vi.fn()),
     getSelectedText: vi.fn(() => ""),
   }
@@ -100,13 +102,17 @@ describe("BlockEditor initialization", () => {
       { id: "title", type: "heading", content: [{ type: "text", text: "Title" }] },
     ])
     harness.editor.blocksToMarkdownLossy.mockResolvedValue("# Title\n")
+    harness.editor.isFocused.mockReturnValue(true)
     harness.editor.replaceBlocks.mockImplementation((_oldBlocks, newBlocks) => {
       harness.editor.document = newBlocks
       void harness.onChange?.()
     })
   })
 
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
 
   it("does not export hydration changes but emits the next user change", async () => {
     const onChangeMarkdown = vi.fn()
@@ -136,5 +142,33 @@ describe("BlockEditor initialization", () => {
 
     expect(onChangeMarkdown).toHaveBeenCalledTimes(1)
     expect(onChangeMarkdown).toHaveBeenCalledWith("# Changed\n")
+  })
+
+  it("restores focus on the next animation frame after mounting", async () => {
+    let focusFrame: FrameRequestCallback | null = null
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      focusFrame = callback
+      return 1
+    }))
+    vi.stubGlobal("cancelAnimationFrame", vi.fn())
+    harness.editor.isFocused.mockReturnValue(false)
+
+    render(
+      <BlockEditor
+        initialMarkdown="# Title"
+        onChangeMarkdown={vi.fn()}
+        docKey="notes/title.md:1"
+      />,
+    )
+
+    await waitFor(() => {
+      expect(harness.editor.setTextCursorPosition).toHaveBeenCalledTimes(1)
+    })
+    expect(harness.editor.focus).not.toHaveBeenCalled()
+    expect(focusFrame).not.toBeNull()
+
+    act(() => focusFrame?.(0))
+
+    expect(harness.editor.focus).toHaveBeenCalledTimes(1)
   })
 })

@@ -259,8 +259,30 @@ function maskIndentedCode(source: string, chars: string[]): void {
 }
 
 function maskEscapes(chars: string[]): void {
+  const source = chars.join("")
   for (let index = 0; index + 1 < chars.length; index += 1) {
     if (chars[index] !== "\\" || chars[index + 1] === "\n") continue
+
+    if (chars[index + 1] === "<") {
+      const opener = /^<([a-z][\w-]*)\b[^<>\n]*>/i.exec(source.slice(index + 1))
+      if (opener) {
+        const openerEnd = index + 1 + opener[0].length
+        maskRange(chars, index, openerEnd)
+
+        if (!/\/\s*>$/.test(opener[0])) {
+          const tag = opener[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+          const closing = new RegExp(`</${tag}\\s*>`, "i").exec(source.slice(openerEnd))
+          if (closing?.index !== undefined) {
+            const closingStart = openerEnd + closing.index
+            maskRange(chars, closingStart, closingStart + closing[0].length)
+          }
+        }
+
+        index = openerEnd - 1
+        continue
+      }
+    }
+
     if (chars[index + 1] === "`" || chars[index + 1] === "~") {
       const marker = chars[index + 1]
       let runLength = 1
@@ -362,16 +384,19 @@ function maskRawHtmlBlocks(
 }
 
 function hasInlineLinkTitle(text: string): boolean {
-  const opener = /!?\[[^\]\n]*\]\(/g
-  for (const match of text.matchAll(opener)) {
+  for (let labelStart = 0; labelStart < text.length; labelStart += 1) {
+    if (text[labelStart] !== "[") continue
+
+    const labelEnd = matchingLabelEnd(text, labelStart)
+    if (labelEnd < 0 || text[labelEnd + 1] !== "(") continue
+
     let depth = 0
     let quote: '"' | "'" | null = null
     let close = -1
-    const start = (match.index ?? 0) + match[0].length
+    const start = labelEnd + 2
 
     for (let index = start; index < text.length; index += 1) {
       const char = text[index]
-      if (char === "\n") break
       if (quote) {
         if (char === quote && text[index - 1] !== "\\") quote = null
         continue
@@ -398,6 +423,17 @@ function hasInlineLinkTitle(text: string): boolean {
   return false
 }
 
+function matchingLabelEnd(text: string, start: number): number {
+  let depth = 1
+  for (let index = start + 1; index < text.length; index += 1) {
+    if (text[index] === "[") depth += 1
+    if (text[index] !== "]") continue
+    depth -= 1
+    if (depth === 0) return index
+  }
+  return -1
+}
+
 function hasMdx(text: string): boolean {
   const jsxTag = /<\/?[A-Z][\w.-]*(?:\s[^<>\n]*?)?\s*\/?>/
   const esm = /^(?:import\s+(?:[^\n]+\s+from\s+|["'])|export\s+(?:default\b|const\b|let\b|var\b|function\b|class\b|\{))/m
@@ -420,10 +456,9 @@ function hasBalancedMdxExpression(text: string): boolean {
 
 function hasInlineHtml(text: string): boolean {
   const tag = /<\/?([a-z][\w-]*)(?:\s[^<>\n]*?)?\s*\/?>/g
-  for (const match of text.matchAll(tag)) {
-    if (!RAW_BLOCK_TAGS.has(match[1].toLowerCase())) return true
-  }
-  return false
+  // Canonical block HTML has already been masked. Any tag still visible is
+  // inline HTML, including block-tag names used in the middle of prose.
+  return tag.test(text)
 }
 
 function hasDisplayMath(text: string): boolean {

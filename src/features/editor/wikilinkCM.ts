@@ -17,6 +17,7 @@ import { Decoration, EditorView, MatchDecorator, ViewPlugin, type DecorationSet,
 import { StateEffect, type Extension } from "@codemirror/state"
 import type { VaultNote } from "../../lib/vaultNotes"
 import { isInternalHref, resolveLinkTarget } from "../../lib/wikilinkResolve"
+import { wikilinkTooltip } from "./linkAffordance"
 
 // A wikilink `[[Foo]]` or `[[Foo.md|alias]]`.
 const WIKILINK_RE = /\[\[([^\[\]\r\n]+?)\]\]/g
@@ -25,8 +26,22 @@ const WIKILINK_RE = /\[\[([^\[\]\r\n]+?)\]\]/g
 // internal link. We only decorate when the href looks internal.
 const MD_LINK_RE = /(?<!!)\[([^\]\r\n]+)\]\(([^)\r\n]+)\)/g
 
-function resolvedClass(target: string, notes: VaultNote[]): string {
-  return resolveLinkTarget(target, notes) ? "wikilink--resolved" : "wikilink--broken"
+type LinkDecorationKind = "cm-wikilink" | "cm-md-link"
+
+export function linkDecorationPresentation(
+  target: string,
+  notes: VaultNote[],
+  kind: LinkDecorationKind,
+  platform?: string,
+) {
+  const resolved = resolveLinkTarget(target, notes)
+  return {
+    className: `wikilink ${resolved ? "wikilink--resolved" : "wikilink--broken"} ${kind}`,
+    attributes: {
+      "data-target": target,
+      title: wikilinkTooltip(target, resolved?.rel ?? null, platform),
+    },
+  }
 }
 
 function wikilinkDecoration(text: string, notes: VaultNote[]) {
@@ -34,9 +49,10 @@ function wikilinkDecoration(text: string, notes: VaultNote[]) {
   // the whole `[[...]]` run so clicking anywhere in it follows the link.
   const inner = text.slice(2, -2)
   const target = inner.split("|", 1)[0]?.trim() ?? ""
+  const presentation = linkDecorationPresentation(target, notes, "cm-wikilink")
   return Decoration.mark({
-    class: `wikilink ${resolvedClass(target, notes)} cm-wikilink`,
-    attributes: { "data-target": target },
+    class: presentation.className,
+    attributes: presentation.attributes,
   })
 }
 
@@ -45,9 +61,10 @@ function mdInternalDecoration(href: string, notes: VaultNote[]) {
   // used by BlockNote (`.wikilink[data-target]`) resolves it. The handler
   // runs decodeURIComponent before passing to the resolver, so storing the
   // raw href (`Three%20laws%20of%20motion.md`) is correct.
+  const presentation = linkDecorationPresentation(href, notes, "cm-md-link")
   return Decoration.mark({
-    class: `wikilink ${resolvedClass(href, notes)} cm-md-link`,
-    attributes: { "data-target": href },
+    class: presentation.className,
+    attributes: presentation.attributes,
   })
 }
 

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { detectWikilinkTrigger, filterNotes } from "../wikilinkCM"
+import {
+  detectWikilinkTrigger,
+  filterNotes,
+  linkDecorationPresentation,
+} from "../wikilinkCM"
 import type { VaultNote } from "../../../lib/vaultNotes"
 
 const notes: VaultNote[] = [
@@ -68,5 +72,43 @@ describe("filterNotes", () => {
     const out = filterNotes(notes, "m")
     // "Mass" (m@0) ranks before "Three laws of motion" (m@13)
     expect(out[0].name).toBe("Mass")
+  })
+})
+
+describe("link decoration presentation", () => {
+  it("adds the resolved path and modifier gesture to raw wikilinks", () => {
+    expect(
+      linkDecorationPresentation("Inertia", notes, "cm-wikilink", "MacIntel"),
+    ).toEqual({
+      className: "wikilink wikilink--resolved cm-wikilink",
+      attributes: {
+        "data-target": "Inertia",
+        title: "Open Inertia.md (Cmd-click)",
+      },
+    })
+  })
+
+  it("adds the same affordance to internal Markdown links", () => {
+    expect(
+      linkDecorationPresentation("Inertia.md", notes, "cm-md-link", "Win32"),
+    ).toEqual({
+      className: "wikilink wikilink--resolved cm-md-link",
+      attributes: {
+        "data-target": "Inertia.md",
+        title: "Open Inertia.md (Ctrl-click)",
+      },
+    })
+  })
+
+  it("labels unresolved raw links without promising navigation", () => {
+    expect(
+      linkDecorationPresentation("Missing", notes, "cm-wikilink", "MacIntel"),
+    ).toEqual({
+      className: "wikilink wikilink--broken cm-wikilink",
+      attributes: {
+        "data-target": "Missing",
+        title: "Note not found: Missing",
+      },
+    })
   })
 })

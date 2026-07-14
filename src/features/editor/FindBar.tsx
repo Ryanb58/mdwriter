@@ -3,6 +3,7 @@ import { CaretDown, CaretUp, X } from "@phosphor-icons/react"
 import { useStore, type PendingScroll } from "../../lib/store"
 import { findRanges, wrapIndex } from "./findInText"
 import { findRenderedBlockMatches } from "./blockTextSearch"
+import { documentRenderKey } from "./documentRenderKey"
 
 const QUERY_DEBOUNCE_MS = 150
 
@@ -22,7 +23,7 @@ export function FindBar() {
   const blockTextIndex = useStore((state) => state.blockTextIndex)
   const setPendingScroll = useStore((state) => state.setPendingScroll)
 
-  const expectedDocKey = doc ? `${doc.path}#${docRev}` : ""
+  const expectedDocKey = documentRenderKey(docRev)
   const activeBlockIndex =
     doc &&
     blockTextIndex?.path === doc.path &&
@@ -113,7 +114,9 @@ export function FindBar() {
     hasJumped.current = false
     clearExactFindTarget()
     if (!open || !query) return
-    const timer = window.setTimeout(() => jumpRef.current(0), QUERY_DEBOUNCE_MS)
+    const timer = window.setTimeout(() => {
+      if (!hasJumped.current) jumpRef.current(0)
+    }, QUERY_DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
   }, [query, open, domainKey])
 

@@ -9,7 +9,12 @@ function seedDoc(raw: string) {
 
 describe("applyToOpenDoc", () => {
   beforeEach(() => {
-    useStore.setState({ openDoc: null, editorSelection: null, docRev: 0 })
+    useStore.setState({
+      openDoc: null,
+      editorSelection: null,
+      docRev: 0,
+      loadError: null,
+    })
   })
 
   it("replaces the whole document and bumps docRev", () => {
@@ -63,6 +68,22 @@ describe("applyToOpenDoc", () => {
     expect(result).toEqual({ ok: false, reason: "No document is open." })
   })
 
+  it("refuses to mutate a retained note while another file has a load error", () => {
+    seedDoc("retained content")
+    useStore.setState({
+      loadError: { path: "/vault/unreadable.md", message: "permission denied" },
+    })
+
+    const result = applyToOpenDoc({ kind: "replace-all", markdown: "replacement" })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "Resolve the file load error before editing this note.",
+    })
+    expect(useStore.getState().openDoc?.text).toBe("retained content")
+    expect(useStore.getState().openDoc?.dirty).toBe(false)
+  })
+
   it("skips docRev bump when content is unchanged", () => {
     seedDoc("same")
     const result = applyToOpenDoc({ kind: "replace-all", markdown: "same" })
@@ -86,7 +107,12 @@ describe("applyToOpenDoc", () => {
 
 describe("previewApply", () => {
   beforeEach(() => {
-    useStore.setState({ openDoc: null, editorSelection: null, docRev: 0 })
+    useStore.setState({
+      openDoc: null,
+      editorSelection: null,
+      docRev: 0,
+      loadError: null,
+    })
   })
 
   it("returns before/after without mutating the store", () => {
@@ -94,5 +120,14 @@ describe("previewApply", () => {
     const preview = previewApply({ kind: "replace-all", markdown: "new" })
     expect(preview).toEqual({ before: "hello world", after: "new" })
     expect(useStore.getState().openDoc?.text).toBe("hello world")
+  })
+
+  it("does not preview a retained note while another file has a load error", () => {
+    seedDoc("retained content")
+    useStore.setState({
+      loadError: { path: "/vault/unreadable.md", message: "permission denied" },
+    })
+
+    expect(previewApply({ kind: "replace-all", markdown: "new" })).toBeNull()
   })
 })

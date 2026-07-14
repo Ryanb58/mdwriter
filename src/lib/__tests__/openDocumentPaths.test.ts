@@ -27,7 +27,7 @@ function seedPathState() {
     },
     blockTextIndex: {
       path: "/vault/notes/draft.md",
-      docKey: "/vault/notes/draft.md#2",
+      docKey: "document:2",
       blocks: [{ blockId: "one", text: "Draft" }],
     },
     pendingCursorAtEnd: "/vault/notes/draft.md",
@@ -95,7 +95,11 @@ describe("open-document path state", () => {
       "/vault/notes-old/keep.md": "other",
     })
     expect(s.pendingScroll?.path).toBe("/vault/archive/draft.md")
-    expect(s.blockTextIndex).toBeNull()
+    expect(s.blockTextIndex).toEqual({
+      path: "/vault/archive/draft.md",
+      docKey: "document:2",
+      blocks: [{ blockId: "one", text: "Draft" }],
+    })
     expect(s.pendingCursorAtEnd).toBe("/vault/archive/draft.md")
     expect(s.headingCommittedPath).toBe("/vault/archive/draft.md")
     expect(s.editorSelection?.sourcePath).toBe("/vault/archive/draft.md")

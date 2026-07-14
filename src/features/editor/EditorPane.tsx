@@ -14,6 +14,7 @@ import { targetParentDir } from "../tree/targetDir"
 import { FindBar } from "./FindBar"
 import { MarkdownCompatibilityBanner } from "./MarkdownCompatibilityBanner"
 import { DocumentLoadState } from "./DocumentLoadState"
+import { documentRenderKey } from "./documentRenderKey"
 
 // The block editor pulls the multi-megabyte editor-vendor chunk (BlockNote +
 // ProseMirror + Shiki grammars). Loading it lazily keeps that chunk out of
@@ -46,16 +47,15 @@ export function EditorPane() {
   const rootPath = useStore((s) => s.rootPath)
   const focusMode = useStore((s) => s.focusMode)
 
-  if (!doc) {
-    if (loadError) {
-      return (
-        <div className="flex h-full flex-col bg-bg">
-          <DocumentLoadState error={loadError} onRetry={retry} />
-        </div>
-      )
-    }
-    return <EmptyEditorState />
+  if (loadError) {
+    return (
+      <div className="flex h-full flex-col bg-bg">
+        <DocumentLoadState error={loadError} onRetry={retry} />
+      </div>
+    )
   }
+
+  if (!doc) return <EmptyEditorState />
 
   // Breadcrumb: vault name → ...subdirs → filename. Subdir segments are
   // clickable — they reveal the folder in the tree sidebar.
@@ -79,7 +79,6 @@ export function EditorPane() {
           <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
         </div>
       </div>
-      {loadError && <DocumentLoadState error={loadError} onRetry={retry} />}
       <MarkdownCompatibilityBanner />
       <div
         className={[
@@ -97,7 +96,7 @@ export function EditorPane() {
           <Suspense fallback={<div className="h-full" />}>
           <BlockEditor
             key={docRev}
-            docKey={`${doc.path}#${docRev}`}
+            docKey={documentRenderKey(docRev)}
             initialMarkdown={getBody(doc.text)}
             onChangeMarkdown={(body) => {
               const state = useStore.getState()

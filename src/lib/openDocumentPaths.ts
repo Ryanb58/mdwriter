@@ -75,9 +75,13 @@ export function remapOpenDocumentPath(from: string, to: string): void {
             path: remapPath(state.pendingScroll.path, from, to) ?? state.pendingScroll.path,
           }
         : null,
-      blockTextIndex: state.blockTextIndex && remapPath(state.blockTextIndex.path, from, to)
-        ? null
-        : state.blockTextIndex,
+      blockTextIndex: state.blockTextIndex
+        ? {
+            ...state.blockTextIndex,
+            path: remapPath(state.blockTextIndex.path, from, to)
+              ?? state.blockTextIndex.path,
+          }
+        : null,
       pendingCursorAtEnd: remapOptional(state.pendingCursorAtEnd, from, to),
       headingCommittedPath: remapOptional(state.headingCommittedPath, from, to),
       editorSelection: state.editorSelection

@@ -10,6 +10,7 @@ describe("PropertiesPane content edits", () => {
       editorMode: "block",
       preferredEditorMode: "block",
       blockModeOverrides: {},
+      loadError: null,
     })
   })
 
@@ -33,5 +34,18 @@ describe("PropertiesPane content edits", () => {
       markdownRisks: [],
     })
     expect(useStore.getState().openDoc?.text).toContain("status: draft")
+  })
+
+  it("does not expose retained-note fields while another file has a load error", () => {
+    useStore.getState().openAnalyzedDocument("/vault/previous.md", "# Previous", "disk")
+    useStore.setState({
+      loadError: { path: "/vault/unreadable.md", message: "permission denied" },
+    })
+
+    render(<PropertiesPane />)
+
+    expect(screen.getByText(/resolve the file load error/i)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Add field" })).not.toBeInTheDocument()
+    expect(useStore.getState().openDoc?.text).toBe("# Previous")
   })
 })

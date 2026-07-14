@@ -42,9 +42,22 @@ async function openFolderExclusive(
 ) {
   const before = useStore.getState()
   const oldRoot = before.rootPath
+  const oldTreeRoot = before.tree?.path
+  const oldDocPath = before.openDoc?.path
   const oldRoots: string[] = []
-  if (oldRoot) oldRoots.push(oldRoot)
-  else if (before.openDoc) oldRoots.push(before.openDoc.path)
+  const addOldRoot = (candidate: string | null | undefined) => {
+    if (
+      candidate &&
+      !oldRoots.some((root) => pathIsWithin(candidate, root))
+    ) {
+      oldRoots.push(candidate)
+    }
+  }
+  addOldRoot(oldRoot)
+  // Legacy sessions may have stored a symlink path as rootPath while the
+  // tree/open document use Rust's canonical paths. Guard both identities.
+  addOldRoot(oldTreeRoot)
+  addOldRoot(oldDocPath)
   const guard = await beginOpenDocPathMutation(oldRoots)
   let oldWatcherStopped = false
   let newWatcherStarted = false
@@ -64,13 +77,16 @@ async function openFolderExclusive(
         // deliberately does not restore it. Re-establish the old scope before
         // the final old-note flush, then make the new list the last authority.
         const currentDoc = useStore.getState().openDoc
-        if (oldRoot && currentDoc && pathIsWithin(currentDoc.path, oldRoot)) {
-          await ipc.listTree(oldRoot, opts)
+        if (
+          currentDoc &&
+          oldRoots.some((root) => pathIsWithin(currentDoc.path, root))
+        ) {
+          if (oldRoot) await ipc.listTree(oldRoot, opts)
           await guard.flush(currentDoc.path)
         }
 
         tree = await ipc.listTree(path, opts)
-        await ipc.startWatcher(path)
+        await ipc.startWatcher(tree.path)
         newWatcherStarted = true
 
         // The old editor remains usable while the async setup runs. If it was
@@ -80,8 +96,7 @@ async function openFolderExclusive(
         const latestDoc = useStore.getState().openDoc
         const hasLateOldEdit = Boolean(
           latestDoc?.dirty &&
-          oldRoot &&
-          pathIsWithin(latestDoc.path, oldRoot),
+          oldRoots.some((root) => pathIsWithin(latestDoc.path, root)),
         )
         if (!hasLateOldEdit) break
 
@@ -91,7 +106,7 @@ async function openFolderExclusive(
 
       guard.discard(oldRoots)
       useStore.setState({
-        rootPath: path,
+        rootPath: tree.path,
         tree,
         selectedPath: null,
         selectedPaths: new Set(),
@@ -109,7 +124,7 @@ async function openFolderExclusive(
       committed = true
 
       // Drop the user back into the note they were writing in this vault.
-      restoreLastFile(path)
+      restoreLastFile(tree.path, path)
     })
 
     // Bookkeeping that shouldn't block the vault becoming interactive.
@@ -130,10 +145,13 @@ async function openFolderExclusive(
           await ipc.stopWatcher().catch(() => {})
         }
         if (oldRoot) {
-          await ipc.listTree(oldRoot, opts).catch((restoreError) => {
+          let watcherRoot = oldRoot
+          try {
+            watcherRoot = (await ipc.listTree(oldRoot, opts)).path
+          } catch (restoreError) {
             console.error("failed to restore previous vault scope", restoreError)
-          })
-          await ipc.startWatcher(oldRoot).catch((restoreError) => {
+          }
+          await ipc.startWatcher(watcherRoot).catch((restoreError) => {
             console.error("failed to restore previous vault watcher", restoreError)
           })
         }
@@ -150,9 +168,10 @@ async function openFolderExclusive(
  * exists) and expand its ancestor folders so the selection is visible.
  * Selection drives useOpenFile, which loads the doc from disk.
  */
-function restoreLastFile(vaultPath: string) {
+function restoreLastFile(vaultPath: string, legacyVaultPath?: string) {
   const s = useStore.getState()
   const saved = s.recentFilesByVault[vaultPath]?.[0]
+    ?? (legacyVaultPath ? s.recentFilesByVault[legacyVaultPath]?.[0] : undefined)
   if (!saved || !findNode(s.tree, saved)) return
   const expanded = new Set(s.expandedFolders)
   let dir = saved.slice(0, saved.lastIndexOf("/"))

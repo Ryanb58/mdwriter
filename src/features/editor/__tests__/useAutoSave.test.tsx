@@ -30,6 +30,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 import { useStore } from "../../../lib/store"
 import { useAutoSave } from "../useAutoSave"
+import defaultCapability from "../../../../src-tauri/capabilities/default.json"
 
 function openDirty(text = "edited") {
   useStore.getState().openAnalyzedDocument("/vault/note.md", "initial", "disk")
@@ -78,6 +79,8 @@ describe("useAutoSave", () => {
   })
 
   it("prevents close, awaits the flush, then destroys the window", async () => {
+    expect(defaultCapability.permissions).toContain("core:window:allow-destroy")
+
     const flush = deferred<void>()
     harness.flush.mockReturnValue(flush.promise)
     openDirty("close safely")

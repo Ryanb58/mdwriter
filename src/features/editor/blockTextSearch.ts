@@ -3,6 +3,7 @@ import type {
   RenderedBlockEntry,
   RenderedBlockMatch,
 } from "../../lib/store"
+import { findRanges } from "./findInText"
 
 // BlockNote's Block type carries schema-dependent generics that make a small,
 // read-only text walker needlessly hard to reuse. Keep this boundary narrow
@@ -47,17 +48,11 @@ export function findRenderedBlockMatches(
   query: string,
 ): RenderedBlockMatch[] {
   if (!blocks || !query) return []
-  const needle = query.toLowerCase()
-  if (!needle) return []
   const matches: RenderedBlockMatch[] = []
 
   for (const block of blocks) {
-    const haystack = block.text.toLowerCase()
-    let from = 0
-    while ((from = haystack.indexOf(needle, from)) >= 0) {
-      const to = from + query.length
-      matches.push({ ...block, from, to })
-      from = to
+    for (const range of findRanges(block.text, query)) {
+      matches.push({ ...block, ...range })
     }
   }
 

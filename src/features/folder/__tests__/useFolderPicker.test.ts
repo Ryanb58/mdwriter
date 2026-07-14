@@ -75,7 +75,8 @@ function expectOldVaultIntact() {
 describe("openFolder transaction", () => {
   beforeEach(() => {
     harness.listTree.mockReset()
-    harness.listTree.mockResolvedValue(newTree)
+    harness.listTree.mockImplementation(async (listedPath: string) =>
+      listedPath === "/old" ? oldTree : newTree)
     harness.startWatcher.mockReset()
     harness.startWatcher.mockResolvedValue(undefined)
     harness.stopWatcher.mockReset()
@@ -291,6 +292,95 @@ describe("openFolder transaction", () => {
     expect(harness.startWatcher.mock.calls.at(-1)).toEqual(["/new"])
     expect(useStore.getState().rootPath).toBe("/new")
     expect(useStore.getState().tree).toBe(newTree)
+  })
+
+  it("uses canonical tree roots and still flushes a legacy symlinked open note", async () => {
+    const canonicalOldTree = {
+      kind: "dir" as const,
+      name: "old",
+      path: "/real/old",
+      children: [
+        {
+          kind: "file" as const,
+          name: "draft.md",
+          path: "/real/old/draft.md",
+        },
+      ],
+    }
+    const canonicalNewTree = {
+      kind: "dir" as const,
+      name: "new",
+      path: "/real/new",
+      children: [
+        {
+          kind: "file" as const,
+          name: "note.md",
+          path: "/real/new/note.md",
+        },
+      ],
+    }
+    useStore.getState().openAnalyzedDocument(
+      "/real/old/draft.md",
+      "dirty canonical note",
+      "disk",
+    )
+    useStore.getState().editOpenDoc("edited through the symlinked vault")
+    useStore.setState({
+      rootPath: "/alias/old",
+      tree: canonicalOldTree,
+      selectedPath: "/real/old/draft.md",
+      selectedPaths: new Set(["/real/old/draft.md"]),
+    })
+    harness.listTree.mockImplementation(async (listedPath: string) =>
+      listedPath === "/alias/old" ? canonicalOldTree : canonicalNewTree)
+    harness.flush.mockImplementation(async () => {
+      useStore.getState().patchOpenDoc({ dirty: false, saveStatus: "clean" })
+    })
+
+    await openFolder("/alias/new", deps())
+
+    expect(harness.begin).toHaveBeenCalledWith([
+      "/alias/old",
+      "/real/old",
+    ])
+    expect(harness.flush).toHaveBeenCalledWith("/real/old/draft.md")
+    expect(harness.startWatcher).toHaveBeenCalledWith("/real/new")
+    expect(useStore.getState().rootPath).toBe("/real/new")
+    expect(useStore.getState().tree).toBe(canonicalNewTree)
+    expect(harness.pushRecentFolder).toHaveBeenCalledWith("/alias/new")
+  })
+
+  it("restores a legacy symlinked watcher at its canonical root", async () => {
+    const canonicalOldTree = {
+      kind: "dir" as const,
+      name: "old",
+      path: "/real/old",
+      children: [
+        {
+          kind: "file" as const,
+          name: "draft.md",
+          path: "/real/old/draft.md",
+        },
+      ],
+    }
+    useStore.getState().openAnalyzedDocument(
+      "/real/old/draft.md",
+      "retained note",
+      "disk",
+    )
+    useStore.setState({ rootPath: "/alias/old", tree: canonicalOldTree })
+    harness.listTree.mockImplementation((listedPath: string) =>
+      listedPath === "/alias/old"
+        ? Promise.resolve(canonicalOldTree)
+        : Promise.reject(new Error("new vault unavailable")))
+
+    await expect(openFolder("/alias/new", deps())).rejects.toThrow(
+      "new vault unavailable",
+    )
+
+    expect(harness.startWatcher.mock.calls.at(-1)).toEqual(["/real/old"])
+    expect(useStore.getState().rootPath).toBe("/alias/old")
+    expect(useStore.getState().openDoc?.path).toBe("/real/old/draft.md")
   })
 })
 

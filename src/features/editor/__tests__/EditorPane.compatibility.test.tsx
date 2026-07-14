@@ -13,12 +13,23 @@ vi.mock("../useOpenFile", () => ({ useOpenFile: () => ({ retry }) }))
 vi.mock("../useAutoSave", () => ({ useAutoSave: () => {} }))
 vi.mock("../useAutoRename", () => ({ useAutoRename: () => {} }))
 vi.mock("../BlockEditor", () => ({
-  BlockEditor: ({ onChangeMarkdown }: { onChangeMarkdown: (body: string) => void }) => {
+  BlockEditor: ({
+    onChangeMarkdown,
+    docKey,
+  }: {
+    onChangeMarkdown: (body: string) => void
+    docKey: string
+  }) => {
     const [instance] = React.useState(() => {
       editorInstances.blockCallbacks.push(onChangeMarkdown)
       return ++editorInstances.block
     })
-    return <div data-testid="block-editor">Block editor surface {instance}</div>
+    return (
+      <div data-testid="block-editor">
+        Block editor surface {instance}
+        <span data-testid="block-doc-key">{docKey}</span>
+      </div>
+    )
   },
 }))
 vi.mock("../RawEditor", () => ({
@@ -96,6 +107,29 @@ describe("EditorPane compatibility wiring", () => {
     expect(retry).toHaveBeenCalledTimes(1)
   })
 
+  it("hides a retained prior note behind the non-editable retry state", () => {
+    useStore.getState().openAnalyzedDocument(
+      "/vault/previous.md",
+      "Retained in-memory content",
+      "disk",
+    )
+    useStore.setState({
+      selectedPath: "/vault/unreadable.md",
+      selectedPaths: new Set(["/vault/unreadable.md"]),
+      loadError: { path: "/vault/unreadable.md", message: "permission denied" },
+    })
+
+    render(<EditorPane />)
+
+    expect(screen.getByRole("alert")).toHaveTextContent("permission denied")
+    expect(screen.queryByTestId("block-editor")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("raw-editor")).not.toBeInTheDocument()
+    expect(useStore.getState().openDoc).toMatchObject({
+      path: "/vault/previous.md",
+      text: "Retained in-memory content",
+    })
+  })
+
   it("remounts BlockNote for same-body and populated-to-empty file loads but not renames", async () => {
     useStore.getState().openAnalyzedDocument("/vault/a.md", "Same body", "disk")
     render(<EditorPane />)
@@ -112,8 +146,12 @@ describe("EditorPane compatibility wiring", () => {
     expect(await screen.findByTestId("block-editor")).toHaveTextContent("3")
 
     const revision = useStore.getState().docRev
+    const identityBeforeRename = screen.getByTestId("block-doc-key").textContent
     act(() => useStore.getState().patchOpenDoc({ path: "/vault/renamed.md" }))
     expect(await screen.findByTestId("block-editor")).toHaveTextContent("3")
+    expect(screen.getByTestId("block-doc-key")).toHaveTextContent(
+      identityBeforeRename ?? "",
+    )
     expect(useStore.getState().docRev).toBe(revision)
   })
 

@@ -251,11 +251,49 @@ function withoutBlockquotePrefix(line: string): string {
 }
 
 function maskIndentedCode(source: string, chars: string[]): void {
-  for (const line of linesOf(source)) {
-    if (/^(?: {4,}|\t)/.test(line.text)) {
-      maskRange(chars, line.start, line.end)
-    }
+  const lines = linesOf(source)
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const indentation = leadingIndentColumns(line.text)
+    if (indentation < 4) continue
+
+    // List content is indented relative to its marker. Four absolute spaces
+    // can therefore still be ordinary nested Markdown; only mask it as code
+    // once it reaches four columns beyond the active list content indent.
+    const listIndent = activeListContentIndent(lines, index)
+    if (listIndent !== null && indentation < listIndent + 4) continue
+    maskRange(chars, line.start, line.end)
   }
+}
+
+function activeListContentIndent(lines: readonly Line[], index: number): number | null {
+  for (let candidate = index - 1; candidate >= 0; candidate -= 1) {
+    const text = lines[candidate].text
+    if (!text.trim()) continue
+
+    const marker = /^( {0,3})(?:[-+*]|\d{1,9}[.)])([ \t]+)/.exec(text)
+    if (marker) return textColumns(marker[0])
+    if (leadingIndentColumns(text) === 0) return null
+  }
+  return null
+}
+
+function leadingIndentColumns(text: string): number {
+  let columns = 0
+  for (const character of text) {
+    if (character === " ") columns += 1
+    else if (character === "\t") columns += 4 - (columns % 4)
+    else break
+  }
+  return columns
+}
+
+function textColumns(text: string): number {
+  let columns = 0
+  for (const character of text) {
+    columns += character === "\t" ? 4 - (columns % 4) : 1
+  }
+  return columns
 }
 
 function maskEscapes(chars: string[]): void {
@@ -368,7 +406,10 @@ function maskRawHtmlBlocks(
       continue
     }
 
-    const opener = /^ {0,3}<([a-z][\w-]*)\b[^>]*>/i.exec(line.text)
+    // CommonMark raw-block starts do not require the opening tag to finish on
+    // the same line. Root-level indented code was already masked above, so
+    // allowing retained indentation here also covers normal list content.
+    const opener = /^[ \t]*<([a-z][\w-]*)(?=[\s/>]|$)/i.exec(line.text)
     const tag = opener?.[1].toLowerCase()
     if (!tag || !RAW_BLOCK_TAGS.has(tag)) continue
 
@@ -449,9 +490,17 @@ function matchingLabelEnd(text: string, start: number): number {
 }
 
 function hasMdx(text: string): boolean {
-  const jsxTag = /<\/?[A-Z][\w.-]*(?:\s[^<>\n]*?)?\s*\/?>/
+  // A tag start is sufficient: BlockNote can discard an incomplete or
+  // multiline custom component before a same-line `>` ever appears.
+  const jsxTag = /<\/?[A-Z][\w.-]*(?=[\s/>])/
+  const jsxFragment = /<\/?>/
   const esm = /^(?:import\s+(?:[^\n]+\s+from\s+|["'])|export\s+(?:default\b|const\b|let\b|var\b|function\b|class\b|\{))/m
-  return jsxTag.test(text) || esm.test(text) || hasBalancedMdxExpression(text)
+  return (
+    jsxTag.test(text) ||
+    jsxFragment.test(text) ||
+    esm.test(text) ||
+    hasBalancedMdxExpression(text)
+  )
 }
 
 function hasBalancedMdxExpression(text: string): boolean {

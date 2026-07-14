@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
-import { cancelPendingOpenDocSave } from "../../lib/writeDoc"
+import { cancelQueuedOpenDocSave } from "../../lib/writeDoc"
 
 type VaultEvent = { paths: string[] }
 
@@ -84,17 +84,13 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
     // bytes-equal to the buffer, while a real external edit doesn't.
     if (text === current.text) return
 
-    // A debounced autosave queued *before* the external write would fire
-    // ~500ms after this point with the old buffer in closure, overwriting
-    // the bytes we're about to load. Cancel it.
-    cancelPendingOpenDocSave()
+    // Drop only queued-not-started work for this path. An active IPC write is
+    // never cancelled (and cannot reach this branch because it keeps the
+    // document dirty until it settles).
+    cancelQueuedOpenDocSave(current.path)
 
-    const { openAnalyzedDocument, bumpDocRev } = useStore.getState()
+    const { openAnalyzedDocument } = useStore.getState()
     openAnalyzedDocument(current.path, text, "external")
-    // Force the active editor to re-initialise from the new content. The
-    // BlockEditor's init effect keys off `${path}#${docRev}`; without a
-    // bump it would skip the re-init and keep displaying the old blocks.
-    bumpDocRev()
   } catch (_e) { /* file gone */ }
 }
 

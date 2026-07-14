@@ -85,8 +85,13 @@ function scheduleDebounce(): void {
 
 function queueSnapshot(snapshot: SaveSnapshot, debounce: boolean): void {
   queued = { ...snapshot }
-  failed = null
-  automaticBlocked = false
+  // A new edit retries a failure for the same document. A failure belonging
+  // to another path must not disappear merely because that other document
+  // queued work while its write was still active.
+  if (failed?.snapshot.path === snapshot.path) {
+    failed = null
+    automaticBlocked = false
+  }
   if (debounce) scheduleDebounce()
   else {
     clearDebounce()
@@ -120,7 +125,15 @@ function matchingFailure(path?: string): FailedSave | null {
 }
 
 function pump(ignorePause = false): void {
-  if (active || !queued || !queuedReady || automaticBlocked) return
+  if (active || !queued || !queuedReady) return
+  if (automaticBlocked && failed?.snapshot.path === queued.path) return
+  if (automaticBlocked && failed && failed.snapshot.path !== queued.path) {
+    // A failure for a no-longer-current path has no visible retry surface.
+    // If another path is already queued (a defensive cross-navigation case),
+    // let that path become authoritative instead of stranding it forever.
+    failed = null
+    automaticBlocked = false
+  }
   if (pauseDepth > 0 && !ignorePause) return
 
   const snapshot = queued
@@ -167,10 +180,15 @@ async function performWrite(snapshot: SaveSnapshot, runGeneration: number): Prom
     console.error("save failed", thrown)
     showToast(`Couldn't save ${basename(snapshot.path)}`, { kind: "error" })
     notifyWaiters()
+    // A later snapshot for another path must still advance. This is mainly a
+    // defensive backstop: guarded navigation normally prevents two document
+    // paths from entering the coordinator together.
+    pump()
     return
   }
 
-  failed = null
+  if (failed?.snapshot.path === snapshot.path) failed = null
+  automaticBlocked = Boolean(failed)
   const current = useStore.getState().openDoc
   if (
     current &&
@@ -234,7 +252,17 @@ async function flushInternal(
   while (true) {
     const failure = matchingFailure(path)
     if (failure) throw failure.error
-    if (!hasWork(path)) return
+    if (!hasWork(path)) {
+      // A public flush doubles as a navigation barrier. Even a currently
+      // clean document must wait for an in-flight path mutation, because the
+      // user can type while that mutation's IPC call is pending.
+      if (!ignorePause && pauseDepth > 0) {
+        await waitForCoordinatorChange()
+        if (captureCurrent) captureCurrentDirtySnapshot(path)
+        continue
+      }
+      return
+    }
 
     if (queued && pathMatches(queued.path, path)) queuedReady = true
     pump(ignorePause)
@@ -245,9 +273,23 @@ async function flushInternal(
   }
 }
 
-/** Flush queued bytes immediately and wait until all matching writes settle. */
-export function flushOpenDocSave(path?: string): Promise<void> {
-  return flushInternal(path, { captureCurrent: true, ignorePause: true })
+/** Flush queued bytes and wait behind any open path-mutation barrier. */
+export async function flushOpenDocSave(path?: string): Promise<void> {
+  let currentPath = path
+  while (true) {
+    await flushInternal(currentPath, {
+      captureCurrent: true,
+      ignorePause: false,
+    })
+    if (currentPath === undefined) return
+
+    // A mutation may have remapped the open document while this caller was
+    // waiting. Follow its dirty bytes to the destination before navigation is
+    // allowed to replace the buffer.
+    const current = useStore.getState().openDoc
+    if (!current?.dirty || current.path === currentPath) return
+    currentPath = current.path
+  }
 }
 
 /** Retry immediately with the latest in-memory snapshot. */
@@ -259,8 +301,7 @@ export async function retryOpenDocSave(): Promise<void> {
   if (!snapshot) return
 
   queueSnapshot(snapshot, false)
-  pump(true)
-  await flushInternal(snapshot.path, { captureCurrent: true, ignorePause: true })
+  await flushOpenDocSave(snapshot.path)
 }
 
 /** Remove work that has not started. The active IPC write is never cancelled. */
@@ -275,8 +316,15 @@ export function cancelQueuedOpenDocSave(path?: string): void {
 function remapPath(path: string, fromRoot: string, toRoot: string): string | null {
   if (path === fromRoot) return toRoot
   for (const separator of ["/", "\\"]) {
-    const prefix = `${fromRoot}${separator}`
-    if (path.startsWith(prefix)) return `${toRoot}${separator}${path.slice(prefix.length)}`
+    const prefix = fromRoot.endsWith(separator)
+      ? fromRoot
+      : `${fromRoot}${separator}`
+    if (path.startsWith(prefix)) {
+      const targetPrefix = toRoot.endsWith(separator)
+        ? toRoot
+        : `${toRoot}${separator}`
+      return `${targetPrefix}${path.slice(prefix.length)}`
+    }
   }
   return null
 }
@@ -312,6 +360,7 @@ function discardOpenDocSaveRoots(roots: readonly string[]): void {
 }
 
 export type OpenDocPathMutation = {
+  flush(path?: string): Promise<void>
   remap(fromRoot: string, toRoot: string): void
   discard(roots: readonly string[]): void
   release(): void
@@ -326,14 +375,32 @@ export async function beginOpenDocPathMutation(
   affectedRoots: readonly string[],
 ): Promise<OpenDocPathMutation> {
   pauseDepth += 1
-  const current = useStore.getState().openDoc
-  const affectedPath = current && underAny(current.path, affectedRoots)
-    ? current.path
-    : undefined
 
   try {
-    if (affectedPath) {
-      await flushInternal(affectedPath, { captureCurrent: true, ignorePause: true })
+    // Work can outlive the document that originally scheduled it. Inspect the
+    // coordinator as well as the current store document so an affected active
+    // write always settles before the filesystem path is changed.
+    while (true) {
+      const current = useStore.getState().openDoc
+      const affectedPath =
+        (active && underAny(active.snapshot.path, affectedRoots)
+          ? active.snapshot.path
+          : undefined) ??
+        (queued && underAny(queued.path, affectedRoots)
+          ? queued.path
+          : undefined) ??
+        (current?.dirty && underAny(current.path, affectedRoots)
+          ? current.path
+          : undefined) ??
+        (failed && underAny(failed.snapshot.path, affectedRoots)
+          ? failed.snapshot.path
+          : undefined)
+
+      if (!affectedPath) break
+      await flushInternal(affectedPath, {
+        captureCurrent: current?.path === affectedPath,
+        ignorePause: true,
+      })
     }
   } catch (error) {
     pauseDepth = Math.max(0, pauseDepth - 1)
@@ -343,6 +410,10 @@ export async function beginOpenDocPathMutation(
 
   let released = false
   return {
+    flush: (path) => flushInternal(path, {
+      captureCurrent: true,
+      ignorePause: true,
+    }),
     remap: remapOpenDocSavePath,
     discard: discardOpenDocSaveRoots,
     release() {
@@ -367,7 +438,3 @@ export function resetSaveCoordinatorForTests(): void {
   pauseDepth = 0
   notifyWaiters()
 }
-
-// Temporary compatibility for Task 9 path-operation callers. These aliases
-// preserve the old cancellation import while routing it into the coordinator.
-export const cancelPendingOpenDocSave = cancelQueuedOpenDocSave

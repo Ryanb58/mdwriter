@@ -3,7 +3,9 @@ import { useStore } from "../../lib/store"
 import { basename, parent, joinPath } from "../../lib/paths"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
 import { refreshTree } from "../tree/useTreeActions"
-import { cancelPendingOpenDocSave } from "../../lib/writeDoc"
+import { beginOpenDocPathMutation } from "../../lib/writeDoc"
+import { remapOpenDocumentPath } from "../../lib/openDocumentPaths"
+import { errorText } from "../../lib/toast"
 
 export class RenameOpenDocError extends Error {
   constructor(public reason: "no-doc" | "invalid-name" | "unchanged" | "ipc-failed", message: string, public cause?: unknown) {
@@ -14,10 +16,8 @@ export class RenameOpenDocError extends Error {
 /**
  * Rename the currently open file. Used by the editor breadcrumb.
  *
- * If the doc is dirty, the current contents are written to the old path
- * before the rename so the renamed file reflects what the user sees.
- * `cancelPendingDocSave()` drops the debounced autosave so its cleanup
- * flush (fired by the open-doc path change) can't recreate the old file.
+ * The path-mutation guard flushes existing bytes and pauses later edits until
+ * the successful rename has remapped their queued destination.
  */
 export async function renameOpenDoc(rawName: string): Promise<void> {
   const s = useStore.getState()
@@ -39,40 +39,24 @@ export async function renameOpenDoc(rawName: string): Promise<void> {
 
   const newPath = joinPath(parent(oldPath), normalized)
 
-  // Drop any pending debounced save first so its trailing closure can't
-  // re-create the file at oldPath after we've moved it. Then synchronously
-  // flush the user's unsaved bytes (if any) to the old path before the
-  // rename, so the renamed file holds what the user actually sees.
-  cancelPendingOpenDocSave()
-  if (doc.dirty) {
-    noteSelfWrite(oldPath)
-    await ipc.writeFile(oldPath, doc.text)
-  }
-
-  noteSelfWrite(oldPath)
-  noteSelfWrite(newPath)
+  const guard = await beginOpenDocPathMutation([oldPath])
   try {
-    await ipc.renamePath(oldPath, newPath)
-  } catch (e) {
-    throw new RenameOpenDocError("ipc-failed", `rename failed: ${e instanceof Error ? e.message : String(e)}`, e)
+    noteSelfWrite(oldPath)
+    noteSelfWrite(newPath)
+    try {
+      await ipc.renamePath(oldPath, newPath)
+    } catch (e) {
+      throw new RenameOpenDocError("ipc-failed", `rename failed: ${errorText(e)}`, e)
+    }
+
+    // Remap queued coordinator bytes and every live store reference before a
+    // refresh can fail. Never force dirty=false: edits made during IPC still
+    // need to be written at the destination after release.
+    guard.remap(oldPath, newPath)
+    remapOpenDocumentPath(oldPath, newPath)
+
+    await refreshTree()
+  } finally {
+    guard.release()
   }
-
-  useStore.setState((cur) => {
-    const nextPaths = new Set(cur.selectedPaths)
-    if (nextPaths.has(oldPath)) {
-      nextPaths.delete(oldPath)
-      nextPaths.add(newPath)
-    }
-    return {
-      selectedPath: cur.selectedPath === oldPath ? newPath : cur.selectedPath,
-      selectedPaths: nextPaths,
-      openDoc: cur.openDoc && cur.openDoc.path === oldPath
-        ? { ...cur.openDoc, path: newPath, dirty: false, savedAt: Date.now() }
-        : cur.openDoc,
-    }
-  })
-  useStore.getState().remapPinnedPath(oldPath, newPath)
-  useStore.getState().remapBlockModeOverride(oldPath, newPath)
-
-  await refreshTree()
 }

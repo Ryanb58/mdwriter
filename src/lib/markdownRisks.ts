@@ -12,7 +12,6 @@ export type MarkdownRiskCode =
   | "code-fence-metadata"
   | "multi-paragraph-quote"
   | "ambiguous-frontmatter"
-  | "frontmatter-error"
 
 export type MarkdownRisk = { code: MarkdownRiskCode; label: string }
 
@@ -30,7 +29,6 @@ const RISK_LABELS: Record<MarkdownRiskCode, string> = {
   "code-fence-metadata": "code fence metadata",
   "multi-paragraph-quote": "multi-paragraph blockquotes",
   "ambiguous-frontmatter": "an unclosed frontmatter fence",
-  "frontmatter-error": "invalid frontmatter",
 }
 
 const RISK_ORDER = Object.keys(RISK_LABELS) as MarkdownRiskCode[]
@@ -89,6 +87,8 @@ const RAW_BLOCK_TAGS = new Set([
   "param",
   "search",
   "section",
+  "script",
+  "style",
   "summary",
   "table",
   "tbody",
@@ -99,6 +99,8 @@ const RAW_BLOCK_TAGS = new Set([
   "title",
   "tr",
   "track",
+  "pre",
+  "textarea",
   "ul",
 ])
 
@@ -132,23 +134,28 @@ export function detectMarkdownRisks(body: string): MarkdownRisk[] {
   const found = new Set<MarkdownRiskCode>()
   const chars = [...source]
 
-  detectAmbiguousFrontmatter(source, found)
   maskFencedCode(source, chars, found)
   maskIndentedCode(source, chars)
   maskEscapes(chars)
   maskInlineCode(chars)
-  maskRawHtmlBlocks(chars, found)
-
   const visible = chars.join("")
+  detectAmbiguousFrontmatter(visible, found)
 
-  if (/<!--[\s\S]*?-->/.test(visible)) found.add("html-comment")
+  // Raw HTML is masked only for the two HTML/MDX classifiers. Other named
+  // constructs still deserve their own labels when they occur inside a raw
+  // block, and all of them already operate on code/escape-protected text.
+  const outsideRawHtmlChars = [...visible]
+  maskRawHtmlBlocks(outsideRawHtmlChars, found)
+  const outsideRawHtml = outsideRawHtmlChars.join("")
+
+  if (/<!--/.test(visible)) found.add("html-comment")
   if (/\[\^[^\]\n]+\]/.test(visible)) found.add("footnote")
   if (/^ {0,3}\[(?!\^)[^\]\n]+\]:\s*\S+/m.test(visible)) {
     found.add("reference-definition")
   }
   if (hasInlineLinkTitle(visible)) found.add("link-title")
-  if (hasMdx(visible)) found.add("mdx")
-  if (hasInlineHtml(visible)) found.add("inline-html")
+  if (hasMdx(outsideRawHtml)) found.add("mdx")
+  if (hasInlineHtml(outsideRawHtml)) found.add("inline-html")
   if (hasDisplayMath(visible)) found.add("math")
   if (/^ {0,3}:{3,}(?:[^:]|$)/m.test(visible)) found.add("directive")
   if (hasAlignedTableDelimiter(visible)) found.add("table-alignment")
@@ -182,8 +189,8 @@ function detectAmbiguousFrontmatter(
   found: Set<MarkdownRiskCode>,
 ): void {
   const lines = source.split("\n")
-  if (lines[0]?.trim() !== "---") return
-  if (!lines.slice(1).some((line) => line.trim() === "---")) {
+  if (lines[0] !== "---") return
+  if (!lines.slice(1).some((line) => line === "---")) {
     found.add("ambiguous-frontmatter")
   }
 }
@@ -197,7 +204,9 @@ function maskFencedCode(
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex]
-    const match = /^ {0,3}(`{3,}|~{3,})([^\n]*)$/.exec(line.text)
+    const match = /^ {0,3}(`{3,}|~{3,})([^\n]*)$/.exec(
+      withoutBlockquotePrefix(line.text),
+    )
     if (!match) continue
 
     const marker = match[1]
@@ -218,7 +227,9 @@ function maskFencedCode(
 
     let lastLine = lines.length - 1
     for (let candidate = lineIndex + 1; candidate < lines.length; candidate += 1) {
-      const closing = /^ {0,3}(`+|~+)\s*$/.exec(lines[candidate].text)
+      const closing = /^ {0,3}(`+|~+)\s*$/.exec(
+        withoutBlockquotePrefix(lines[candidate].text),
+      )
       if (
         closing &&
         closing[1][0] === marker[0] &&
@@ -235,6 +246,10 @@ function maskFencedCode(
   }
 }
 
+function withoutBlockquotePrefix(line: string): string {
+  return line.replace(/^ {0,3}(?:>[ \t]?)+/, "")
+}
+
 function maskIndentedCode(source: string, chars: string[]): void {
   for (const line of linesOf(source)) {
     if (/^(?: {4,}|\t)/.test(line.text)) {
@@ -246,6 +261,18 @@ function maskIndentedCode(source: string, chars: string[]): void {
 function maskEscapes(chars: string[]): void {
   for (let index = 0; index + 1 < chars.length; index += 1) {
     if (chars[index] !== "\\" || chars[index + 1] === "\n") continue
+    if (chars[index + 1] === "`" || chars[index + 1] === "~") {
+      const marker = chars[index + 1]
+      let runLength = 1
+      while (chars[index + 1 + runLength] === marker) runLength += 1
+      if (runLength >= 3) {
+        let end = index + 1 + runLength
+        while (end < chars.length && chars[end] !== "\n") end += 1
+        maskRange(chars, index, end)
+        index = end - 1
+        continue
+      }
+    }
     chars[index] = " "
     chars[index + 1] = " "
     index += 1
@@ -291,6 +318,20 @@ function maskRawHtmlBlocks(
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex]
+    const special = /^ {0,3}(?:<\?|<![A-Z]|<!\[CDATA\[)/i.test(line.text)
+    if (special) {
+      found.add("raw-html")
+      maskRange(chars, line.start, line.end)
+      continue
+    }
+
+    const closingOnly = /^ {0,3}<\/([a-z][\w-]*)\s*>\s*$/i.exec(line.text)
+    if (closingOnly && RAW_BLOCK_TAGS.has(closingOnly[1].toLowerCase())) {
+      found.add("raw-html")
+      maskRange(chars, line.start, line.end)
+      continue
+    }
+
     const opener = /^ {0,3}<([a-z][\w-]*)\b[^>]*>/i.exec(line.text)
     const tag = opener?.[1].toLowerCase()
     if (!tag || !RAW_BLOCK_TAGS.has(tag)) continue
@@ -321,15 +362,60 @@ function maskRawHtmlBlocks(
 }
 
 function hasInlineLinkTitle(text: string): boolean {
-  return /!?\[[^\]\n]*\]\([^\n)]*\s+(?:"[^"\n]*"|'[^'\n]*'|\([^\n)]*\))\s*\)/.test(
-    text,
-  )
+  const opener = /!?\[[^\]\n]*\]\(/g
+  for (const match of text.matchAll(opener)) {
+    let depth = 0
+    let quote: '"' | "'" | null = null
+    let close = -1
+    const start = (match.index ?? 0) + match[0].length
+
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index]
+      if (char === "\n") break
+      if (quote) {
+        if (char === quote && text[index - 1] !== "\\") quote = null
+        continue
+      }
+      if (char === '"' || char === "'") {
+        quote = char
+      } else if (char === "(") {
+        depth += 1
+      } else if (char === ")") {
+        if (depth === 0) {
+          close = index
+          break
+        }
+        depth -= 1
+      }
+    }
+
+    if (close < 0) continue
+    const inside = text.slice(start, close)
+    if (/(?:^|\s)(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\))\s*$/.test(inside)) {
+      return true
+    }
+  }
+  return false
 }
 
 function hasMdx(text: string): boolean {
   const jsxTag = /<\/?[A-Z][\w.-]*(?:\s[^<>\n]*?)?\s*\/?>/
-  const expression = /\{[A-Za-z_$][^{}\n]*\}/
-  return jsxTag.test(text) || expression.test(text)
+  const esm = /^(?:import\s+(?:[^\n]+\s+from\s+|["'])|export\s+(?:default\b|const\b|let\b|var\b|function\b|class\b|\{))/m
+  return jsxTag.test(text) || esm.test(text) || hasBalancedMdxExpression(text)
+}
+
+function hasBalancedMdxExpression(text: string): boolean {
+  for (let start = 0; start < text.length; start += 1) {
+    if (text[start] !== "{") continue
+    let depth = 1
+    for (let index = start + 1; index < text.length; index += 1) {
+      if (text[index] === "{") depth += 1
+      if (text[index] !== "}") continue
+      depth -= 1
+      if (depth === 0) return true
+    }
+  }
+  return false
 }
 
 function hasInlineHtml(text: string): boolean {
@@ -341,7 +427,7 @@ function hasInlineHtml(text: string): boolean {
 }
 
 function hasDisplayMath(text: string): boolean {
-  return /^ {0,3}\$\$(?:\s.*)?$/m.test(text) || /^ {0,3}\\\[(?:\s.*)?$/m.test(text)
+  return /(^|[^$])\$\$(?!\$)/.test(text) || /^ {0,3}\\\[(?:\s.*)?$/m.test(text)
 }
 
 function hasAlignedTableDelimiter(text: string): boolean {

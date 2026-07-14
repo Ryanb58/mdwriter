@@ -9,6 +9,7 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-show",
     "core:window:allow-set-focus",
+    "core:window:allow-destroy",
     "opener:default",
     "dialog:allow-open",
     "updater:allow-check",

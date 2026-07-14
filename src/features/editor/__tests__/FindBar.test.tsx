@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useStore } from "../../../lib/store"
+import { documentRenderKey } from "../documentRenderKey"
 import { FindBar } from "../FindBar"
 
 function openFind() {
@@ -107,6 +108,37 @@ describe("FindBar exact editor targets", () => {
     })
   })
 
+  it("does not let the initial debounce overwrite rapid manual navigation", () => {
+    useStore.getState().openAnalyzedDocument(
+      "/vault/raw.md",
+      "one two two",
+      "disk",
+    )
+    useStore.setState({ editorMode: "raw" })
+    render(<FindBar />)
+    const input = openFind()
+
+    fireEvent.change(input, { target: { value: "two" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(screen.getByText("2/2")).toBeInTheDocument()
+    expect(useStore.getState().pendingScroll).toMatchObject({
+      kind: "find-raw",
+      from: 8,
+      to: 11,
+    })
+
+    runDebounce()
+
+    expect(screen.getByText("2/2")).toBeInTheDocument()
+    expect(useStore.getState().pendingScroll).toMatchObject({
+      kind: "find-raw",
+      from: 8,
+      to: 11,
+    })
+  })
+
   it("uses only the active rendered BlockNote index", () => {
     useStore.getState().openAnalyzedDocument(
       "/vault/block.md",
@@ -117,7 +149,7 @@ describe("FindBar exact editor targets", () => {
     useStore.setState({ editorMode: "block" })
     state.setBlockTextIndex({
       path: "/vault/block.md",
-      docKey: `/vault/block.md#${state.docRev}`,
+      docKey: documentRenderKey(state.docRev),
       blocks: [{ blockId: "links", text: "See Visible label and Alias." }],
     })
     render(<FindBar />)
@@ -147,7 +179,7 @@ describe("FindBar exact editor targets", () => {
     const { docRev, setBlockTextIndex } = useStore.getState()
     const index = {
       path: "/vault/block.md",
-      docKey: `/vault/block.md#${docRev}`,
+      docKey: documentRenderKey(docRev),
       blocks: [{ blockId: "match", text: "Match" }],
     }
     setBlockTextIndex(index)

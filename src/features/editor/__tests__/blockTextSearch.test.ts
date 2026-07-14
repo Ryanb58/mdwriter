@@ -196,6 +196,12 @@ describe("findRenderedBlockMatches", () => {
     ])
   })
 
+  it("maps Unicode case-folded matches back to rendered UTF-16 offsets", () => {
+    expect(findRenderedBlockMatches([{ blockId: "a", text: "İB" }], "b")).toEqual([
+      { blockId: "a", text: "İB", from: 1, to: 2 },
+    ])
+  })
+
   it("does not match link destinations or aliased wikilink targets", () => {
     const index = buildBlockTextIndex("/vault/note.md", "rev", [{
       id: "links",

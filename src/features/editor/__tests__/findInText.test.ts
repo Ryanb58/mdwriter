@@ -44,6 +44,11 @@ describe("findRanges", () => {
       { from: 2, to: 4 },
     ])
   })
+
+  it("maps Unicode case-folded matches back to original UTF-16 offsets", () => {
+    expect(findRanges("İB", "b")).toEqual([{ from: 1, to: 2 }])
+    expect(findOccurrences("İB", "b")).toEqual([1])
+  })
 })
 
 describe("lineAt", () => {

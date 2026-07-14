@@ -217,13 +217,10 @@ export function BlockEditor({
     const generation = beginHydration(hydrationGate.current)
     let disposed = false
     let focusFrame: number | null = null
-    // docKey embeds the file path, so a rename (e.g. autoRename-from-H1)
-    // changes the key even though the doc body is identical to what the
-    // editor just emitted. Re-parsing in that case clobbers the user's
-    // live cursor position — skip it. This is only valid as a re-init
-    // optimization: on the very first init, the editor is still in its
-    // empty-default state, so we must run the parse + focus pass even when
-    // both strings happen to be "".
+    // A reused editor may receive a byte-identical replacement. Re-parsing
+    // would only disturb its live cursor, so skip it after the first init.
+    // On first init the editor is still in its empty-default state, so the
+    // parse + focus pass must run even when both strings happen to be "".
     const isFirstInit = initializedKey.current === null
     if (!isFirstInit && initialMarkdown === lastEmitted.current) {
       initializedKey.current = docKey

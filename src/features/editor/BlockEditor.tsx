@@ -34,6 +34,14 @@ import {
   MarkdownSideMenu,
   isUnsupportedMarkdownShortcut,
 } from "./MarkdownEditorUi"
+import {
+  beginHydration,
+  canEmitHydrationChange,
+  createHydrationGate,
+  finishHydration,
+  isCurrentHydration,
+  runWithHydrationSuppressed,
+} from "./blockEditorHydration"
 
 export function BlockEditor({
   initialMarkdown,
@@ -45,6 +53,7 @@ export function BlockEditor({
   docKey: string
 }) {
   const initializedKey = useRef<string | null>(null)
+  const hydrationGate = useRef(createHydrationGate())
   // True while the init effect is awaiting the async parse — see usage below.
   const parsing = useRef(false)
   const lastEmitted = useRef<string>("")
@@ -145,6 +154,7 @@ export function BlockEditor({
 
   useEffect(() => {
     if (initializedKey.current === docKey) return
+    const generation = beginHydration(hydrationGate.current)
     // docKey embeds the file path, so a rename (e.g. autoRename-from-H1)
     // changes the key even though the doc body is identical to what the
     // editor just emitted. Re-parsing in that case clobbers the user's
@@ -155,11 +165,12 @@ export function BlockEditor({
     const isFirstInit = initializedKey.current === null
     if (!isFirstInit && initialMarkdown === lastEmitted.current) {
       initializedKey.current = docKey
+      parsing.current = false
+      finishHydration(hydrationGate.current, generation)
       return
     }
     initializedKey.current = docKey
     parsing.current = true
-    const myKey = docKey
     ;(async () => {
       const pre = preprocessWikilinks(initialMarkdown)
       const parsed = (await editor.tryParseMarkdownToBlocks(pre)) as PartialBlock[]
@@ -168,17 +179,20 @@ export function BlockEditor({
       // switch, external reload bumping docRev). Mutating the editor now
       // would load this stale parse's blocks into the new document. The
       // newer effect run owns `parsing` — leave it untouched.
-      if (initializedKey.current !== myKey) return
+      if (!isCurrentHydration(hydrationGate.current, generation)) return
       // Only replace when there's actual content to load. For a brand-new
       // empty file, BlockNote's editor already has the default empty
       // paragraph it created in useCreateBlockNote — replacing it with a
       // freshly-built paragraph swaps plugin state in a way that makes
       // the heading input rule silently no-op against it.
       if (hydrated.length > 0) {
-        editor.replaceBlocks(editor.document, hydrated)
+        runWithHydrationSuppressed(hydrationGate.current, generation, () => {
+          editor.replaceBlocks(editor.document, hydrated)
+        })
       }
       lastEmitted.current = initialMarkdown
       parsing.current = false
+      finishHydration(hydrationGate.current, generation)
       // If a search/palette jump is queued, it owns cursor + focus. Also bail
       // when the editor is already focused — happens when an external reload
       // (file watcher / AI apply) lands while the user is typing. Otherwise
@@ -383,10 +397,13 @@ export function BlockEditor({
         emojiPicker={false}
         tableHandles={false}
         onChange={async () => {
+          const generation = hydrationGate.current.generation
+          if (!canEmitHydrationChange(hydrationGate.current, generation)) return
           // Keep the auto-rename commitment signal fresh on structural edits
           // too (e.g. the Enter that adds the block after the heading).
           publishHeadingCommit()
           const md = await editor.blocksToMarkdownLossy()
+          if (!canEmitHydrationChange(hydrationGate.current, generation)) return
           // The export path emits our wikilinks as bracketed text already
           // (via the inline spec's toExternalHTML); the postprocess only
           // matters if BlockNote's HTML→markdown step escapes a bracket.

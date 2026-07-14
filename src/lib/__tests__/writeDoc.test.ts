@@ -395,6 +395,40 @@ describe("open-document save coordinator", () => {
     expect(settled).toBe(true)
   })
 
+  it("serializes overlapping path mutations so a later guard cannot bypass the first", async () => {
+    harness.writeFile.mockResolvedValue(undefined)
+    open("/vault/old.md", "before")
+    const firstGuard = await beginOpenDocPathMutation(["/vault/old.md"])
+
+    edit("typed during rename", "/vault/old.md")
+    let secondAcquired = false
+    const secondGuardPromise = beginOpenDocPathMutation(["/vault/old.md"])
+      .then((guard) => {
+        secondAcquired = true
+        return guard
+      })
+
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+    expect(secondAcquired).toBe(false)
+    expect(harness.writeFile).not.toHaveBeenCalled()
+
+    useStore.getState().patchOpenDoc({ path: "/vault/new.md" })
+    firstGuard.remap("/vault/old.md", "/vault/new.md")
+    firstGuard.release()
+
+    const secondGuard = await secondGuardPromise
+    expect(harness.writeFile).toHaveBeenCalledWith(
+      "/vault/new.md",
+      "typed during rename",
+    )
+    expect(harness.writeFile).not.toHaveBeenCalledWith(
+      "/vault/old.md",
+      "typed during rename",
+    )
+    secondGuard.release()
+  })
+
   it("lets the mutation owner perform its final flush while paused", async () => {
     harness.writeFile.mockResolvedValue(undefined)
     open("/vault/old.md", "before")

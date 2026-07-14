@@ -29,6 +29,11 @@ import { flashHighlight } from "./flashHighlight"
 import { headingCommitted } from "./headingCommit"
 import { filterMarkdownSlashMenuItems } from "./markdownSlashMenu"
 import { MarkdownTableHandles } from "./markdownTables"
+import {
+  MarkdownFormattingToolbar,
+  MarkdownSideMenu,
+  isUnsupportedMarkdownShortcut,
+} from "./MarkdownEditorUi"
 
 export function BlockEditor({
   initialMarkdown,
@@ -93,6 +98,12 @@ export function BlockEditor({
           const { openDoc } = useStore.getState()
           if (!openDoc) return stored
           return convertFileSrc(resolveAgainstDocDir(openDoc.path, stored))
+        },
+        tables: {
+          splitCells: false,
+          cellBackgroundColor: false,
+          cellTextColor: false,
+          headers: false,
         },
       }),
       [],
@@ -274,6 +285,20 @@ export function BlockEditor({
     return () => document.removeEventListener("paste", onPaste, true)
   }, [editor])
 
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (!isUnsupportedMarkdownShortcut(event)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
+    host.addEventListener("keydown", onKeyDown, true)
+    return () => host.removeEventListener("keydown", onKeyDown, true)
+  }, [])
+
   // Cmd/Ctrl+Shift+V → paste without formatting. WKWebView doesn't fire a
   // native paste event for this shortcut, so we read the clipboard text
   // ourselves and bypass BlockNote's markdown/HTML detection by inserting
@@ -352,7 +377,10 @@ export function BlockEditor({
       <BlockNoteView
         editor={editor}
         theme={theme}
+        formattingToolbar={false}
+        sideMenu={false}
         slashMenu={false}
+        emojiPicker={false}
         tableHandles={false}
         onChange={async () => {
           // Keep the auto-rename commitment signal fresh on structural edits
@@ -369,6 +397,8 @@ export function BlockEditor({
           }
         }}
       >
+        <MarkdownFormattingToolbar />
+        <MarkdownSideMenu />
         <SuggestionMenuController
           triggerCharacter="/"
           getItems={async (query: string) =>

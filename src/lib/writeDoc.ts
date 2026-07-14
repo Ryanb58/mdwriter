@@ -374,7 +374,11 @@ export type OpenDocPathMutation = {
 export async function beginOpenDocPathMutation(
   affectedRoots: readonly string[],
 ): Promise<OpenDocPathMutation> {
-  pauseDepth += 1
+  // Path mutations are exclusive. A later guard must never use its privileged
+  // flush to bypass an earlier guard while that operation is deciding whether
+  // queued bytes should be remapped or discarded.
+  while (pauseDepth > 0) await waitForCoordinatorChange()
+  pauseDepth = 1
 
   try {
     // Work can outlive the document that originally scheduled it. Inspect the
@@ -403,8 +407,9 @@ export async function beginOpenDocPathMutation(
       })
     }
   } catch (error) {
-    pauseDepth = Math.max(0, pauseDepth - 1)
+    pauseDepth = 0
     pump()
+    notifyWaiters()
     throw error
   }
 
@@ -419,7 +424,7 @@ export async function beginOpenDocPathMutation(
     release() {
       if (released) return
       released = true
-      pauseDepth = Math.max(0, pauseDepth - 1)
+      pauseDepth = 0
       pump()
       notifyWaiters()
     },

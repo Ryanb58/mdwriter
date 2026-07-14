@@ -3,16 +3,7 @@ import { useStore } from "../../lib/store"
 import {
   scheduleOpenDocSave,
   flushOpenDocSave,
-  cancelQueuedOpenDocSave,
 } from "../../lib/writeDoc"
-
-/**
- * Back-compat re-export so existing imports (watcher, renameOpenDoc)
- * keep working. New code should import directly from `lib/writeDoc`.
- */
-export function cancelPendingDocSave() {
-  cancelQueuedOpenDocSave()
-}
 
 export function useAutoSave() {
   const doc = useStore((s) => s.openDoc)

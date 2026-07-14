@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
+const saveHarness = vi.hoisted(() => ({
+  begin: vi.fn(),
+  remap: vi.fn(),
+  discard: vi.fn(),
+  release: vi.fn(),
+}))
+
 vi.mock("../../../lib/ipc", () => {
   const fs: { existing: Set<string>; writes: Array<{ path: string; body: string }> } = {
     existing: new Set(),
@@ -31,9 +38,8 @@ vi.mock("../../tree/useTreeActions", () => ({
   refreshTree: vi.fn(async () => {}),
 }))
 
-const cancelSpy = vi.fn()
 vi.mock("../../../lib/writeDoc", () => ({
-  cancelPendingOpenDocSave: () => cancelSpy(),
+  beginOpenDocPathMutation: saveHarness.begin,
 }))
 
 import { renameOpenDoc, RenameOpenDocError } from "../renameOpenDoc"
@@ -50,7 +56,17 @@ function fs(): { existing: Set<string>; writes: Array<{ path: string; body: stri
 beforeEach(() => {
   fs().existing.clear()
   fs().writes.length = 0
-  cancelSpy.mockClear()
+  vi.mocked(ipcMod.ipc.renamePath).mockClear()
+  vi.mocked(ipcMod.ipc.writeFile).mockClear()
+  saveHarness.begin.mockReset()
+  saveHarness.remap.mockReset()
+  saveHarness.discard.mockReset()
+  saveHarness.release.mockReset()
+  saveHarness.begin.mockResolvedValue({
+    remap: saveHarness.remap,
+    discard: saveHarness.discard,
+    release: saveHarness.release,
+  })
   ;(noteSelfWrite as ReturnType<typeof vi.fn>).mockClear()
   useStore.setState({
     selectedPath: null,
@@ -105,13 +121,13 @@ describe("renameOpenDoc", () => {
     expect(fs().existing.has("/vault/scratch.txt")).toBe(true)
   })
 
-  it("saves dirty content before renaming and cancels pending autosave", async () => {
+  it("awaits the path guard instead of writing dirty bytes directly", async () => {
     openAt("/vault/old.md", { dirty: true, body: "unsaved body" })
     await renameOpenDoc("new")
-    expect(fs().writes).toEqual([{ path: "/vault/old.md", body: "unsaved body" }])
-    expect(cancelSpy).toHaveBeenCalledTimes(1)
+    expect(saveHarness.begin).toHaveBeenCalledWith(["/vault/old.md"])
+    expect(fs().writes).toEqual([])
     const s = useStore.getState()
-    expect(s.openDoc?.dirty).toBe(false)
+    expect(s.openDoc?.dirty).toBe(true)
     expect(s.openDoc?.path).toBe("/vault/new.md")
   })
 
@@ -152,4 +168,47 @@ describe("renameOpenDoc", () => {
       "/vault/new.md": fingerprint,
     })
   })
+
+  it("does not touch the filesystem when acquiring the guard fails", async () => {
+    openAt("/vault/old.md", { dirty: true })
+    saveHarness.begin.mockRejectedValue(new Error("disk full"))
+
+    await expect(renameOpenDoc("new")).rejects.toThrow("disk full")
+
+    expect(vi.mocked(ipcMod.ipc.renamePath)).not.toHaveBeenCalled()
+    expect(useStore.getState().openDoc?.path).toBe("/vault/old.md")
+  })
+
+  it("keeps edits made during rename dirty and remaps before release", async () => {
+    openAt("/vault/old.md")
+    const rename = deferred<void>()
+    vi.mocked(ipcMod.ipc.renamePath).mockImplementationOnce(async (from, to) => {
+      await rename.promise
+      fs().existing.delete(from)
+      fs().existing.add(to)
+    })
+
+    const renaming = renameOpenDoc("new")
+    await vi.waitFor(() => expect(ipcMod.ipc.renamePath).toHaveBeenCalled())
+    useStore.getState().editOpenDoc("typed while renaming")
+    rename.resolve()
+    await renaming
+
+    expect(useStore.getState().openDoc).toMatchObject({
+      path: "/vault/new.md",
+      text: "typed while renaming",
+      dirty: true,
+    })
+    expect(saveHarness.remap).toHaveBeenCalledWith("/vault/old.md", "/vault/new.md")
+    expect(saveHarness.release).toHaveBeenCalledTimes(1)
+    expect(saveHarness.remap.mock.invocationCallOrder[0]).toBeLessThan(
+      saveHarness.release.mock.invocationCallOrder[0],
+    )
+  })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => { resolve = res })
+  return { promise, resolve }
+}

@@ -347,4 +347,137 @@ describe("open-document save coordinator", () => {
     await tick()
     expect(harness.writeFile).not.toHaveBeenCalled()
   })
+
+  it("releases queued edits back to the source after a failed path mutation", async () => {
+    harness.writeFile.mockResolvedValue(undefined)
+    open("/vault/old.md", "before")
+    const guard = await beginOpenDocPathMutation(["/vault/old.md"])
+
+    useStore.getState().editOpenDoc("typed during failed rename")
+    scheduleOpenDocSave({
+      path: "/vault/old.md",
+      text: "typed during failed rename",
+    })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(harness.writeFile).not.toHaveBeenCalled()
+
+    guard.release()
+    await tick()
+    expect(harness.writeFile).toHaveBeenCalledWith(
+      "/vault/old.md",
+      "typed during failed rename",
+    )
+  })
+
+  it("keeps navigation flushes paused and follows a successful path remap", async () => {
+    harness.writeFile.mockResolvedValue(undefined)
+    open("/vault/old.md", "before")
+    const guard = await beginOpenDocPathMutation(["/vault/old.md"])
+    edit("typed during rename", "/vault/old.md")
+
+    let settled = false
+    const flushing = flushOpenDocSave("/vault/old.md").then(() => {
+      settled = true
+    })
+    await tick()
+    expect(harness.writeFile).not.toHaveBeenCalled()
+    expect(settled).toBe(false)
+
+    useStore.getState().patchOpenDoc({ path: "/vault/new.md" })
+    guard.remap("/vault/old.md", "/vault/new.md")
+    guard.release()
+    await flushing
+
+    expect(harness.writeFile).toHaveBeenCalledWith(
+      "/vault/new.md",
+      "typed during rename",
+    )
+    expect(settled).toBe(true)
+  })
+
+  it("lets the mutation owner perform its final flush while paused", async () => {
+    harness.writeFile.mockResolvedValue(undefined)
+    open("/vault/old.md", "before")
+    const guard = await beginOpenDocPathMutation(["/vault/old.md"])
+    edit("final old-vault bytes", "/vault/old.md")
+
+    await guard.flush("/vault/old.md")
+
+    expect(harness.writeFile).toHaveBeenCalledWith(
+      "/vault/old.md",
+      "final old-vault bytes",
+    )
+    guard.release()
+  })
+
+  it("does not strand a queued path when an earlier path fails", async () => {
+    const first = deferred<void>()
+    harness.writeFile
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(undefined)
+
+    open("/vault/a.md", "a")
+    edit("save a", "/vault/a.md")
+    await vi.advanceTimersByTimeAsync(500)
+
+    open("/vault/b.md", "b")
+    edit("save b", "/vault/b.md")
+    const flushingB = flushOpenDocSave("/vault/b.md")
+    await tick()
+    expect(harness.writeFile).toHaveBeenCalledTimes(1)
+
+    first.reject(new Error("A failed"))
+    await tick()
+
+    expect(harness.writeFile).toHaveBeenCalledTimes(2)
+    expect(harness.writeFile).toHaveBeenLastCalledWith("/vault/b.md", "save b")
+    await expect(flushingB).resolves.toBeUndefined()
+    await expect(flushOpenDocSave()).resolves.toBeUndefined()
+  })
+
+  it("waits for an affected active snapshot even if another document is current", async () => {
+    const first = deferred<void>()
+    harness.writeFile.mockReturnValue(first.promise)
+    open("/vault/a.md", "a")
+    edit("active a", "/vault/a.md")
+    await vi.advanceTimersByTimeAsync(500)
+
+    open("/vault/b.md", "b")
+    let acquired = false
+    const acquiring = beginOpenDocPathMutation(["/vault/a.md"])
+      .then((guard) => {
+        acquired = true
+        return guard
+      })
+    await tick()
+    expect(acquired).toBe(false)
+
+    first.resolve()
+    const guard = await acquiring
+    expect(acquired).toBe(true)
+    guard.release()
+  })
+
+  it("flushes affected queued snapshots even if another document is current", async () => {
+    harness.writeFile.mockResolvedValue(undefined)
+    open("/vault/a.md", "a")
+    edit("queued a", "/vault/a.md")
+    open("/vault/b.md", "b")
+
+    const guard = await beginOpenDocPathMutation(["/vault/a.md"])
+
+    expect(harness.writeFile).toHaveBeenCalledWith("/vault/a.md", "queued a")
+    guard.release()
+  })
+
+  it("treats a filesystem root as an ancestor mutation", async () => {
+    harness.writeFile.mockResolvedValue(undefined)
+    open("/note.md", "before")
+    edit("root edit", "/note.md")
+
+    const guard = await beginOpenDocPathMutation(["/"])
+
+    expect(harness.writeFile).toHaveBeenCalledWith("/note.md", "root edit")
+    guard.release()
+  })
 })

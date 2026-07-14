@@ -30,7 +30,7 @@ vi.mock("../../../lib/ipc", () => {
 
 const cancelSpy = vi.fn()
 vi.mock("../../../lib/writeDoc", () => ({
-  cancelPendingOpenDocSave: () => cancelSpy(),
+  cancelQueuedOpenDocSave: (path?: string) => cancelSpy(path),
 }))
 
 import { handleVaultChange, noteSelfWrite } from "../useExternalChanges"
@@ -126,7 +126,7 @@ describe("handleVaultChange — open-doc reload", () => {
 
     await handleVaultChange(["/vault/a.md"])
 
-    expect(cancelSpy).toHaveBeenCalledTimes(1)
+    expect(cancelSpy).toHaveBeenCalledWith("/vault/a.md")
   })
 
   it("does nothing when external bytes are identical to the buffer (echo)", async () => {
@@ -151,6 +151,24 @@ describe("handleVaultChange — open-doc reload", () => {
     expect(s.openDoc?.text).toBe("user typing in flight")
     expect(s.docRev).toBe(0)
     expect(cancelSpy).not.toHaveBeenCalled()
+  })
+
+  it("does not claim to cancel an active write", async () => {
+    openClean("/vault/a.md", "buffer content")
+    useStore.setState((prev) => ({
+      openDoc: {
+        ...prev.openDoc!,
+        dirty: true,
+        saveStatus: "saving",
+        text: "active write bytes",
+      },
+    }))
+    setFile("/vault/a.md", "external write")
+
+    await handleVaultChange(["/vault/a.md"])
+
+    expect(cancelSpy).not.toHaveBeenCalled()
+    expect(useStore.getState().openDoc?.text).toBe("active write bytes")
   })
 
   it("does not overwrite edits made while an external re-read is in flight", async () => {

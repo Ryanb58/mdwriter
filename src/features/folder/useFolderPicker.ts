@@ -2,6 +2,8 @@ import { open } from "@tauri-apps/plugin-dialog"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
 import { findNode } from "../tree/findNode"
+import { beginOpenDocPathMutation } from "../../lib/writeDoc"
+import { pathIsWithin } from "../../lib/openDocumentPaths"
 
 export function useFolderPicker() {
   const setRoot = useStore((s) => s.setRoot)
@@ -23,36 +25,88 @@ export async function openFolder(
     setRecent: (l: string[]) => void
   },
 ) {
-  // Switching vaults: drop any open file so the editor doesn't carry stale
-  // state from the previous vault. useAutoSave's cleanup flushes pending
-  // writes when openDoc.path changes, so unsaved edits aren't lost.
-  useStore.setState({ selectedPath: null, selectedPaths: new Set(), expandedFolders: new Set(), openDoc: null })
+  const before = useStore.getState()
+  const oldRoot = before.rootPath
+  const oldRoots: string[] = []
+  if (oldRoot) oldRoots.push(oldRoot)
+  else if (before.openDoc) oldRoots.push(before.openDoc.path)
+  const guard = await beginOpenDocPathMutation(oldRoots)
+  let oldWatcherStopped = false
+  let newWatcherStarted = false
+  let committed = false
 
-  await ipc.stopWatcher().catch(() => {})
-  const opts = treeOptionsFromSettings(useStore.getState().settings)
-  // The watcher doesn't depend on the tree listing — start it in parallel.
-  // listTree is also what establishes the vault scope on the Rust side, so
-  // rootPath must only be set once it has succeeded (hooks keyed on
-  // rootPath — chat hydration, autosave — immediately issue vault-scoped
-  // commands).
-  const [tree] = await Promise.all([
-    ipc.listTree(path, opts),
-    ipc.startWatcher(path),
-  ])
-  deps.setRoot(path)
-  deps.setTree(tree)
+  try {
+    const opts = treeOptionsFromSettings(useStore.getState().settings)
 
-  // Drop the user back into the note they were writing in this vault.
-  restoreLastFile(path)
+    // Read the new vault while the old watcher and all old-vault UI state are
+    // still intact. A listing failure is therefore a true no-op.
+    const tree = await ipc.listTree(path, opts)
 
-  // Bookkeeping that shouldn't block the vault becoming interactive.
-  ipc.pushRecentFolder(path)
-    .then(() => ipc.getRecentFolders())
-    .then(deps.setRecent)
-    .catch(() => {})
-  // Best-effort: seed AGENTS.md if missing so the AI agent has vault
-  // conventions on hand. Don't block vault open if this fails.
-  ipc.ensureVaultAgentsMd(path).catch(() => {})
+    if (oldRoot) {
+      await ipc.stopWatcher()
+      oldWatcherStopped = true
+    }
+    await ipc.startWatcher(path)
+    newWatcherStarted = true
+
+    // The user can keep typing while the new vault is prepared. Flush the
+    // latest old-vault document one final time while the guard remains paused
+    // and immediately before clearing it from the store.
+    const currentDoc = useStore.getState().openDoc
+    if (
+      currentDoc &&
+      (!oldRoot || pathIsWithin(currentDoc.path, oldRoot))
+    ) {
+      await guard.flush(currentDoc.path)
+    }
+
+    guard.discard(oldRoots)
+    useStore.setState({
+      rootPath: path,
+      tree,
+      selectedPath: null,
+      selectedPaths: new Set(),
+      expandedFolders: new Set(),
+      openDoc: null,
+      loadError: null,
+      blockModeOverrides: {},
+      pendingScroll: null,
+      blockTextIndex: null,
+      pendingCursorAtEnd: null,
+      headingCommittedPath: null,
+      editorSelection: null,
+      renamingPath: null,
+    })
+    committed = true
+
+    // Drop the user back into the note they were writing in this vault.
+    restoreLastFile(path)
+
+    // Bookkeeping that shouldn't block the vault becoming interactive.
+    ipc.pushRecentFolder(path)
+      .then(() => ipc.getRecentFolders())
+      .then(deps.setRecent)
+      .catch(() => {})
+    // Best-effort: seed AGENTS.md if missing so the AI agent has vault
+    // conventions on hand. Don't block vault open if this fails.
+    ipc.ensureVaultAgentsMd(path).catch(() => {})
+  } catch (error) {
+    // Once the old watcher has been stopped, any setup/save failure rolls the
+    // watcher back before the guard releases and old-vault editing resumes.
+    if (!committed && (oldWatcherStopped || newWatcherStarted)) {
+      if (newWatcherStarted) {
+        await ipc.stopWatcher().catch(() => {})
+      }
+      if (oldRoot) {
+        await ipc.startWatcher(oldRoot).catch((restoreError) => {
+          console.error("failed to restore previous vault watcher", restoreError)
+        })
+      }
+    }
+    throw error
+  } finally {
+    guard.release()
+  }
 }
 
 /**

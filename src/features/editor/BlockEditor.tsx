@@ -27,6 +27,8 @@ import { showToast, errorText } from "../../lib/toast"
 import { findNthBlockMatch } from "./blockTextSearch"
 import { flashHighlight } from "./flashHighlight"
 import { headingCommitted } from "./headingCommit"
+import { filterMarkdownSlashMenuItems } from "./markdownSlashMenu"
+import { MarkdownTableHandles } from "./markdownTables"
 
 export function BlockEditor({
   initialMarkdown,
@@ -350,6 +352,8 @@ export function BlockEditor({
       <BlockNoteView
         editor={editor}
         theme={theme}
+        slashMenu={false}
+        tableHandles={false}
         onChange={async () => {
           // Keep the auto-rename commitment signal fresh on structural edits
           // too (e.g. the Enter that adds the block after the heading).
@@ -365,6 +369,16 @@ export function BlockEditor({
           }
         }}
       >
+        <SuggestionMenuController
+          triggerCharacter="/"
+          getItems={async (query: string) =>
+            filterMarkdownSlashMenuItems(editor, query)
+          }
+          shouldOpen={(state) =>
+            !state.selection.$from.parent.type.isInGroup("tableContent")
+          }
+        />
+        <MarkdownTableHandles />
         <SuggestionMenuController
           triggerCharacter="[["
           getItems={async (query: string) => filterForMenu(notes, query)}

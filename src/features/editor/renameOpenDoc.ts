@@ -72,6 +72,7 @@ export async function renameOpenDoc(rawName: string): Promise<void> {
     }
   })
   useStore.getState().remapPinnedPath(oldPath, newPath)
+  useStore.getState().remapBlockModeOverride(oldPath, newPath)
 
   await refreshTree()
 }

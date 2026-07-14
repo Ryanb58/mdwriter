@@ -57,7 +57,7 @@ export function applyToOpenDoc(op: ApplyOp): ApplyResult {
   if (nextBody === currentBody) return { ok: true }
 
   const nextText = setBody(doc.text, nextBody)
-  state.patchOpenDoc({ text: nextText, dirty: true })
+  state.editOpenDoc(nextText)
   state.bumpDocRev()
   return { ok: true }
 }

@@ -18,7 +18,7 @@ import {
  */
 export function PropertiesPane() {
   const doc = useStore((s) => s.openDoc)
-  const patch = useStore((s) => s.patchOpenDoc)
+  const editOpenDoc = useStore((s) => s.editOpenDoc)
   const mode = useStore((s) => s.editorMode)
   const [adding, setAdding] = useState(false)
 
@@ -51,7 +51,7 @@ export function PropertiesPane() {
   const entries = Object.entries(values)
 
   function applyText(nextText: string) {
-    patch({ text: nextText, dirty: true })
+    editOpenDoc(nextText)
   }
   function setField(k: string, v: unknown) {
     applyText(setFrontmatterField(doc!.text, k, v))

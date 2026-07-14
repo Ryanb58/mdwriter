@@ -36,10 +36,17 @@ vi.mock("../../../lib/writeDoc", () => ({
 import { handleVaultChange, noteSelfWrite } from "../useExternalChanges"
 import { useStore } from "../../../lib/store"
 import * as ipcMod from "../../../lib/ipc"
+import { analyzeDocument } from "../../../lib/documentAnalysis"
 
 function fs(): { files: Map<string, string>; listTreeCalls: number } {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (ipcMod as any).__fs
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => { resolve = res })
+  return { promise, resolve }
 }
 
 function toText(frontmatter: Record<string, unknown>, body: string): string {
@@ -69,7 +76,9 @@ function openClean(path: string, body: string, frontmatter: Record<string, unkno
       text,
       dirty: false,
       savedAt: Date.now(),
-      parseError: null,
+      ...analyzeDocument(path, text),
+      saveStatus: "clean",
+      saveError: null,
     },
     docRev: 0,
   })
@@ -78,6 +87,7 @@ function openClean(path: string, body: string, frontmatter: Record<string, unkno
 beforeEach(() => {
   fs().files.clear()
   fs().listTreeCalls = 0
+  vi.mocked(ipcMod.ipc.readFile).mockClear()
   cancelSpy.mockClear()
   useStore.setState({
     rootPath: null,
@@ -143,6 +153,22 @@ describe("handleVaultChange — open-doc reload", () => {
     expect(cancelSpy).not.toHaveBeenCalled()
   })
 
+  it("does not overwrite edits made while an external re-read is in flight", async () => {
+    openClean("/vault/a.md", "buffer content")
+    const read = deferred<string>()
+    vi.mocked(ipcMod.ipc.readFile).mockImplementationOnce(() => read.promise)
+
+    const reload = handleVaultChange(["/vault/a.md"])
+    await vi.waitFor(() => expect(ipcMod.ipc.readFile).toHaveBeenCalledWith("/vault/a.md"))
+    useStore.getState().editOpenDoc("typed while reading")
+    read.resolve("external write")
+    await reload
+
+    expect(useStore.getState().openDoc?.text).toBe("typed while reading")
+    expect(useStore.getState().openDoc?.dirty).toBe(true)
+    expect(cancelSpy).not.toHaveBeenCalled()
+  })
+
   it("reloads even when the path is inside the self-write window", async () => {
     // Bug 3 regression: a vault-changed event arriving within the
     // self-write window used to be dropped entirely, so an external write
@@ -171,6 +197,34 @@ describe("handleVaultChange — open-doc reload", () => {
     const text = useStore.getState().openDoc?.text ?? ""
     expect(text).toContain("title: new")
     expect(useStore.getState().docRev).toBe(1)
+  })
+
+  it("routes an external replacement through compatibility analysis", async () => {
+    openClean("/vault/a.md", "safe body")
+    setFile("/vault/a.md", "external footnote[^one]")
+
+    await handleVaultChange(["/vault/a.md"])
+
+    expect(useStore.getState().openDoc?.markdownRisks.map((risk) => risk.code)).toEqual([
+      "footnote",
+    ])
+    expect(useStore.getState().editorMode).toBe("raw")
+  })
+
+  it("invalidates an override when external bytes no longer match it", async () => {
+    useStore.setState({ rootPath: "/vault" })
+    useStore.getState().openAnalyzedDocument(
+      "/vault/a.md",
+      "initial footnote[^one]",
+      "disk",
+    )
+    useStore.getState().overrideBlockModeForCurrentDoc()
+    fs().files.set("/vault/a.md", "different footnote[^two]")
+
+    await handleVaultChange(["/vault/a.md"])
+
+    expect(useStore.getState().blockModeOverrides["/vault/a.md"]).toBeUndefined()
+    expect(useStore.getState().editorMode).toBe("raw")
   })
 
   it("ignores events whose paths don't include the open doc", async () => {

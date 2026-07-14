@@ -1,15 +1,25 @@
-import { useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { ipc } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { findNode } from "../tree/findNode"
-import { parseDoc } from "../../lib/doc"
 
 export function useOpenFile() {
   const selectedPath = useStore((s) => s.selectedPath)
   const setOpenDoc = useStore((s) => s.setOpenDoc)
+  const openAnalyzedDocument = useStore((s) => s.openAnalyzedDocument)
+  const setLoadError = useStore((s) => s.setLoadError)
+  const [retryToken, setRetryToken] = useState(0)
+
+  const retry = useCallback(() => setRetryToken((value) => value + 1), [])
 
   useEffect(() => {
-    if (!selectedPath) { setOpenDoc(null); return }
+    if (!selectedPath) {
+      setOpenDoc(null)
+      setLoadError(null)
+      return
+    }
+    const currentError = useStore.getState().loadError
+    if (currentError && currentError.path !== selectedPath) setLoadError(null)
     // If the selected row is a directory, leave the current openDoc alone —
     // tree selection (highlight) is independent of which file is open.
     const node = findNode(useStore.getState().tree, selectedPath)
@@ -22,25 +32,17 @@ export function useOpenFile() {
       try {
         const text = await ipc.readFile(selectedPath)
         if (cancelled) return
-        const parsed = parseDoc(text)
-        setOpenDoc({
-          path: selectedPath,
-          text,
-          dirty: false,
-          savedAt: null,
-          parseError: parsed.parseError,
-        })
+        openAnalyzedDocument(selectedPath, text, "disk")
       } catch (e) {
         if (cancelled) return
-        setOpenDoc({
+        setLoadError({
           path: selectedPath,
-          text: "",
-          dirty: false,
-          savedAt: null,
-          parseError: String(e),
+          message: e instanceof Error ? e.message : String(e),
         })
       }
     })()
     return () => { cancelled = true }
-  }, [selectedPath, setOpenDoc])
+  }, [openAnalyzedDocument, retryToken, selectedPath, setLoadError, setOpenDoc])
+
+  return { retry }
 }

@@ -3,7 +3,6 @@ import { listen } from "@tauri-apps/api/event"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
 import { cancelPendingOpenDocSave } from "../../lib/writeDoc"
-import { parseDoc } from "../../lib/doc"
 
 type VaultEvent = { paths: string[] }
 
@@ -68,25 +67,30 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
 
   try {
     const text = await ipc.readFile(doc.path)
+    // The read crosses an async boundary. The user may have typed, switched
+    // files, or otherwise replaced the buffer while Rust was reading. Only
+    // apply the result to the same unchanged, still-clean document snapshot.
+    const current = useStore.getState().openDoc
+    if (
+      !current ||
+      current.path !== doc.path ||
+      current.dirty ||
+      current.contentFingerprint !== doc.contentFingerprint
+    ) {
+      return
+    }
     // Short-circuit on byte-identical content. This is what makes it safe
     // to bypass the self-write filter above: an autosave echo reads back as
     // bytes-equal to the buffer, while a real external edit doesn't.
-    if (text === doc.text) return
+    if (text === current.text) return
 
     // A debounced autosave queued *before* the external write would fire
     // ~500ms after this point with the old buffer in closure, overwriting
     // the bytes we're about to load. Cancel it.
     cancelPendingOpenDocSave()
 
-    const parsed = parseDoc(text)
-    const { setOpenDoc, bumpDocRev } = useStore.getState()
-    setOpenDoc({
-      path: doc.path,
-      text,
-      dirty: false,
-      savedAt: null,
-      parseError: parsed.parseError,
-    })
+    const { openAnalyzedDocument, bumpDocRev } = useStore.getState()
+    openAnalyzedDocument(current.path, text, "external")
     // Force the active editor to re-initialise from the new content. The
     // BlockEditor's init effect keys off `${path}#${docRev}`; without a
     // bump it would skip the re-init and keep displaying the old blocks.

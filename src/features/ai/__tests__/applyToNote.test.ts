@@ -3,17 +3,8 @@ import { useStore } from "../../../lib/store"
 import { applyToOpenDoc, previewApply } from "../applyToNote"
 
 function seedDoc(raw: string) {
-  useStore.setState({
-    openDoc: {
-      path: "/vault/note.md",
-      text: raw,
-      dirty: false,
-      savedAt: null,
-      parseError: null,
-    },
-    docRev: 0,
-    editorSelection: null,
-  })
+  useStore.getState().openAnalyzedDocument("/vault/note.md", raw, "disk")
+  useStore.setState({ docRev: 0, editorSelection: null })
 }
 
 describe("applyToOpenDoc", () => {
@@ -77,6 +68,19 @@ describe("applyToOpenDoc", () => {
     const result = applyToOpenDoc({ kind: "replace-all", markdown: "same" })
     expect(result).toEqual({ ok: true })
     expect(useStore.getState().docRev).toBe(0)
+  })
+
+  it("reanalyzes assistant edits through the canonical content action", () => {
+    seedDoc("safe")
+
+    applyToOpenDoc({ kind: "replace-all", markdown: "risky[^one]" })
+
+    expect(useStore.getState().openDoc).toMatchObject({
+      dirty: true,
+      saveStatus: "queued",
+      saveError: null,
+      markdownRisks: [{ code: "footnote", label: "footnotes" }],
+    })
   })
 })
 

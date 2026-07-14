@@ -237,4 +237,60 @@ describe("detectMarkdownRisks", () => {
   it("detects directive fences longer than three colons", () => {
     expect(codes("::::tabs\ncontent\n::::")).toEqual(["directive"])
   })
+
+  it("continues detecting named syntax inside raw HTML blocks", () => {
+    expect(
+      codes("<div>\n<!-- preserve -->\nA claim[^source].\n</div>"),
+    ).toEqual(["html-comment", "footnote", "raw-html"])
+  })
+
+  it.each([
+    "<script>const value = 1</script>",
+    "<style>.note { color: red }</style>",
+    "<pre>literal</pre>",
+    "<textarea>literal</textarea>",
+    "<!DOCTYPE html>",
+    "<?xml version=\"1.0\"?>",
+    "<![CDATA[literal]]>",
+    "</div>",
+  ])("recognizes canonical raw HTML block form %#", (markdown) => {
+    expect(codes(markdown)).toEqual(["raw-html"])
+  })
+
+  it.each([
+    "{2 + 2}",
+    "{/* preserve this expression comment */}",
+    "{condition ? { nested: true } : fallback}",
+    "{\n  value + 1\n}",
+    'import Widget from "./Widget.js"',
+    "export const answer = 42",
+  ])("detects MDX expression or ESM form %#", (markdown) => {
+    expect(codes(markdown)).toEqual(["mdx"])
+  })
+
+  it("ignores risky-looking syntax inside a blockquoted code fence", () => {
+    expect(codes(["> ```html", "> <em>not HTML here</em>", "> ```"].join("\n"))).toEqual(
+      [],
+    )
+  })
+
+  it("requires a column-zero frontmatter opener", () => {
+    expect(codes("    ---\n    title: indented code")).toEqual([])
+  })
+
+  it("does not accept a protected code fence line as a frontmatter closer", () => {
+    expect(
+      codes(["---", "title: Still open", "```yaml", "---", "```", "Body"].join("\n")),
+    ).toEqual(["ambiguous-frontmatter"])
+  })
+
+  it("detects compact display math", () => {
+    expect(codes("The result is $$x^2$$.")).toEqual(["math"])
+  })
+
+  it("detects a link title after a balanced-parenthesis destination", () => {
+    expect(codes('[Docs](https://example.test/a_(b) "Reference")')).toEqual([
+      "link-title",
+    ])
+  })
 })

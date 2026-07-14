@@ -28,7 +28,7 @@ const RISK_LABELS: Record<MarkdownRiskCode, string> = {
   "table-alignment": "table alignment",
   "code-fence-metadata": "code fence metadata",
   "multi-paragraph-quote": "multi-paragraph blockquotes",
-  "ambiguous-frontmatter": "an unclosed frontmatter fence",
+  "ambiguous-frontmatter": "frontmatter that needs raw editing",
 }
 
 const RISK_ORDER = Object.keys(RISK_LABELS) as MarkdownRiskCode[]

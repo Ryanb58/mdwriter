@@ -7,11 +7,13 @@ import { useAutoRename } from "./useAutoRename"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
 import { getBody, setBody } from "../../lib/doc"
-import { Warning, TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
+import { TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
 import { targetParentDir } from "../tree/targetDir"
 import { FindBar } from "./FindBar"
+import { MarkdownCompatibilityBanner } from "./MarkdownCompatibilityBanner"
+import { DocumentLoadState } from "./DocumentLoadState"
 
 // The block editor pulls the multi-megabyte editor-vendor chunk (BlockNote +
 // ProseMirror + Shiki grammars). Loading it lazily keeps that chunk out of
@@ -32,19 +34,26 @@ function wordCount(s: string): number {
 }
 
 export function EditorPane() {
-  useOpenFile()
+  const { retry } = useOpenFile()
   useAutoSave()
   useAutoRename()
-  const { toggle: toggleMode } = useEditorMode()
+  const { requestMode } = useEditorMode()
   const doc = useStore((s) => s.openDoc)
   const docRev = useStore((s) => s.docRev)
   const editorView = useStore((s) => s.editorMode)
-  const setEditorView = useStore((s) => s.setEditorMode)
-  const patch = useStore((s) => s.patchOpenDoc)
+  const editOpenDoc = useStore((s) => s.editOpenDoc)
+  const loadError = useStore((s) => s.loadError)
   const rootPath = useStore((s) => s.rootPath)
   const focusMode = useStore((s) => s.focusMode)
 
   if (!doc) {
+    if (loadError) {
+      return (
+        <div className="flex h-full flex-col bg-bg">
+          <DocumentLoadState error={loadError} onRetry={retry} />
+        </div>
+      )
+    }
     return <EmptyEditorState />
   }
 
@@ -55,10 +64,8 @@ export function EditorPane() {
   // Switch to a target mode without toggling. Both modes are pure views
   // over the same `doc.text` — toggling is just a renderer swap, no
   // parse/serialize round-trip happens here.
-  function setBlock() { if (editorView !== "block") toggleMode() }
-  function setRaw() { if (editorView !== "raw") toggleMode() }
-  // Bind setter for type checker — used only via toggleMode currently.
-  void setEditorView
+  function setBlock() { requestMode("block") }
+  function setRaw() { requestMode("raw") }
 
   return (
     <div className="flex flex-col h-full bg-bg">
@@ -72,15 +79,8 @@ export function EditorPane() {
           <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
         </div>
       </div>
-      {doc.parseError && (
-        <div className="flex items-start gap-2 border-b border-border bg-danger/10 text-danger px-5 py-2 text-[13px]">
-          <Warning size={14} className="flex-none mt-0.5" />
-          <div className="min-w-0">
-            <div>Couldn't parse frontmatter. Edit it in raw mode (<span className="font-mono">⌘E</span>).</div>
-            <div className="text-[11px] opacity-80 truncate">{doc.parseError}</div>
-          </div>
-        </div>
-      )}
+      {loadError && <DocumentLoadState error={loadError} onRetry={retry} />}
+      <MarkdownCompatibilityBanner />
       <div
         className={[
           // `relative` anchors the absolutely-positioned find bar (⌘F).
@@ -106,7 +106,7 @@ export function EditorPane() {
               // byte-identical. Suppress the patch entirely so we don't
               // mark the doc dirty and trigger a no-op save loop.
               if (getBody(cur.text) === body) return
-              patch({ text: setBody(cur.text, body), dirty: true })
+              editOpenDoc(setBody(cur.text, body))
             }}
           />
           </Suspense>
@@ -114,7 +114,7 @@ export function EditorPane() {
           <Suspense fallback={<div className="p-4 text-text-subtle text-sm">Loading raw editor…</div>}>
             <RawEditor
               value={doc.text}
-              onChange={(nextText) => patch({ text: nextText, dirty: true })}
+              onChange={editOpenDoc}
             />
           </Suspense>
         )}

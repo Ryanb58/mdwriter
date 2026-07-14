@@ -40,6 +40,7 @@ import { renameOpenDoc, RenameOpenDocError } from "../renameOpenDoc"
 import { useStore } from "../../../lib/store"
 import * as ipcMod from "../../../lib/ipc"
 import { noteSelfWrite } from "../../watcher/useExternalChanges"
+import { analyzeDocument } from "../../../lib/documentAnalysis"
 
 function fs(): { existing: Set<string>; writes: Array<{ path: string; body: string }> } {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,20 +56,24 @@ beforeEach(() => {
     selectedPath: null,
     selectedPaths: new Set(),
     openDoc: null,
+    blockModeOverrides: {},
   })
 })
 
 function openAt(path: string, opts: { dirty?: boolean; body?: string } = {}) {
+  const text = opts.body ?? "hello"
   fs().existing.add(path)
   useStore.setState({
     selectedPath: path,
     selectedPaths: new Set([path]),
     openDoc: {
       path,
-      text: opts.body ?? "hello",
+      text,
       dirty: opts.dirty ?? false,
       savedAt: opts.dirty ? null : Date.now(),
-      parseError: null,
+      ...analyzeDocument(path, text),
+      saveStatus: opts.dirty ? "queued" : "clean",
+      saveError: null,
     },
   })
 }
@@ -134,5 +139,17 @@ describe("renameOpenDoc", () => {
     const s = useStore.getState()
     expect(s.openDoc?.path).toBe("/vault/old.md")
     expect(s.selectedPath).toBe("/vault/old.md")
+  })
+
+  it("remaps a compatibility override with the renamed document", async () => {
+    openAt("/vault/old.md", { body: "A footnote[^one]." })
+    useStore.getState().overrideBlockModeForCurrentDoc()
+    const fingerprint = useStore.getState().openDoc!.contentFingerprint
+
+    await renameOpenDoc("new")
+
+    expect(useStore.getState().blockModeOverrides).toEqual({
+      "/vault/new.md": fingerprint,
+    })
   })
 })

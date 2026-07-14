@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useStore, type OpenDoc } from "../../../lib/store"
+import { analyzeDocument } from "../../../lib/documentAnalysis"
 
 // Mock the IPC + side-effect boundary so the hook runs without Tauri.
 const renamePath = vi.fn((_from: string, _to: string) => Promise.resolve())
@@ -16,8 +17,17 @@ const VAULT = "/vault"
 const UNTITLED = `${VAULT}/untitled.md`
 
 function setDoc(d: Partial<OpenDoc> & { path: string }) {
+  const text = d.text ?? ""
   useStore.setState({
-    openDoc: { dirty: false, savedAt: 1, parseError: null, text: "", ...d },
+    openDoc: {
+      dirty: false,
+      savedAt: 1,
+      text,
+      ...analyzeDocument(d.path, text),
+      saveStatus: "clean",
+      saveError: null,
+      ...d,
+    },
     selectedPath: d.path,
     selectedPaths: new Set([d.path]),
   })

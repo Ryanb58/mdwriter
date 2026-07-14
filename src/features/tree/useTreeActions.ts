@@ -8,13 +8,16 @@ import {
 } from "../../lib/openDocumentPaths"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
 import { pruneSubpaths } from "./pruneSubpaths"
+import { runVaultListingExclusive } from "../../lib/vaultTransactions"
 
 export async function refreshTree() {
-  const root = useStore.getState().rootPath
-  if (!root) return
-  const opts = treeOptionsFromSettings(useStore.getState().settings)
-  const tree = await ipc.listTree(root, opts)
-  useStore.setState({ tree })
+  await runVaultListingExclusive(async () => {
+    const root = useStore.getState().rootPath
+    if (!root) return
+    const opts = treeOptionsFromSettings(useStore.getState().settings)
+    const tree = await ipc.listTree(root, opts)
+    if (useStore.getState().rootPath === root) useStore.setState({ tree })
+  })
 }
 
 async function trashImpl(paths: readonly string[]) {

@@ -264,6 +264,37 @@ describe("handleVaultChange — tree refresh", () => {
     expect(fs().listTreeCalls).toBe(1)
   })
 
+  it("does not let a stale refresh replace a newer vault tree", async () => {
+    openClean("/vault/a.md", "old")
+    const oldRefresh = deferred<{
+      kind: "dir"
+      name: string
+      path: string
+      children: never[]
+    }>()
+    vi.mocked(ipcMod.ipc.listTree).mockImplementationOnce(() => oldRefresh.promise)
+
+    const refreshing = handleVaultChange(["/vault/b.md"])
+    await vi.waitFor(() => expect(ipcMod.ipc.listTree).toHaveBeenCalled())
+    const newerTree = {
+      kind: "dir" as const,
+      name: "other",
+      path: "/other",
+      children: [],
+    }
+    useStore.setState({ rootPath: "/other", tree: newerTree })
+
+    oldRefresh.resolve({
+      kind: "dir",
+      name: "vault",
+      path: "/vault",
+      children: [],
+    })
+    await refreshing
+
+    expect(useStore.getState().tree).toBe(newerTree)
+  })
+
   it("skips the tree refresh when every path is a recent self-write", async () => {
     openClean("/vault/a.md", "same")
     noteSelfWrite("/vault/a.md")

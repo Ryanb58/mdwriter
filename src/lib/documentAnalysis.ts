@@ -35,13 +35,15 @@ export function fingerprintDocument(text: string): string {
 export function analyzeDocument(path: string, text: string): DocumentAnalysis {
   void path
   const parsed = parseDoc(text)
-  const needsEnvelopeRisk = text.startsWith("---\r\n") && !parsed.frontmatterRange
-  const protectedBody = needsEnvelopeRisk ? crlfFrontmatterBody(text) : null
+  const protectedBody = parsed.frontmatterRange
+    ? null
+    : unparsedFrontmatterBody(text)
+  const needsEnvelopeRisk = protectedBody !== null
   const markdownRisks: DocumentRisk[] = detectMarkdownRisks(protectedBody ?? parsed.body)
 
   // The current byte-preserving frontmatter helpers intentionally recognize
-  // LF envelopes only. Treat a valid-looking CRLF envelope as raw-only rather
-  // than feeding its YAML lines through BlockNote as document prose.
+  // LF envelopes without a BOM only. Treat any other valid-looking envelope
+  // as raw-only rather than feeding its YAML lines through BlockNote as prose.
   if (
     needsEnvelopeRisk &&
     !markdownRisks.some((risk) => risk.code === "ambiguous-frontmatter")
@@ -66,11 +68,40 @@ export function analyzeDocument(path: string, text: string): DocumentAnalysis {
   }
 }
 
-function crlfFrontmatterBody(text: string): string | null {
-  const match = text.match(/^---\r\n[\s\S]*?\r?\n---(?:\r?\n)?/)
-  if (!match) return null
-  let bodyStart = match[0].length
-  if (text.startsWith("\r\n", bodyStart)) bodyStart += 2
-  else if (text.startsWith("\n", bodyStart)) bodyStart += 1
-  return text.slice(bodyStart)
+/**
+ * Return the body of a frontmatter-looking envelope that `parseDoc` could
+ * not model. `""` means the opener was present but no closer was found, so
+ * everything after it remains ambiguous rather than being scanned as prose.
+ */
+function unparsedFrontmatterBody(text: string): string | null {
+  const openerStart = text.charCodeAt(0) === 0xfeff ? 1 : 0
+  if (text.slice(openerStart, openerStart + 3) !== "---") return null
+
+  const openerEnd = openerStart + 3
+  const openerBreak = lineBreakLengthAt(text, openerEnd)
+  if (openerBreak === 0) return null
+
+  let cursor = openerEnd + openerBreak
+  while (cursor <= text.length) {
+    let lineEnd = cursor
+    while (lineEnd < text.length && text[lineEnd] !== "\n" && text[lineEnd] !== "\r") {
+      lineEnd += 1
+    }
+
+    if (text.slice(cursor, lineEnd) === "---") {
+      let bodyStart = lineEnd + lineBreakLengthAt(text, lineEnd)
+      bodyStart += lineBreakLengthAt(text, bodyStart)
+      return text.slice(bodyStart)
+    }
+
+    if (lineEnd >= text.length) break
+    cursor = lineEnd + lineBreakLengthAt(text, lineEnd)
+  }
+
+  return ""
+}
+
+function lineBreakLengthAt(text: string, index: number): number {
+  if (text.startsWith("\r\n", index)) return 2
+  return text[index] === "\r" || text[index] === "\n" ? 1 : 0
 }

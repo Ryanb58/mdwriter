@@ -249,6 +249,49 @@ describe("openFolder transaction", () => {
     expect(order.at(-1)).toBe("start:/new")
     expect(order.indexOf("stop")).toBeLessThan(order.lastIndexOf("list:/new"))
   })
+
+  it("serializes rapid folder switches and rolls back to the latest committed vault", async () => {
+    const firstNewListing = deferred<typeof newTree>()
+    let firstNewCall = true
+    harness.listTree.mockImplementation((path: string) => {
+      if (path === "/old") return Promise.resolve(oldTree)
+      if (path === "/new") {
+        if (firstNewCall) {
+          firstNewCall = false
+          return firstNewListing.promise
+        }
+        return Promise.resolve(newTree)
+      }
+      return Promise.reject(new Error("other vault unavailable"))
+    })
+
+    const firstSwitch = openFolder("/new", deps())
+    await vi.waitFor(() => {
+      expect(harness.listTree).toHaveBeenCalledWith("/new", expect.anything())
+    })
+
+    const secondSwitch = openFolder("/other", deps())
+    await Promise.resolve()
+    expect(harness.begin).toHaveBeenCalledTimes(1)
+
+    firstNewListing.resolve(newTree)
+    await firstSwitch
+    await expect(secondSwitch).rejects.toThrow("other vault unavailable")
+
+    expect(harness.begin.mock.calls.map(([roots]) => roots)).toEqual([
+      ["/old"],
+      ["/new"],
+    ])
+    expect(harness.listTree.mock.calls.map(([listedPath]) => listedPath)).toEqual([
+      "/old",
+      "/new",
+      "/other",
+      "/new",
+    ])
+    expect(harness.startWatcher.mock.calls.at(-1)).toEqual(["/new"])
+    expect(useStore.getState().rootPath).toBe("/new")
+    expect(useStore.getState().tree).toBe(newTree)
+  })
 })
 
 function deferred<T>() {

@@ -52,6 +52,7 @@ export function RawEditor({
           keymap.of([...defaultKeymap, ...historyKeymap]),
           lineNumbers(),
           markdown(),
+          EditorView.lineWrapping,
           decorateLinks(() => notesRef.current),
           completion.extension,
           EditorView.theme({ "&": { height: "100%" } }),
@@ -63,7 +64,9 @@ export function RawEditor({
       }),
     })
     viewRef.current = view
+    const focusFrame = requestAnimationFrame(() => view.focus())
     return () => {
+      cancelAnimationFrame(focusFrame)
       view.destroy()
       viewRef.current = null
       useStore.getState().setEditorSelection(null)

@@ -21,12 +21,28 @@ import {
 
 export type ToolbarKind = "inline" | "image" | "file" | "none"
 
+const MARKDOWN_INLINE_BLOCK_TYPES = new Set([
+  "paragraph",
+  "heading",
+  "quote",
+  "codeBlock",
+  "bulletListItem",
+  "numberedListItem",
+  "checkListItem",
+])
+
 export function classifyFormattingSelection(
   blocks: readonly { type: string; content?: unknown }[],
 ): ToolbarKind {
   if (blocks.length === 0) return "none"
 
-  if (blocks.every((block) => Array.isArray(block.content))) {
+  if (
+    blocks.every(
+      (block) =>
+        MARKDOWN_INLINE_BLOCK_TYPES.has(block.type) &&
+        Array.isArray(block.content),
+    )
+  ) {
     return "inline"
   }
 

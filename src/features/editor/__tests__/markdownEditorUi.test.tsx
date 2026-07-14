@@ -152,6 +152,13 @@ describe("classifyFormattingSelection", () => {
     },
   )
 
+  it.each(["customBlock", "toggleListItem"])(
+    "classifies an array-content %s block as none",
+    (type) => {
+      expect(classifyFormattingSelection([{ type, content: [] }])).toBe("none")
+    },
+  )
+
   it.each([
     [[{ type: "divider" }]],
     [[{ type: "table", content: {} }]],

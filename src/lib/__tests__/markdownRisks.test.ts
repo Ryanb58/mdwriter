@@ -161,6 +161,28 @@ describe("detectMarkdownRisks", () => {
     expect(codes(markdown)).toEqual([])
   })
 
+  it("keeps scanning normal Markdown indented beneath a list item", () => {
+    const markdown = [
+      "- Item",
+      "",
+      "    <Callout>preserve this</Callout>",
+      "    A claim[^source].",
+    ].join("\n")
+
+    expect(codes(markdown)).toEqual(["footnote", "mdx"])
+  })
+
+  it("still ignores a true indented code block inside a list item", () => {
+    const markdown = [
+      "- Item",
+      "",
+      "      <Callout>code, not MDX</Callout>",
+      "      [^source]: code, not a footnote",
+    ].join("\n")
+
+    expect(codes(markdown)).toEqual([])
+  })
+
   it("ignores risky-looking syntax inside variable-length inline code spans", () => {
     const markdown = [
       "`<!-- comment -->`",
@@ -255,6 +277,23 @@ describe("detectMarkdownRisks", () => {
     "</div>",
   ])("recognizes canonical raw HTML block form %#", (markdown) => {
     expect(codes(markdown)).toEqual(["raw-html"])
+  })
+
+  it("recognizes a raw HTML block whose opening tag spans lines", () => {
+    expect(codes('<div\n class="note"\n data-x="1">\nraw')).toEqual([
+      "raw-html",
+    ])
+  })
+
+  it.each([
+    '<Callout\n kind="note"\n tone="quiet"\n/>',
+    "<>\ncontent\n</>",
+  ])("detects multiline JSX form %#", (markdown) => {
+    expect(codes(markdown)).toEqual(["mdx"])
+  })
+
+  it("ignores an escaped multiline JSX opener", () => {
+    expect(codes('\\<Callout\n kind="note"\n/>')).toEqual([])
   })
 
   it.each([

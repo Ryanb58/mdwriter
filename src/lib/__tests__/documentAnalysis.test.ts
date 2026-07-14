@@ -81,6 +81,36 @@ describe("analyzeDocument", () => {
     }])
   })
 
+  it("guards a BOM-prefixed frontmatter envelope without scanning YAML as prose", () => {
+    const text = "\uFEFF---\ntemplate: <Panel>{value}</Panel>\n---\n\n# Safe body"
+
+    const analysis = analyzeDocument("/vault/bom.md", text)
+
+    expect(analysis.parseError).toBeNull()
+    expect(analysis.markdownRisks).toEqual([{
+      code: "ambiguous-frontmatter",
+      label: "frontmatter that needs raw editing",
+    }])
+  })
+
+  it("guards a CR-only frontmatter envelope and still scans its body", () => {
+    const text = "---\rtemplate: <Panel>{value}</Panel>\r---\r\rA claim[^source]."
+
+    const analysis = analyzeDocument("/vault/classic-mac.md", text)
+
+    expect(analysis.parseError).toBeNull()
+    expect(analysis.markdownRisks.map((risk) => risk.code)).toEqual([
+      "footnote",
+      "ambiguous-frontmatter",
+    ])
+  })
+
+  it("does not treat an ordinary BOM-prefixed note as frontmatter", () => {
+    const analysis = analyzeDocument("/vault/plain.md", "\uFEFF# Ordinary note")
+
+    expect(analysis.markdownRisks).toEqual([])
+  })
+
   it("guards a mixed-ending frontmatter envelope that the LF parser cannot model", () => {
     const text = "---\r\ntemplate: <Panel>{value}</Panel>\n---\n\n# Safe body"
 

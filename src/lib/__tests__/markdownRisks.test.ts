@@ -240,6 +240,10 @@ describe("detectMarkdownRisks", () => {
     expect(codes(markdown)).toEqual([])
   })
 
+  it("keeps ordinary prose placeholders and set notation safe", () => {
+    expect(codes("The set is {a, b}. Use {date} in the filename.")).toEqual([])
+  })
+
   it("normalizes CRLF and CR line endings for scanning", () => {
     expect(codes("> first\r\n>\r\n> second")).toEqual(["multi-paragraph-quote"])
     expect(codes(":::note\rcontent\r:::")).toEqual(["directive"])

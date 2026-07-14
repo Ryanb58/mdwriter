@@ -511,10 +511,20 @@ function hasBalancedMdxExpression(text: string): boolean {
       if (text[index] === "{") depth += 1
       if (text[index] !== "}") continue
       depth -= 1
-      if (depth === 0) return true
+      if (depth === 0) {
+        const expression = text.slice(start + 1, index).trim()
+        if (looksLikeMdxExpression(expression)) return true
+        break
+      }
     }
   }
   return false
+}
+
+function looksLikeMdxExpression(expression: string): boolean {
+  // Bare placeholders and prose set notation round-trip through the pinned
+  // BlockNote converter. Reserve raw mode for clear JavaScript/MDX signals.
+  return /\/\*|=>|&&|\|\||[+*/%?:=]/.test(expression)
 }
 
 function hasInlineHtml(text: string): boolean {

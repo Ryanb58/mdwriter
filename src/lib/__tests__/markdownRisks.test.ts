@@ -288,6 +288,15 @@ describe("detectMarkdownRisks", () => {
     expect(codes("The result is $$x^2$$.")).toEqual(["math"])
   })
 
+  it("detects backslash-delimited display math", () => {
+    expect(codes("\\[\nx^2 + y^2\n\\]")).toEqual(["math"])
+  })
+
+  it("does not mistake escaped or ordinary bracket text for display math", () => {
+    expect(codes("\\\\[\nx^2 + y^2\n\\\\]")).toEqual([])
+    expect(codes("\\[ordinary bracket text]")).toEqual([])
+  })
+
   it("detects a link title after a balanced-parenthesis destination", () => {
     expect(codes('[Docs](https://example.test/a_(b) "Reference")')).toEqual([
       "link-title",

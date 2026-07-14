@@ -263,6 +263,12 @@ function maskEscapes(chars: string[]): void {
   for (let index = 0; index + 1 < chars.length; index += 1) {
     if (chars[index] !== "\\" || chars[index + 1] === "\n") continue
 
+    // A line-leading `\[` is itself a display-math delimiter, not an
+    // escaped ordinary bracket. Keep that opener visible for the math scan;
+    // doubled backslashes and bracket text without delimiter whitespace still
+    // follow the normal escape-masking path below.
+    if (isDisplayMathBracketOpener(source, index)) continue
+
     if (chars[index + 1] === "<") {
       const opener = /^<([a-z][\w-]*)\b[^<>\n]*>/i.exec(source.slice(index + 1))
       if (opener) {
@@ -299,6 +305,14 @@ function maskEscapes(chars: string[]): void {
     chars[index + 1] = " "
     index += 1
   }
+}
+
+function isDisplayMathBracketOpener(source: string, index: number): boolean {
+  if (source[index + 1] !== "[") return false
+  const lineStart = source.lastIndexOf("\n", index - 1) + 1
+  if (!/^ {0,3}$/.test(source.slice(lineStart, index))) return false
+  const after = source[index + 2]
+  return after === undefined || after === "\n" || after === " " || after === "\t"
 }
 
 function maskInlineCode(chars: string[]): void {

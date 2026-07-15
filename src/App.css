@@ -233,6 +233,41 @@ body {
 .bn-editor .bn-block-content[data-content-type="heading"][data-level="3"] {
   padding-top: 1.2rem;
 }
+/* BlockNote anchors the side menu to the top of the block and centers its
+   controls inside a fixed-height row. Its stock heading heights assume the
+   default type scale, so mirror our first-line center instead:
+   menu height = (2 * heading top padding) + heading line height.
+   The menu includes data-level="1" even though H1 content omits that attr. */
+.bn-root .bn-side-menu[data-block-type="heading"][data-level="1"] {
+  height: calc(33.6px + 3.2rem);
+}
+.bn-root .bn-side-menu[data-block-type="heading"][data-level="2"] {
+  height: calc(26.4px + 3.2rem);
+}
+.bn-root .bn-side-menu[data-block-type="heading"][data-level="3"] {
+  height: calc(21.6px + 2.4rem);
+}
+@supports (text-box: trim-both cap alphabetic) {
+  /* `text-box` trims each heading to the UI font's cap-to-baseline box. Use
+     the matching cap unit so the controls track the visible glyphs rather
+     than the larger fallback line box. Button and menu-item sizes are set by
+     BlockNote's component styles, so this font size only drives `1cap`. */
+  .bn-root .bn-side-menu[data-block-type="heading"] {
+    font-family: var(--font-ui);
+  }
+  .bn-root .bn-side-menu[data-block-type="heading"][data-level="1"] {
+    font-size: 28px;
+    height: calc(1cap + 3.2rem);
+  }
+  .bn-root .bn-side-menu[data-block-type="heading"][data-level="2"] {
+    font-size: 22px;
+    height: calc(1cap + 3.2rem);
+  }
+  .bn-root .bn-side-menu[data-block-type="heading"][data-level="3"] {
+    font-size: 18px;
+    height: calc(1cap + 2.4rem);
+  }
+}
 /* Progressive enhancement: where the font exposes a cap-height metric and the
    engine supports it (WebKit/WKWebView from Safari 18.2), trim the heading line
    box to cap/baseline so glyphs and caret hug the visible edges. Fonts without

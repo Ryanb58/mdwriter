@@ -26,6 +26,12 @@ export function applyToOpenDoc(op: ApplyOp): ApplyResult {
   const state = useStore.getState()
   const doc = state.openDoc
   if (!doc) return { ok: false, reason: "No document is open." }
+  if (state.loadError) {
+    return {
+      ok: false,
+      reason: "Resolve the file load error before editing this note.",
+    }
+  }
 
   const currentBody = getBody(doc.text)
   let nextBody: string | null = null
@@ -57,7 +63,7 @@ export function applyToOpenDoc(op: ApplyOp): ApplyResult {
   if (nextBody === currentBody) return { ok: true }
 
   const nextText = setBody(doc.text, nextBody)
-  state.patchOpenDoc({ text: nextText, dirty: true })
+  state.editOpenDoc(nextText)
   state.bumpDocRev()
   return { ok: true }
 }
@@ -68,6 +74,7 @@ export function applyToOpenDoc(op: ApplyOp): ApplyResult {
  */
 export function previewApply(op: ApplyOp): { before: string; after: string } | null {
   const state = useStore.getState()
+  if (state.loadError) return null
   const doc = state.openDoc
   if (!doc) return null
   const before = getBody(doc.text)

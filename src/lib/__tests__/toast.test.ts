@@ -99,6 +99,12 @@ describe("errorText", () => {
     expect(errorText("plain failure")).toBe("plain failure")
   })
 
+  it("uses the message from a serialized command error", () => {
+    expect(errorText({ kind: "Io", message: "permission denied" })).toBe(
+      "permission denied",
+    )
+  })
+
   it("truncates long messages", () => {
     const long = "x".repeat(300)
     const out = errorText(long)

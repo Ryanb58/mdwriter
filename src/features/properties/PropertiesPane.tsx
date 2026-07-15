@@ -18,10 +18,14 @@ import {
  */
 export function PropertiesPane() {
   const doc = useStore((s) => s.openDoc)
-  const patch = useStore((s) => s.patchOpenDoc)
+  const loadError = useStore((s) => s.loadError)
+  const editOpenDoc = useStore((s) => s.editOpenDoc)
   const mode = useStore((s) => s.editorMode)
   const [adding, setAdding] = useState(false)
 
+  if (loadError) {
+    return <PaneNotice>Resolve the file load error before editing properties.</PaneNotice>
+  }
   if (!doc) {
     return <PaneNotice>No file open.</PaneNotice>
   }
@@ -51,7 +55,7 @@ export function PropertiesPane() {
   const entries = Object.entries(values)
 
   function applyText(nextText: string) {
-    patch({ text: nextText, dirty: true })
+    editOpenDoc(nextText)
   }
   function setField(k: string, v: unknown) {
     applyText(setFrontmatterField(doc!.text, k, v))

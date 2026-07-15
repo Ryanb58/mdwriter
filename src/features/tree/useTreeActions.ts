@@ -1,44 +1,50 @@
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
 import { joinPath, parent, basename } from "../../lib/paths"
-import { pruneSubpaths, isUnderAny } from "./pruneSubpaths"
+import { beginOpenDocPathMutation } from "../../lib/writeDoc"
+import {
+  remapOpenDocumentPath,
+  removeOpenDocumentPaths,
+} from "../../lib/openDocumentPaths"
+import { noteSelfWrite } from "../watcher/useExternalChanges"
+import { pruneSubpaths } from "./pruneSubpaths"
+import { runVaultListingExclusive } from "../../lib/vaultTransactions"
 
 export async function refreshTree() {
-  const root = useStore.getState().rootPath
-  if (!root) return
-  const opts = treeOptionsFromSettings(useStore.getState().settings)
-  const tree = await ipc.listTree(root, opts)
-  useStore.setState({ tree })
+  await runVaultListingExclusive(async () => {
+    const root = useStore.getState().rootPath
+    if (!root) return
+    const opts = treeOptionsFromSettings(useStore.getState().settings)
+    const tree = await ipc.listTree(root, opts)
+    if (useStore.getState().rootPath === root) useStore.setState({ tree })
+  })
 }
 
 async function trashImpl(paths: readonly string[]) {
   const targets = pruneSubpaths(paths)
   if (targets.length === 0) return
-  for (const p of targets) {
-    try { await ipc.trashPath(p) } catch (e) { console.error(e) }
-  }
-  await refreshTree()
-  const s = useStore.getState()
-  const patch: Record<string, unknown> = {}
+  const guard = await beginOpenDocPathMutation(targets)
+  const successful: string[] = []
+  try {
+    for (const path of targets) {
+      try {
+        noteSelfWrite(path)
+        await ipc.trashPath(path)
+        successful.push(path)
+      } catch (error) {
+        console.error(error)
+      }
+    }
 
-  if (s.openDoc && isUnderAny(s.openDoc.path, targets)) {
-    patch.openDoc = null
+    // State follows only filesystem operations that actually succeeded. Do
+    // this before refresh so a transient listing failure cannot resurrect a
+    // deleted editor path or leave its queued bytes behind.
+    guard.discard(successful)
+    removeOpenDocumentPaths(successful)
+    await refreshTree()
+  } finally {
+    guard.release()
   }
-
-  let selectionChanged = false
-  const nextPaths = new Set<string>()
-  for (const cur of s.selectedPaths) {
-    if (isUnderAny(cur, targets)) selectionChanged = true
-    else nextPaths.add(cur)
-  }
-  if (selectionChanged) patch.selectedPaths = nextPaths
-
-  if (s.selectedPath && isUnderAny(s.selectedPath, targets)) {
-    patch.selectedPath = null
-  }
-
-  if (Object.keys(patch).length > 0) useStore.setState(patch)
-  useStore.getState().removePinnedUnder(targets)
 }
 
 // Tauri command errors arrive as `{ kind, message }`. The Rust create_*
@@ -102,19 +108,17 @@ export function useTreeActions() {
       const oldExt = dot > 0 ? oldName.slice(dot) : ""
       const normalized = newBasename.includes(".") || !oldExt ? newBasename : newBasename + oldExt
       const to = joinPath(parent(from), normalized)
-      await ipc.renamePath(from, to)
-      await refreshTree()
-      const s = useStore.getState()
-      const patch: Record<string, unknown> = {}
-      if (s.selectedPath === from) patch.selectedPath = to
-      if (s.selectedPaths.has(from)) {
-        const next = new Set(s.selectedPaths)
-        next.delete(from)
-        next.add(to)
-        patch.selectedPaths = next
+      const guard = await beginOpenDocPathMutation([from])
+      try {
+        noteSelfWrite(from)
+        noteSelfWrite(to)
+        await ipc.renamePath(from, to)
+        guard.remap(from, to)
+        remapOpenDocumentPath(from, to)
+        await refreshTree()
+      } finally {
+        guard.release()
       }
-      if (Object.keys(patch).length > 0) useStore.setState(patch)
-      useStore.getState().remapPinnedPath(from, to)
     },
     async trash(path: string) {
       await trashImpl([path])

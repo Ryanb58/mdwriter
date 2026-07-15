@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { findOccurrences, lineAt, wrapIndex } from "../findInText"
+import { findOccurrences, findRanges, lineAt, wrapIndex } from "../findInText"
 
 describe("findOccurrences", () => {
   it("returns start offsets in document order", () => {
@@ -27,6 +27,27 @@ describe("findOccurrences", () => {
 
   it("matches across multibyte text", () => {
     expect(findOccurrences("héllo héllo", "héllo")).toEqual([0, 6])
+  })
+})
+
+describe("findRanges", () => {
+  it("returns exact source ranges for raw-mode highlighting", () => {
+    expect(findRanges("one TWO two", "two")).toEqual([
+      { from: 4, to: 7 },
+      { from: 8, to: 11 },
+    ])
+  })
+
+  it("uses the same non-overlapping semantics as findOccurrences", () => {
+    expect(findRanges("aaaa", "aa")).toEqual([
+      { from: 0, to: 2 },
+      { from: 2, to: 4 },
+    ])
+  })
+
+  it("maps Unicode case-folded matches back to original UTF-16 offsets", () => {
+    expect(findRanges("İB", "b")).toEqual([{ from: 1, to: 2 }])
+    expect(findOccurrences("İB", "b")).toEqual([1])
   })
 })
 

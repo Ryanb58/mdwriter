@@ -2,8 +2,8 @@ import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
-import { cancelPendingOpenDocSave } from "../../lib/writeDoc"
-import { parseDoc } from "../../lib/doc"
+import { cancelQueuedOpenDocSave } from "../../lib/writeDoc"
+import { runVaultListingExclusive } from "../../lib/vaultTransactions"
 
 type VaultEvent = { paths: string[] }
 
@@ -42,56 +42,60 @@ export function noteSelfWrite(path: string) {
  * race existed pre-refactor.
  */
 export async function handleVaultChange(paths: string[]): Promise<void> {
-  const root = useStore.getState().rootPath
-  if (!root) return
+  await runVaultListingExclusive(async () => {
+    const root = useStore.getState().rootPath
+    if (!root) return
 
-  const nonSelfPaths = paths.filter((p) => {
-    const at = recentSelfWrites.get(p)
-    return !at || (Date.now() - at) > RECENT_WRITE_WINDOW_MS
-  })
-
-  if (nonSelfPaths.length > 0) {
-    try {
-      const opts = treeOptionsFromSettings(useStore.getState().settings)
-      const tree = await ipc.listTree(root, opts)
-      useStore.setState({ tree })
-    } catch (_err) { /* root went away */ }
-  }
-
-  const doc = useStore.getState().openDoc
-  if (!doc || !paths.includes(doc.path)) return
-
-  if (doc.dirty) {
-    console.warn(`External change to dirty file ${doc.path} — keeping local edits`)
-    return
-  }
-
-  try {
-    const text = await ipc.readFile(doc.path)
-    // Short-circuit on byte-identical content. This is what makes it safe
-    // to bypass the self-write filter above: an autosave echo reads back as
-    // bytes-equal to the buffer, while a real external edit doesn't.
-    if (text === doc.text) return
-
-    // A debounced autosave queued *before* the external write would fire
-    // ~500ms after this point with the old buffer in closure, overwriting
-    // the bytes we're about to load. Cancel it.
-    cancelPendingOpenDocSave()
-
-    const parsed = parseDoc(text)
-    const { setOpenDoc, bumpDocRev } = useStore.getState()
-    setOpenDoc({
-      path: doc.path,
-      text,
-      dirty: false,
-      savedAt: null,
-      parseError: parsed.parseError,
+    const nonSelfPaths = paths.filter((p) => {
+      const at = recentSelfWrites.get(p)
+      return !at || (Date.now() - at) > RECENT_WRITE_WINDOW_MS
     })
-    // Force the active editor to re-initialise from the new content. The
-    // BlockEditor's init effect keys off `${path}#${docRev}`; without a
-    // bump it would skip the re-init and keep displaying the old blocks.
-    bumpDocRev()
-  } catch (_e) { /* file gone */ }
+
+    if (nonSelfPaths.length > 0) {
+      try {
+        const opts = treeOptionsFromSettings(useStore.getState().settings)
+        const tree = await ipc.listTree(root, opts)
+        if (useStore.getState().rootPath !== root) return
+        useStore.setState({ tree })
+      } catch (_err) { /* root went away */ }
+    }
+
+    const doc = useStore.getState().openDoc
+    if (!doc || !paths.includes(doc.path)) return
+
+    if (doc.dirty) {
+      console.warn(`External change to dirty file ${doc.path} — keeping local edits`)
+      return
+    }
+
+    try {
+      const text = await ipc.readFile(doc.path)
+      // The read crosses an async boundary. The user may have typed, switched
+      // files, or otherwise replaced the buffer while Rust was reading. Only
+      // apply the result to the same unchanged, still-clean document snapshot.
+      const current = useStore.getState().openDoc
+      if (
+        !current ||
+        current.path !== doc.path ||
+        current.dirty ||
+        current.contentFingerprint !== doc.contentFingerprint
+      ) {
+        return
+      }
+      // Short-circuit on byte-identical content. This is what makes it safe
+      // to bypass the self-write filter above: an autosave echo reads back as
+      // bytes-equal to the buffer, while a real external edit doesn't.
+      if (text === current.text) return
+
+      // Drop only queued-not-started work for this path. An active IPC write is
+      // never cancelled (and cannot reach this branch because it keeps the
+      // document dirty until it settles).
+      cancelQueuedOpenDocSave(current.path)
+
+      const { openAnalyzedDocument } = useStore.getState()
+      openAnalyzedDocument(current.path, text, "external")
+    } catch (_e) { /* file gone */ }
+  })
 }
 
 export function useExternalChanges() {

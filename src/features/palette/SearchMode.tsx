@@ -96,7 +96,13 @@ export function SearchMode({
     const matchText = hit.snippet.slice(hit.colStart, hit.colEnd)
     const fileGroup = groups.find((g) => g.path === hit.path)
     const occurrence = fileGroup ? Math.max(0, fileGroup.hits.indexOf(hit)) : 0
-    setPendingScroll({ path: hit.path, line: hit.line, matchText, occurrence })
+    setPendingScroll({
+      kind: "vault-reveal",
+      path: hit.path,
+      line: hit.line,
+      matchText,
+      occurrence,
+    })
     setSelected(hit.path)
     close()
   }

@@ -3,22 +3,18 @@ import { useStore } from "../../../lib/store"
 import { applyToOpenDoc, previewApply } from "../applyToNote"
 
 function seedDoc(raw: string) {
-  useStore.setState({
-    openDoc: {
-      path: "/vault/note.md",
-      text: raw,
-      dirty: false,
-      savedAt: null,
-      parseError: null,
-    },
-    docRev: 0,
-    editorSelection: null,
-  })
+  useStore.getState().openAnalyzedDocument("/vault/note.md", raw, "disk")
+  useStore.setState({ docRev: 0, editorSelection: null })
 }
 
 describe("applyToOpenDoc", () => {
   beforeEach(() => {
-    useStore.setState({ openDoc: null, editorSelection: null, docRev: 0 })
+    useStore.setState({
+      openDoc: null,
+      editorSelection: null,
+      docRev: 0,
+      loadError: null,
+    })
   })
 
   it("replaces the whole document and bumps docRev", () => {
@@ -72,17 +68,51 @@ describe("applyToOpenDoc", () => {
     expect(result).toEqual({ ok: false, reason: "No document is open." })
   })
 
+  it("refuses to mutate a retained note while another file has a load error", () => {
+    seedDoc("retained content")
+    useStore.setState({
+      loadError: { path: "/vault/unreadable.md", message: "permission denied" },
+    })
+
+    const result = applyToOpenDoc({ kind: "replace-all", markdown: "replacement" })
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "Resolve the file load error before editing this note.",
+    })
+    expect(useStore.getState().openDoc?.text).toBe("retained content")
+    expect(useStore.getState().openDoc?.dirty).toBe(false)
+  })
+
   it("skips docRev bump when content is unchanged", () => {
     seedDoc("same")
     const result = applyToOpenDoc({ kind: "replace-all", markdown: "same" })
     expect(result).toEqual({ ok: true })
     expect(useStore.getState().docRev).toBe(0)
   })
+
+  it("reanalyzes assistant edits through the canonical content action", () => {
+    seedDoc("safe")
+
+    applyToOpenDoc({ kind: "replace-all", markdown: "risky[^one]" })
+
+    expect(useStore.getState().openDoc).toMatchObject({
+      dirty: true,
+      saveStatus: "queued",
+      saveError: null,
+      markdownRisks: [{ code: "footnote", label: "footnotes" }],
+    })
+  })
 })
 
 describe("previewApply", () => {
   beforeEach(() => {
-    useStore.setState({ openDoc: null, editorSelection: null, docRev: 0 })
+    useStore.setState({
+      openDoc: null,
+      editorSelection: null,
+      docRev: 0,
+      loadError: null,
+    })
   })
 
   it("returns before/after without mutating the store", () => {
@@ -90,5 +120,14 @@ describe("previewApply", () => {
     const preview = previewApply({ kind: "replace-all", markdown: "new" })
     expect(preview).toEqual({ before: "hello world", after: "new" })
     expect(useStore.getState().openDoc?.text).toBe("hello world")
+  })
+
+  it("does not preview a retained note while another file has a load error", () => {
+    seedDoc("retained content")
+    useStore.setState({
+      loadError: { path: "/vault/unreadable.md", message: "permission denied" },
+    })
+
+    expect(previewApply({ kind: "replace-all", markdown: "new" })).toBeNull()
   })
 })

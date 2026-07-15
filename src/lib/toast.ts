@@ -65,6 +65,14 @@ export function clearToasts(): void {
 
 /** Short, human-readable message from a caught error value. */
 export function errorText(e: unknown): string {
-  const s = e instanceof Error ? e.message : String(e)
+  let s: string
+  if (e instanceof Error) s = e.message
+  else if (
+    e &&
+    typeof e === "object" &&
+    typeof (e as { message?: unknown }).message === "string"
+  ) {
+    s = (e as { message: string }).message
+  } else s = String(e)
   return s.length > 140 ? s.slice(0, 139) + "…" : s
 }

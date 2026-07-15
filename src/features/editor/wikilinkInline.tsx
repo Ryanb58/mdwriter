@@ -3,6 +3,7 @@ import { codeBlockOptions } from "@blocknote/code-block"
 import { createReactInlineContentSpec } from "@blocknote/react"
 import type { VaultNote } from "../../lib/vaultNotes"
 import { resolveLinkTarget } from "../../lib/wikilinkResolve"
+import { wikilinkTooltip } from "./linkAffordance"
 
 /**
  * BlockNote needs to render the wikilink synchronously while the editor's
@@ -45,7 +46,7 @@ export const wikilinkInlineSpec = createReactInlineContentSpec(
           className={className}
           data-target={target}
           data-alias={alias || undefined}
-          title={resolved ? resolved.rel : `Unresolved: ${target}`}
+          title={wikilinkTooltip(target, resolved?.rel ?? null)}
         >
           {display}
         </span>

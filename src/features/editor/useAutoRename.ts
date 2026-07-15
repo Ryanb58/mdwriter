@@ -5,6 +5,8 @@ import { basename, parent, joinPath } from "../../lib/paths"
 import { refreshTree } from "../tree/useTreeActions"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
 import { getBody } from "../../lib/doc"
+import { beginOpenDocPathMutation } from "../../lib/writeDoc"
+import { remapOpenDocumentPath } from "../../lib/openDocumentPaths"
 
 const UNTITLED_PATTERN = /^untitled(\s+\d+)?\.(md|markdown)$/i
 
@@ -89,47 +91,32 @@ async function performRename(
   inFlight.add(fromPath)
   const parentDir = parent(fromPath)
   try {
-    // Find a non-colliding path; rename_path errors on collision, so loop.
-    for (let n = 1; n <= 200; n++) {
-      const target = joinPath(parentDir, n === 1 ? `${slug}.md` : `${slug}-${n}.md`)
-      if (target === fromPath) return
-      try {
-        noteSelfWrite(target)
-        noteSelfWrite(fromPath)
-        await ipc.renamePath(fromPath, target)
-        await refreshTree()
-        // Record the move *before* the state change that re-renders, so the
-        // leave-fallback effect doesn't try to rename the now-gone source.
-        renamedAway.add(fromPath)
-        useStore.setState((s) => {
-          const nextPaths = new Set(s.selectedPaths)
-          if (nextPaths.has(fromPath)) {
-            nextPaths.delete(fromPath)
-            nextPaths.add(target)
-          }
-          return {
-            selectedPath: s.selectedPath === fromPath ? target : s.selectedPath,
-            selectedPaths: nextPaths,
-            openDoc:
-              s.openDoc && s.openDoc.path === fromPath
-                ? { ...s.openDoc, path: target }
-                : s.openDoc,
-            // Remap the commitment signal too. Otherwise it stays pinned to the
-            // old `untitled.md`, and since `createNewFile` reuses that name once
-            // this file moves away, the *next* untitled note would look already
-            // committed and get renamed after the first keystroke.
-            headingCommittedPath:
-              s.headingCommittedPath === fromPath ? target : s.headingCommittedPath,
-          }
-        })
-        useStore.getState().remapPinnedPath(fromPath, target)
-        return
-      } catch (e) {
-        // Only a name collision is retriable — try the next suffix. Any other
-        // error (permissions, missing source, …) must surface, not spin 200×.
-        if (isDestinationExists(e)) continue
-        throw e
+    const guard = await beginOpenDocPathMutation([fromPath])
+    try {
+      // Find a non-colliding path; rename_path errors on collision, so loop.
+      for (let n = 1; n <= 200; n++) {
+        const target = joinPath(parentDir, n === 1 ? `${slug}.md` : `${slug}-${n}.md`)
+        if (target === fromPath) return
+        try {
+          noteSelfWrite(target)
+          noteSelfWrite(fromPath)
+          await ipc.renamePath(fromPath, target)
+          // Record the move *before* the state change that re-renders, so the
+          // leave-fallback effect doesn't try to rename the now-gone source.
+          renamedAway.add(fromPath)
+          guard.remap(fromPath, target)
+          remapOpenDocumentPath(fromPath, target)
+          await refreshTree()
+          return
+        } catch (e) {
+          // Only a name collision is retriable — try the next suffix. Any other
+          // error (permissions, missing source, …) must surface, not spin 200×.
+          if (isDestinationExists(e)) continue
+          throw e
+        }
       }
+    } finally {
+      guard.release()
     }
   } finally {
     inFlight.delete(fromPath)

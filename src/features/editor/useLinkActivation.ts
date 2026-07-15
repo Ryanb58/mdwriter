@@ -6,6 +6,7 @@ import {
   isInternalHref,
   resolveLinkTarget,
 } from "../../lib/wikilinkResolve"
+import { isLinkActivationModifier } from "./linkAffordance"
 
 /**
  * Capture-phase click handler for the editor surface. Two kinds of links
@@ -39,7 +40,7 @@ export function useLinkActivation(host: React.RefObject<HTMLElement | null>) {
       // Outside an editable area (e.g. rendered preview) a bare click works.
       const inEditable =
         target.closest('[contenteditable="true"], .ProseMirror, .cm-content') !== null
-      const modifier = e.metaKey || e.ctrlKey
+      const modifier = isLinkActivationModifier(e)
       if (inEditable && !modifier) return
 
       const wikilink = target.closest<HTMLElement>('.wikilink[data-target]')

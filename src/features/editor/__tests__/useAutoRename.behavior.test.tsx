@@ -1,14 +1,24 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { renderHook, act } from "@testing-library/react"
 import { useStore, type OpenDoc } from "../../../lib/store"
+import { analyzeDocument } from "../../../lib/documentAnalysis"
 
 // Mock the IPC + side-effect boundary so the hook runs without Tauri.
 const renamePath = vi.fn((_from: string, _to: string) => Promise.resolve())
+const saveHarness = vi.hoisted(() => ({
+  begin: vi.fn(),
+  remap: vi.fn(),
+  discard: vi.fn(),
+  release: vi.fn(),
+}))
 vi.mock("../../../lib/ipc", () => ({
   ipc: { renamePath: (from: string, to: string) => renamePath(from, to) },
 }))
 vi.mock("../tree/useTreeActions", () => ({ refreshTree: vi.fn(async () => {}) }))
 vi.mock("../watcher/useExternalChanges", () => ({ noteSelfWrite: vi.fn() }))
+vi.mock("../../../lib/writeDoc", () => ({
+  beginOpenDocPathMutation: saveHarness.begin,
+}))
 
 import { useAutoRename } from "../useAutoRename"
 
@@ -16,8 +26,17 @@ const VAULT = "/vault"
 const UNTITLED = `${VAULT}/untitled.md`
 
 function setDoc(d: Partial<OpenDoc> & { path: string }) {
+  const text = d.text ?? ""
   useStore.setState({
-    openDoc: { dirty: false, savedAt: 1, parseError: null, text: "", ...d },
+    openDoc: {
+      dirty: false,
+      savedAt: 1,
+      text,
+      ...analyzeDocument(d.path, text),
+      saveStatus: "clean",
+      saveError: null,
+      ...d,
+    },
     selectedPath: d.path,
     selectedPaths: new Set([d.path]),
   })
@@ -26,6 +45,16 @@ function setDoc(d: Partial<OpenDoc> & { path: string }) {
 describe("useAutoRename — keystroke sequence", () => {
   beforeEach(() => {
     renamePath.mockClear()
+    renamePath.mockResolvedValue(undefined)
+    saveHarness.begin.mockReset()
+    saveHarness.remap.mockReset()
+    saveHarness.discard.mockReset()
+    saveHarness.release.mockReset()
+    saveHarness.begin.mockResolvedValue({
+      remap: saveHarness.remap,
+      discard: saveHarness.discard,
+      release: saveHarness.release,
+    })
     useStore.setState({
       openDoc: null,
       headingCommittedPath: null,
@@ -112,6 +141,8 @@ describe("useAutoRename — keystroke sequence", () => {
 
     expect(renamePath).toHaveBeenNthCalledWith(1, UNTITLED, `${VAULT}/doc.md`)
     expect(renamePath).toHaveBeenNthCalledWith(2, UNTITLED, `${VAULT}/doc-2.md`)
+    expect(saveHarness.remap).toHaveBeenCalledWith(UNTITLED, `${VAULT}/doc-2.md`)
+    expect(useStore.getState().openDoc?.path).toBe(`${VAULT}/doc-2.md`)
   })
 
   it("renames in raw mode once body content follows the heading", async () => {
@@ -172,6 +203,18 @@ describe("useAutoRename — keystroke sequence", () => {
     await act(async () => {
       setDoc({ path: UNTITLED, text: "# Title\n\nbody", dirty: true, savedAt: 1 })
     })
+    expect(renamePath).not.toHaveBeenCalled()
+  })
+
+  it("does not rename when the open-path save guard fails", async () => {
+    saveHarness.begin.mockRejectedValue(new Error("disk full"))
+    renderHook(() => useAutoRename())
+
+    await act(async () => {
+      setDoc({ path: UNTITLED, text: "# Title\n\nbody", dirty: false, savedAt: 1 })
+    })
+
+    expect(saveHarness.begin).toHaveBeenCalledWith([UNTITLED])
     expect(renamePath).not.toHaveBeenCalled()
   })
 })

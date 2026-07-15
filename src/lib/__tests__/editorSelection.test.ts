@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { useStore } from "../store"
+import { analyzeDocument } from "../documentAnalysis"
 
 function reset() {
   useStore.setState({
@@ -11,7 +12,16 @@ function reset() {
 }
 
 function makeDoc(path: string) {
-  return { path, text: "# hello\n", dirty: false, savedAt: null, parseError: null }
+  const text = "# hello\n"
+  return {
+    path,
+    text,
+    dirty: false,
+    savedAt: null,
+    ...analyzeDocument(path, text),
+    saveStatus: "clean" as const,
+    saveError: null,
+  }
 }
 
 describe("editorSelection", () => {

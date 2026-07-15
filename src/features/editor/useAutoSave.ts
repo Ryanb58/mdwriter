@@ -2,30 +2,26 @@ import { useEffect } from "react"
 import { useStore } from "../../lib/store"
 import {
   scheduleOpenDocSave,
-  flushPendingOpenDocSave,
-  cancelPendingOpenDocSave,
-  writeOpenDocNow,
+  flushOpenDocSave,
 } from "../../lib/writeDoc"
-
-/**
- * Back-compat re-export so existing imports (watcher, renameOpenDoc)
- * keep working. New code should import directly from `lib/writeDoc`.
- */
-export function cancelPendingDocSave() {
-  cancelPendingOpenDocSave()
-}
 
 export function useAutoSave() {
   const doc = useStore((s) => s.openDoc)
 
   useEffect(() => {
     if (!doc || !doc.dirty) return
-    scheduleOpenDocSave(doc.path, doc.text)
+    scheduleOpenDocSave({ path: doc.path, text: doc.text })
   }, [doc?.dirty, doc?.text, doc?.path])
 
   // flush on path change / unmount
   useEffect(() => {
-    return () => { flushPendingOpenDocSave() }
+    const path = doc?.path
+    if (!path) return
+    return () => {
+      void flushOpenDocSave(path).catch(() => {
+        // The coordinator already records and surfaces the persistent error.
+      })
+    }
   }, [doc?.path])
 
   // Flush on window close. The autosave debounce is 500ms — without this,
@@ -38,11 +34,14 @@ export function useAutoSave() {
     ;(async () => {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window")
-        const stop = await getCurrentWindow().onCloseRequested(async () => {
-          const cur = useStore.getState().openDoc
-          if (!cur?.dirty) return
+        const window = getCurrentWindow()
+        const stop = await window.onCloseRequested(async (event) => {
+          event.preventDefault()
           try {
-            await writeOpenDocNow(cur.path, cur.text)
+            await flushOpenDocSave()
+            // `close()` would emit another close-requested event. Destroying
+            // after a successful flush completes the already-approved close.
+            await window.destroy()
           } catch (e) {
             console.error("flush-on-close failed", e)
           }

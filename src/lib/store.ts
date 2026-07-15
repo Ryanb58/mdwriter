@@ -1,8 +1,13 @@
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import type { TreeNode, AgentId, AgentAvailability, PermissionMode, AiPermissionRequest } from "./ipc"
+import { analyzeDocument, type DocumentRisk } from "./documentAnalysis"
 
 export type EditorMode = "block" | "raw"
+
+export type SaveStatus = "clean" | "queued" | "saving" | "error"
+
+export type LoadError = { path: string; message: string }
 
 /** Which tab the right sidebar pane is showing. */
 export type RightPaneTab = "properties" | "ai"
@@ -19,27 +24,54 @@ export type OpenDoc = {
   dirty: boolean
   savedAt: number | null
   parseError: string | null
+  markdownRisks: DocumentRisk[]
+  contentFingerprint: string
+  saveStatus: SaveStatus
+  saveError: string | null
 }
+
+export type OpenDocLifecyclePatch = Partial<
+  Pick<OpenDoc, "path" | "dirty" | "savedAt" | "saveStatus" | "saveError">
+>
 
 export type Theme = "light" | "dark" | "system"
 
-/**
- * One-shot scroll target consumed by whichever editor is mounted after a doc
- * loads. Set by features that open a file at a specific location (vault
- * search, future "go to backlink", etc). The active editor consumes it and
- * clears it back to null — pending scrolls are *not* persisted.
- *
- * Both editors walk `matchText` occurrences in document order and stop at
- * `occurrence` (0-indexed) — this disambiguates when the same text appears
- * many times in a file. `line` is carried for the raw editor as a primary
- * positioning hint when an occurrence walk can't be completed (e.g. doc was
- * edited since the search ran).
- */
-export type PendingScroll = {
+export type VaultRevealTarget = {
+  kind: "vault-reveal"
   path: string
   line: number
   matchText: string
   occurrence: number
+}
+
+export type RawFindTarget = {
+  kind: "find-raw"
+  path: string
+  from: number
+  to: number
+  requestId: number
+}
+
+export type BlockFindTarget = {
+  kind: "find-block"
+  path: string
+  blockId: string
+  from: number
+  to: number
+  requestId: number
+}
+
+/** Session-only navigation request consumed or observed by the active editor. */
+export type PendingScroll = VaultRevealTarget | RawFindTarget | BlockFindTarget
+
+export type RenderedBlockEntry = { blockId: string; text: string }
+
+export type RenderedBlockMatch = RenderedBlockEntry & { from: number; to: number }
+
+export type BlockTextIndex = {
+  path: string
+  docKey: string
+  blocks: RenderedBlockEntry[]
 }
 
 export type ImagesLocation = "vault-assets" | "same-folder"
@@ -105,7 +137,10 @@ export type AppStore = {
    */
   docRev: number
   bumpDocRev(): void
+  preferredEditorMode: EditorMode
   editorMode: EditorMode
+  loadError: LoadError | null
+  blockModeOverrides: Record<string, string>
   /**
    * Which tab the right sidebar shows — frontmatter Properties for the open
    * file, or the AI Assistant. Persisted so the choice survives launches.
@@ -122,6 +157,8 @@ export type AppStore = {
   settings: Settings
   renamingPath: string | null
   pendingScroll: PendingScroll | null
+  /** Session-only rendered text published by the mounted BlockNote editor. */
+  blockTextIndex: BlockTextIndex | null
   /**
    * One-shot signal that the next editor mount for this path should
    * land the cursor at the end of the document instead of the start.
@@ -153,13 +190,20 @@ export type AppStore = {
   remapPinnedPath(from: string, to: string): void
   removePinnedUnder(paths: readonly string[]): void
   setOpenDoc(doc: OpenDoc | null): void
-  patchOpenDoc(patch: Partial<OpenDoc>): void
-  setEditorMode(mode: EditorMode): void
+  /** Lifecycle metadata and path remaps only; content must use editOpenDoc. */
+  patchOpenDoc(patch: OpenDocLifecyclePatch): void
+  openAnalyzedDocument(path: string, text: string, source: "disk" | "external"): void
+  editOpenDoc(nextText: string): void
+  requestEditorMode(mode: EditorMode): "changed" | "blocked"
+  overrideBlockModeForCurrentDoc(): void
+  remapBlockModeOverride(from: string, to: string): void
+  setLoadError(error: LoadError | null): void
   setRightPaneTab(tab: RightPaneTab): void
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
   setRenamingPath(path: string | null): void
   setPendingScroll(target: PendingScroll | null): void
+  setBlockTextIndex(index: BlockTextIndex | null): void
   setPendingCursorAtEnd(path: string | null): void
   setHeadingCommittedPath(path: string | null): void
 
@@ -432,13 +476,17 @@ export const useStore = create<AppStore>()(
       recentFilesByVault: {},
       openDoc: null,
       docRev: 0,
+      preferredEditorMode: "block",
       editorMode: "block",
+      loadError: null,
+      blockModeOverrides: {},
       rightPaneTab: "properties",
       focusMode: false,
       settingsOpen: false,
       settings: DEFAULT_SETTINGS,
       renamingPath: null,
       pendingScroll: null,
+      blockTextIndex: null,
       pendingCursorAtEnd: null,
       headingCommittedPath: null,
 
@@ -526,8 +574,128 @@ export const useStore = create<AppStore>()(
         }),
       patchOpenDoc: (patch) =>
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
+      openAnalyzedDocument: (path, text, _source) => {
+        const analysis = analyzeDocument(path, text)
+        set((s) => {
+          const existingOverride = s.blockModeOverrides[path]
+          const overrideMatches = existingOverride === analysis.contentFingerprint
+          let blockModeOverrides = s.blockModeOverrides
+          if (existingOverride && !overrideMatches) {
+            const { [path]: _stale, ...rest } = blockModeOverrides
+            void _stale
+            blockModeOverrides = rest
+          }
+
+          const hasRisks = analysis.markdownRisks.length > 0
+          const editorMode: EditorMode = hasRisks
+            ? (overrideMatches ? "block" : "raw")
+            : s.preferredEditorMode
+          const doc: OpenDoc = {
+            path,
+            text,
+            dirty: false,
+            savedAt: null,
+            ...analysis,
+            saveStatus: "clean",
+            saveError: null,
+          }
+          const next: Partial<AppStore> = {
+            openDoc: doc,
+            docRev: s.docRev + 1,
+            editorMode,
+            loadError: null,
+            blockModeOverrides,
+            blockTextIndex: null,
+            pendingScroll:
+              s.pendingScroll?.kind === "find-raw" || s.pendingScroll?.kind === "find-block"
+                ? null
+                : s.pendingScroll,
+            editorSelection: null,
+          }
+
+          if (s.rootPath) {
+            const cur = s.recentFilesByVault[s.rootPath] ?? []
+            if (cur[0] !== path) {
+              const updated = [path, ...cur.filter((p) => p !== path)].slice(0, MAX_RECENT_FILES)
+              next.recentFilesByVault = { ...s.recentFilesByVault, [s.rootPath]: updated }
+            }
+          }
+          return next
+        })
+      },
+      editOpenDoc: (nextText) =>
+        set((s) => {
+          const doc = s.openDoc
+          if (!doc || doc.text === nextText) return {}
+          const analysis = analyzeDocument(doc.path, nextText)
+          const hadActiveOverride = s.blockModeOverrides[doc.path] === doc.contentFingerprint
+          let blockModeOverrides = s.blockModeOverrides
+          if (hadActiveOverride) {
+            blockModeOverrides = {
+              ...blockModeOverrides,
+              [doc.path]: analysis.contentFingerprint,
+            }
+          } else if (blockModeOverrides[doc.path]) {
+            const { [doc.path]: _stale, ...rest } = blockModeOverrides
+            void _stale
+            blockModeOverrides = rest
+          }
+          return {
+            openDoc: {
+              ...doc,
+              text: nextText,
+              dirty: true,
+              ...analysis,
+              saveStatus: doc.saveStatus === "saving" ? "saving" : "queued",
+              saveError: null,
+            },
+            blockModeOverrides,
+          }
+        }),
+      requestEditorMode: (mode) => {
+        let result: "changed" | "blocked" = "changed"
+        set((s) => {
+          if (mode === "raw") {
+            return { preferredEditorMode: "raw", editorMode: "raw" }
+          }
+          const doc = s.openDoc
+          const isRisky = Boolean(doc?.markdownRisks.length)
+          const isOverridden = Boolean(
+            doc && s.blockModeOverrides[doc.path] === doc.contentFingerprint,
+          )
+          if (isRisky && !isOverridden) {
+            result = "blocked"
+            return { preferredEditorMode: "block" }
+          }
+          return { preferredEditorMode: "block", editorMode: "block" }
+        })
+        return result
+      },
+      overrideBlockModeForCurrentDoc: () =>
+        set((s) => {
+          const doc = s.openDoc
+          if (!doc || doc.markdownRisks.length === 0) return {}
+          return {
+            editorMode: "block",
+            blockModeOverrides: {
+              ...s.blockModeOverrides,
+              [doc.path]: doc.contentFingerprint,
+            },
+          }
+        }),
+      remapBlockModeOverride: (from, to) =>
+        set((s) => {
+          let changed = false
+          const next: Record<string, string> = {}
+          for (const [path, fingerprint] of Object.entries(s.blockModeOverrides)) {
+            const remapped = remapPath(path, from, to) ?? path
+            if (remapped !== path) changed = true
+            next[remapped] = fingerprint
+          }
+          return changed ? { blockModeOverrides: next } : {}
+        }),
+      setLoadError: (loadError) => set({ loadError }),
       bumpDocRev: () => set((s) => ({ docRev: s.docRev + 1 })),
-      setEditorMode: (mode) => set({ editorMode: mode }),
       setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
       setFocusMode: (v) => set({ focusMode: v }),
       setSettingsOpen: (open) => set({ settingsOpen: open }),
@@ -535,6 +703,7 @@ export const useStore = create<AppStore>()(
         set((s) => ({ settings: { ...s.settings, [key]: value } })),
       setRenamingPath: (path) => set({ renamingPath: path }),
       setPendingScroll: (target) => set({ pendingScroll: target }),
+      setBlockTextIndex: (index) => set({ blockTextIndex: index }),
       setPendingCursorAtEnd: (path) => set({ pendingCursorAtEnd: path }),
       setHeadingCommittedPath: (path) =>
         set((s) => (s.headingCommittedPath === path ? {} : { headingCommittedPath: path })),
@@ -785,17 +954,18 @@ export const useStore = create<AppStore>()(
         } else if (p.rightPane === "properties" || p.propertiesVisible) {
           rightPaneTab = "properties"
         }
-        // Strip legacy/retired keys so they don't leak into the live store.
-        const {
-          propertiesVisible: _pv,
-          aiPanelVisible: _av,
-          rightPane: _rp,
-          propertiesExpanded: _pe,
-          lastFileByVault: _lfv,
-          ...rest
-        } = p as typeof p & { lastFileByVault?: unknown }
-        void _pv; void _av; void _rp; void _pe; void _lfv
-        return { ...current, ...rest, settings, rightPaneTab, pinnedPaths, recentFilesByVault }
+        // Restore only the exact keys written by `partialize`. Older builds
+        // briefly persisted broader state shapes, so spreading `p` here would
+        // revive stale documents, load errors, or compatibility overrides.
+        return {
+          ...current,
+          settings,
+          rightPaneTab,
+          pinnedPaths,
+          recentFilesByVault,
+          aiAgent: p.aiAgent ?? current.aiAgent,
+          aiPermissionMode: p.aiPermissionMode ?? current.aiPermissionMode,
+        }
       },
     },
   ),

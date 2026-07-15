@@ -1,90 +1,103 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { CaretDown, CaretUp, X } from "@phosphor-icons/react"
-import { useStore } from "../../lib/store"
-import { getBody } from "../../lib/doc"
-import { findOccurrences, lineAt, wrapIndex } from "./findInText"
+import { useStore, type PendingScroll } from "../../lib/store"
+import { findRanges, wrapIndex } from "./findInText"
+import { findRenderedBlockMatches } from "./blockTextSearch"
+import { documentRenderKey } from "./documentRenderKey"
 
 const QUERY_DEBOUNCE_MS = 150
 
-/**
- * In-document find bar (⌘F). Works in both editor modes by reusing the
- * existing search-jump machinery: every navigation sets a fresh
- * `pendingScroll` and whichever editor is mounted consumes it
- * (`findNthBlockMatch` in block mode, `scrollViewToMatch` in raw mode) and
- * flashes the target. The bar itself never touches the editors.
- *
- * Occurrence indices are computed against the same text the active editor
- * walks: the body (frontmatter stripped) in block mode, the full file text
- * in raw mode.
- */
+/** In-note Find uses exact ranges from whichever editor is currently visible. */
 export function FindBar() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [idx, setIdx] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
-  // True between issuing a pendingScroll and the editor consuming it —
-  // used to pull focus back into the input after the raw editor's jump
-  // focuses the CM view.
-  const issuedNav = useRef(false)
-  // False until the first jump for the current query, so Enter right after
-  // typing lands on the current match instead of skipping past it when the
-  // debounce already fired.
   const hasJumped = useRef(false)
+  const requestId = useRef(0)
 
-  const doc = useStore((s) => s.openDoc)
-  const editorMode = useStore((s) => s.editorMode)
-  const setPendingScroll = useStore((s) => s.setPendingScroll)
-  const pendingScroll = useStore((s) => s.pendingScroll)
+  const doc = useStore((state) => state.openDoc)
+  const docRev = useStore((state) => state.docRev)
+  const editorMode = useStore((state) => state.editorMode)
+  const blockTextIndex = useStore((state) => state.blockTextIndex)
+  const setPendingScroll = useStore((state) => state.setPendingScroll)
 
-  // The text the active editor actually walks for occurrences: block mode
-  // strips frontmatter, raw mode displays the full file.
-  const haystack = doc ? (editorMode === "block" ? getBody(doc.text) : doc.text) : ""
-  const occurrences = useMemo(() => findOccurrences(haystack, query), [haystack, query])
-  const total = occurrences.length
+  const expectedDocKey = documentRenderKey(docRev)
+  const activeBlockIndex =
+    doc &&
+    blockTextIndex?.path === doc.path &&
+    blockTextIndex.docKey === expectedDocKey
+      ? blockTextIndex
+      : null
+
+  const rawMatches = useMemo(
+    () => editorMode === "raw" && doc ? findRanges(doc.text, query) : [],
+    [doc?.text, editorMode, query],
+  )
+  const blockMatches = useMemo(
+    () => editorMode === "block"
+      ? findRenderedBlockMatches(activeBlockIndex?.blocks, query)
+      : [],
+    [activeBlockIndex?.blocks, editorMode, query],
+  )
+  const total = editorMode === "raw" ? rawMatches.length : blockMatches.length
   const displayIdx = Math.min(idx, Math.max(0, total - 1))
+  const domainKey = editorMode === "raw"
+    ? `raw:${expectedDocKey}`
+    : `block:${expectedDocKey}:${activeBlockIndex?.docKey ?? "pending"}`
+
+  function targetAt(index: number): PendingScroll | null {
+    if (!doc) return null
+    const nextRequestId = ++requestId.current
+    if (editorMode === "raw") {
+      const match = rawMatches[index]
+      return match
+        ? { kind: "find-raw", path: doc.path, ...match, requestId: nextRequestId }
+        : null
+    }
+    const match = blockMatches[index]
+    return match
+      ? {
+          kind: "find-block",
+          path: doc.path,
+          blockId: match.blockId,
+          from: match.from,
+          to: match.to,
+          requestId: nextRequestId,
+        }
+      : null
+  }
 
   function jump(nextIdx: number) {
-    const d = useStore.getState().openDoc
-    if (!d || !query || total === 0) return
-    const i = wrapIndex(nextIdx, total)
-    setIdx(i)
-    issuedNav.current = true
+    if (!doc || !query || total === 0) return
+    const next = wrapIndex(nextIdx, total)
+    const target = targetAt(next)
+    if (!target) return
+    setIdx(next)
     hasJumped.current = true
-    // Always a fresh object — the editor consumes and nulls pendingScroll,
-    // so re-setting the same occurrence still triggers a jump + flash.
-    setPendingScroll({
-      path: d.path,
-      line: lineAt(haystack, occurrences[i]),
-      matchText: query,
-      occurrence: i,
-    })
+    setPendingScroll(target)
   }
   const jumpRef = useRef(jump)
   jumpRef.current = jump
 
-  // ⌘F opens (or re-focuses) the bar.
+  // Cmd/Ctrl+F opens or re-focuses the bar without pulling focus into either
+  // editor. Editor-specific target handling also leaves this input focused.
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
-      if (e.key !== "f" && e.key !== "F") return
-      // Yield when something else (e.g. an editor keymap) claimed the
-      // keystroke, or while a modal dialog is up.
-      if (e.defaultPrevented) return
-      if (document.querySelector('[aria-modal="true"]')) return
-      // Don't hijack ⌘F from other text inputs (command palette, properties
-      // fields) — only the editors and the find bar itself participate.
-      const t = e.target as HTMLElement | null
+    function onKey(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return
+      if (event.key !== "f" && event.key !== "F") return
+      if (event.defaultPrevented || document.querySelector('[aria-modal="true"]')) return
+      const target = event.target as HTMLElement | null
       if (
-        t &&
-        (t.tagName === "INPUT" || t.tagName === "TEXTAREA") &&
-        !t.closest("[data-find-bar]")
+        target &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA") &&
+        !target.closest("[data-find-bar]")
       ) {
         return
       }
-      e.preventDefault()
+      event.preventDefault()
       setOpen(true)
-      // Re-invocation while already open: refocus and select for retyping.
       requestAnimationFrame(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
@@ -94,50 +107,74 @@ export function FindBar() {
     return () => document.removeEventListener("keydown", onKey)
   }, [])
 
-  // Debounced jump-to-first-match as the query changes.
+  // A new query, note, mode, or freshly-published BlockNote index starts at
+  // the first match. The short delay keeps typing responsive.
   useEffect(() => {
-    if (!open) return
     setIdx(0)
     hasJumped.current = false
-    if (!query) return
-    const t = setTimeout(() => jumpRef.current(0), QUERY_DEBOUNCE_MS)
-    return () => clearTimeout(t)
-  }, [query, open])
+    clearExactFindTarget()
+    if (!open || !query) return
+    const timer = window.setTimeout(() => {
+      if (!hasJumped.current) jumpRef.current(0)
+    }, QUERY_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [query, open, domainKey])
 
-  // The raw editor's jump focuses the CM view, stealing focus mid-typing.
-  // Once the editor consumed our pendingScroll (it nulls it), pull focus
-  // back into the input without disturbing the scroll position.
+  // Local edits can remove earlier matches or shift the active exact range.
+  // Clamp derived state and refresh only after this query has already jumped.
   useEffect(() => {
-    if (!open) return
-    if (pendingScroll === null && issuedNav.current) {
-      issuedNav.current = false
-      inputRef.current?.focus({ preventScroll: true })
+    if (!open || !query || !hasJumped.current) return
+    if (total === 0) {
+      setIdx(0)
+      clearExactFindTarget()
+      return
     }
-  }, [pendingScroll, open])
+    const next = Math.min(idx, total - 1)
+    if (next !== idx) setIdx(next)
+    const desired = targetAt(next)
+    if (!desired) return
+    const current = useStore.getState().pendingScroll
+    // CodeMirror maps its decoration through document edits. BlockNote uses
+    // host-owned geometry overlays, so every newly-published rendered index
+    // must redraw even when the semantic block/range is unchanged.
+    if (editorMode === "block" || !sameExactTarget(current, desired)) {
+      setPendingScroll(desired)
+    }
+  }, [blockMatches, rawMatches, total, idx, open, query, editorMode])
+
+  // FindBar normally stays mounted, but a surrounding editor teardown should
+  // not leave an exact decoration alive in session state.
+  useEffect(() => () => clearExactFindTarget(), [])
+
+  function clearExactFindTarget() {
+    const pending = useStore.getState().pendingScroll
+    if (pending?.kind === "find-raw" || pending?.kind === "find-block") {
+      useStore.getState().setPendingScroll(null)
+    }
+  }
 
   function close() {
-    // Capture the editor container before the bar unmounts so we can hand
-    // focus back to whichever editor (CM or BlockNote contenteditable) is up.
     const pane = rootRef.current?.parentElement
+    clearExactFindTarget()
     setOpen(false)
     requestAnimationFrame(() => {
       pane?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus()
     })
   }
 
-  function onInputKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") {
-      e.preventDefault()
-      const step = e.shiftKey ? -1 : 1
-      jump(hasJumped.current ? idx + step : idx)
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault()
-      jump(hasJumped.current ? idx + 1 : idx)
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault()
-      jump(hasJumped.current ? idx - 1 : idx)
-    } else if (e.key === "Escape") {
-      e.preventDefault()
+  function onInputKey(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault()
+      const step = event.shiftKey ? -1 : 1
+      jump(hasJumped.current ? displayIdx + step : displayIdx)
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault()
+      jump(hasJumped.current ? displayIdx + 1 : displayIdx)
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault()
+      jump(hasJumped.current ? displayIdx - 1 : displayIdx)
+    } else if (event.key === "Escape") {
+      event.preventDefault()
       close()
     }
   }
@@ -154,7 +191,7 @@ export function FindBar() {
         ref={inputRef}
         autoFocus
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(event) => setQuery(event.target.value)}
         onKeyDown={onInputKey}
         placeholder="Find in note"
         aria-label="Find in note"
@@ -165,7 +202,8 @@ export function FindBar() {
       </span>
       <button
         type="button"
-        onClick={() => jump(idx - 1)}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={() => jump(displayIdx - 1)}
         disabled={total === 0}
         aria-label="Previous match"
         title="Previous match (⇧↩)"
@@ -175,7 +213,8 @@ export function FindBar() {
       </button>
       <button
         type="button"
-        onClick={() => jump(idx + 1)}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={() => jump(displayIdx + 1)}
         disabled={total === 0}
         aria-label="Next match"
         title="Next match (↩)"
@@ -194,4 +233,15 @@ export function FindBar() {
       </button>
     </div>
   )
+}
+
+function sameExactTarget(left: PendingScroll | null, right: PendingScroll): boolean {
+  if (!left || left.kind !== right.kind || left.path !== right.path) return false
+  if (left.kind === "find-raw" && right.kind === "find-raw") {
+    return left.from === right.from && left.to === right.to
+  }
+  if (left.kind === "find-block" && right.kind === "find-block") {
+    return left.blockId === right.blockId && left.from === right.from && left.to === right.to
+  }
+  return false
 }

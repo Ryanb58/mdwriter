@@ -1,9 +1,11 @@
 import { ipc } from "../../lib/ipc"
-import { useStore } from "../../lib/store"
 import { basename, joinPath, parent } from "../../lib/paths"
+import { beginOpenDocPathMutation } from "../../lib/writeDoc"
+import { remapOpenDocumentPath } from "../../lib/openDocumentPaths"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
 import { refreshTree } from "./useTreeActions"
 import { requestCollision, type CollisionChoice } from "./dndPrompts"
+import { pruneSubpaths } from "./pruneSubpaths"
 
 export type MoveResult = {
   moved: number
@@ -72,144 +74,85 @@ export async function moveItems(
   sourcePaths: string[],
   targetDir: string,
 ): Promise<MoveResult> {
+  const sources = pruneSubpaths(sourcePaths)
+    .filter((source) => parent(source) !== targetDir)
   let moved = 0
   let skipped = 0
   let applyToRest: { choice: CollisionChoice } | null = null
 
-  for (let i = 0; i < sourcePaths.length; i++) {
-    const from = sourcePaths[i]
-    const name = basename(from)
-    const to = joinPath(targetDir, name)
+  if (sources.length === 0) {
+    await refreshTree()
+    return { moved, skipped, cancelled: false }
+  }
 
-    if (parent(from) === targetDir) {
-      // Already there — count as a no-op skip silently.
-      continue
-    }
+  const guard = await beginOpenDocPathMutation(sources)
+  try {
+    for (let i = 0; i < sources.length; i++) {
+      const from = sources[i]
+      const name = basename(from)
+      const to = joinPath(targetDir, name)
 
-    // First attempt: straight rename.
-    try {
-      noteSelfWrite(from)
-      noteSelfWrite(to)
-      await ipc.renamePath(from, to)
-      await onMoved(from, to)
-      moved++
-      continue
-    } catch (err) {
-      if (!isDestinationExistsError(err)) {
-        console.error("move failed", from, "→", to, err)
-        skipped++
+      // First attempt: straight rename.
+      try {
+        noteSelfWrite(from)
+        noteSelfWrite(to)
+        await ipc.renamePath(from, to)
+      } catch (err) {
+        if (!isDestinationExistsError(err)) {
+          console.error("move failed", from, "→", to, err)
+          skipped++
+          continue
+        }
+
+        // Collision — consult user (or use sticky choice).
+        let choice: CollisionChoice
+        if (applyToRest) {
+          choice = applyToRest.choice
+        } else {
+          const remaining = sources.length - i - 1
+          const decision = await requestCollision({
+            name,
+            targetDir,
+            suggestedRename: suggestRenameName(name),
+            remaining,
+          })
+          if (decision.applyToRest) applyToRest = { choice: decision.choice }
+          choice = decision.choice
+        }
+        if (choice === "cancel") {
+          await refreshTree()
+          return { moved, skipped, cancelled: true }
+        }
+        if (choice === "skip") {
+          skipped++
+          continue
+        }
+
+        // Rename branch — try -1, -2, ... and remap to the actual suffix.
+        try {
+          const renamed = await tryRenameWithSuffix(from, targetDir, suggestRenameName(name))
+          if (renamed) {
+            guard.remap(from, renamed)
+            remapOpenDocumentPath(from, renamed)
+            moved++
+          } else {
+            skipped++
+          }
+        } catch (renameError) {
+          console.error("rename-with-suffix failed", from, renameError)
+          skipped++
+        }
         continue
       }
+
+      guard.remap(from, to)
+      remapOpenDocumentPath(from, to)
+      moved++
     }
 
-    // Collision — consult user (or use sticky choice).
-    let choice: CollisionChoice
-    if (applyToRest) {
-      choice = applyToRest.choice
-    } else {
-      const remaining = sourcePaths.length - i - 1
-      const decision = await requestCollision({
-        name,
-        targetDir,
-        suggestedRename: suggestRenameName(name),
-        remaining,
-      })
-      if (decision.applyToRest) applyToRest = { choice: decision.choice }
-      choice = decision.choice
-    }
-    if (choice === "cancel") {
-      // Refresh so already-moved items show up; watcher events for
-      // the moves we made are dropped by noteSelfWrite's window.
-      await refreshTree()
-      return { moved, skipped, cancelled: true }
-    }
-    if (choice === "skip") {
-      skipped++
-      continue
-    }
-    // Rename branch — try -1, -2, ...
-    try {
-      const renamed = await tryRenameWithSuffix(from, targetDir, suggestRenameName(name))
-      if (renamed) {
-        await onMoved(from, renamed)
-        moved++
-      } else {
-        skipped++
-      }
-    } catch (err) {
-      console.error("rename-with-suffix failed", from, err)
-      skipped++
-    }
+    await refreshTree()
+    return { moved, skipped, cancelled: false }
+  } finally {
+    guard.release()
   }
-
-  await refreshTree()
-  return { moved, skipped, cancelled: false }
-}
-
-/**
- * Remap a path that was rooted under `fromRoot` to be rooted under
- * `toRoot` instead. Returns null if the path isn't a descendant or
- * exact match of fromRoot.
- */
-function remapPath(path: string, fromRoot: string, toRoot: string): string | null {
-  if (path === fromRoot) return toRoot
-  // Treat both `/` and `\` as separators since paths from Rust come
-  // through unchanged on the relevant platforms.
-  for (const sep of ["/", "\\"]) {
-    const prefix = fromRoot + sep
-    if (path.startsWith(prefix)) return toRoot + sep + path.slice(prefix.length)
-  }
-  return null
-}
-
-/**
- * Update store state after a successful single-item move so the editor
- * follows the file and the selection points at the new path. Handles
- * folder moves by remapping any path that lives under the moved root.
- */
-async function onMoved(from: string, to: string): Promise<void> {
-  const s = useStore.getState()
-  const patch: Partial<{
-    selectedPath: string | null
-    selectedPaths: Set<string>
-    openDoc: typeof s.openDoc
-    expandedFolders: Set<string>
-  }> = {}
-
-  const remappedSel = s.selectedPath ? remapPath(s.selectedPath, from, to) : null
-  if (remappedSel) patch.selectedPath = remappedSel
-
-  let pathsChanged = false
-  const nextPaths = new Set<string>()
-  for (const p of s.selectedPaths) {
-    const r = remapPath(p, from, to)
-    if (r) {
-      nextPaths.add(r)
-      pathsChanged = true
-    } else {
-      nextPaths.add(p)
-    }
-  }
-  if (pathsChanged) patch.selectedPaths = nextPaths
-
-  if (s.openDoc) {
-    const r = remapPath(s.openDoc.path, from, to)
-    if (r) patch.openDoc = { ...s.openDoc, path: r }
-  }
-
-  let expChanged = false
-  const nextExp = new Set<string>()
-  for (const p of s.expandedFolders) {
-    const r = remapPath(p, from, to)
-    if (r) {
-      nextExp.add(r)
-      expChanged = true
-    } else {
-      nextExp.add(p)
-    }
-  }
-  if (expChanged) patch.expandedFolders = nextExp
-
-  if (Object.keys(patch).length > 0) useStore.setState(patch)
-  useStore.getState().remapPinnedPath(from, to)
 }

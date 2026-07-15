@@ -1,3 +1,4 @@
+import { StrictMode } from "react"
 import { act, cleanup, render, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -175,6 +176,25 @@ describe("BlockEditor initialization", () => {
 
     expect(onChangeMarkdown).toHaveBeenCalledTimes(1)
     expect(onChangeMarkdown).toHaveBeenCalledWith("# Changed\n")
+  })
+
+  it("hydrates the note when Strict Mode replays mount effects", async () => {
+    render(
+      <StrictMode>
+        <BlockEditor
+          initialMarkdown="# Title"
+          onChangeMarkdown={vi.fn()}
+          docKey="notes/title.md:1"
+        />
+      </StrictMode>,
+    )
+
+    await waitFor(() => {
+      expect(harness.editor.document[0]).toMatchObject({
+        id: "title",
+        type: "heading",
+      })
+    })
   })
 
   it("restores focus on the next animation frame after mounting", async () => {

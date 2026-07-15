@@ -229,7 +229,6 @@ export function BlockEditor({
       publishBlockTextIndex()
       return
     }
-    initializedKey.current = docKey
     parsing.current = true
     ;(async () => {
       const pre = preprocessWikilinks(initialMarkdown)
@@ -250,6 +249,9 @@ export function BlockEditor({
           editor.replaceBlocks(editor.document, hydrated)
         })
       }
+      // Strict Mode can dispose and replay this effect while parsing. Mark
+      // the key only after hydration so the replay still loads the note.
+      initializedKey.current = docKey
       lastEmitted.current = initialMarkdown
       parsing.current = false
       finishHydration(hydrationGate.current, generation)

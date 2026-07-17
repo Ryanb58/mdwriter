@@ -31,13 +31,14 @@ export type JsonValue =
 /**
  * Mirror of Rust `commands::fs::TreeNode`
  * (`#[serde(tag = "kind", rename_all = "lowercase")]`). `path` is a Rust
- * `PathBuf` (serialized as a string). `mtime` is `Option<i64>` with
- * `skip_serializing_if = "Option::is_none"`, so it is absent (not `null`)
- * when the filesystem can't report it — hence the optional `?`, not `| null`.
+ * `PathBuf` (serialized as a string). `mtime`/`created` are `Option<i64>`
+ * with `skip_serializing_if = "Option::is_none"`, so they are absent (not
+ * `null`) when the filesystem can't report them — hence the optional `?`.
+ * `created` is the file's birth time; unavailable on some Linux setups.
  */
 export type TreeNode =
   | { kind: "dir"; name: string; path: string; children: TreeNode[] }
-  | { kind: "file"; name: string; path: string; mtime?: number }
+  | { kind: "file"; name: string; path: string; mtime?: number; created?: number }
 
 export type TreeOptions = {
   includePdfs?: boolean

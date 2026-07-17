@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import type { TreeNode, AgentId, AgentAvailability, PermissionMode, AiPermissionRequest } from "./ipc"
 import { analyzeDocument, type DocumentRisk } from "./documentAnalysis"
+import { DEFAULT_FOLDER_SORT, sameSort, type FolderSortPref } from "../features/tree/sortChildren"
 
 export type EditorMode = "block" | "raw"
 
@@ -121,6 +122,14 @@ export type AppStore = {
   expandedFolders: Set<string>
   pinnedPaths: string[]
   /**
+   * Per-folder file ordering, keyed by the folder's absolute path (the
+   * vault root's path keys root-level files). Only deviations from
+   * DEFAULT_FOLDER_SORT are stored; persisted across launches. Keys for
+   * renamed/deleted folders go stale harmlessly (same tolerance as
+   * blockModeOverrides).
+   */
+  folderSortPrefs: Record<string, FolderSortPref>
+  /**
    * Files most recently *opened in the app* per vault, newest first,
    * persisted. Drives the tree's Recent section ("what was I working on"),
    * and entry [0] is what relaunch restores. Maintained by setOpenDoc.
@@ -189,6 +198,8 @@ export type AppStore = {
   togglePinnedPath(path: string): void
   remapPinnedPath(from: string, to: string): void
   removePinnedUnder(paths: readonly string[]): void
+  /** `null` (or a pref equal to the default) deletes the folder's entry. */
+  setFolderSortPref(path: string, pref: FolderSortPref | null): void
   setOpenDoc(doc: OpenDoc | null): void
   /** Lifecycle metadata and path remaps only; content must use editOpenDoc. */
   patchOpenDoc(patch: OpenDocLifecyclePatch): void
@@ -473,6 +484,7 @@ export const useStore = create<AppStore>()(
       selectedPaths: new Set<string>(),
       expandedFolders: new Set<string>(),
       pinnedPaths: [],
+      folderSortPrefs: {},
       recentFilesByVault: {},
       openDoc: null,
       docRev: 0,
@@ -553,6 +565,18 @@ export const useStore = create<AppStore>()(
         set((s) => {
           const next = s.pinnedPaths.filter((p) => !isUnderAny(p, paths))
           return next.length === s.pinnedPaths.length ? {} : { pinnedPaths: next }
+        }),
+      setFolderSortPref: (path, pref) =>
+        set((s) => {
+          if (!pref || sameSort(pref, DEFAULT_FOLDER_SORT)) {
+            if (!(path in s.folderSortPrefs)) return {}
+            const { [path]: _gone, ...rest } = s.folderSortPrefs
+            void _gone
+            return { folderSortPrefs: rest }
+          }
+          const cur = s.folderSortPrefs[path]
+          if (cur && sameSort(cur, pref)) return {}
+          return { folderSortPrefs: { ...s.folderSortPrefs, [path]: pref } }
         }),
       setOpenDoc: (doc) =>
         set((s) => {
@@ -899,6 +923,7 @@ export const useStore = create<AppStore>()(
         aiAgent: s.aiAgent,
         aiPermissionMode: s.aiPermissionMode,
         pinnedPaths: s.pinnedPaths,
+        folderSortPrefs: s.folderSortPrefs,
         recentFilesByVault: s.recentFilesByVault,
       }),
       merge: (persisted, current) => {
@@ -928,6 +953,21 @@ export const useStore = create<AppStore>()(
               recentFilesByVault[vault] = files
                 .filter((f): f is string => typeof f === "string")
                 .slice(0, MAX_RECENT_FILES)
+            }
+          }
+        }
+        // Persisted sort prefs: keep only structurally valid entries so a
+        // corrupt or legacy value can never wedge the tree render.
+        const folderSortPrefs: Record<string, FolderSortPref> = {}
+        if (p.folderSortPrefs && typeof p.folderSortPrefs === "object") {
+          for (const [path, pref] of Object.entries(p.folderSortPrefs as Record<string, unknown>)) {
+            const cand = pref as FolderSortPref | null
+            if (
+              cand && typeof cand === "object" &&
+              (cand.key === "name" || cand.key === "added") &&
+              (cand.dir === "asc" || cand.dir === "desc")
+            ) {
+              folderSortPrefs[path] = { key: cand.key, dir: cand.dir }
             }
           }
         }
@@ -962,6 +1002,7 @@ export const useStore = create<AppStore>()(
           settings,
           rightPaneTab,
           pinnedPaths,
+          folderSortPrefs,
           recentFilesByVault,
           aiAgent: p.aiAgent ?? current.aiAgent,
           aiPermissionMode: p.aiPermissionMode ?? current.aiPermissionMode,

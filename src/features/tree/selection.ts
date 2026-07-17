@@ -19,7 +19,7 @@ export function handleRowClick(
   const s = useStore.getState()
 
   if (modifiers.shift && s.selectedPath) {
-    const rows = visibleRows(s.tree, s.expandedFolders)
+    const rows = visibleRows(s.tree, s.expandedFolders, s.folderSortPrefs)
     const range = rangeBetween(rows, s.selectedPath, path)
     if (range.length > 0) {
       const next = new Set(range.map((r) => r.path))
@@ -38,7 +38,7 @@ export function handleRowClick(
       if (anchor === path) {
         if (next.size === 0) anchor = null
         else {
-          const rows = visibleRows(s.tree, s.expandedFolders)
+          const rows = visibleRows(s.tree, s.expandedFolders, s.folderSortPrefs)
           anchor = rows.find((r) => next.has(r.path))?.path ?? null
         }
       }

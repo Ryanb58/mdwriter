@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest"
 import type { TreeNode } from "../../../lib/ipc"
 import { visibleRows, rangeBetween } from "../visibleRows"
 
-const file = (path: string): TreeNode => ({
+const file = (path: string, created?: number): TreeNode => ({
   kind: "file",
   name: path.split("/").pop()!,
   path,
+  ...(created !== undefined ? { created } : {}),
 })
 
 const dir = (path: string, children: TreeNode[]): TreeNode => ({
@@ -28,11 +29,14 @@ describe("visibleRows", () => {
     ])
     const expanded = new Set(["/root/notes"])
     const rows = visibleRows(tree, expanded)
+    // Dirs always sort first A→Z (drafts before notes) — matching what the
+    // tree renders — with files after, so the fixture's raw order is not
+    // preserved.
     expect(rows.map((r) => r.path)).toEqual([
+      "/root/drafts",
       "/root/notes",
       "/root/notes/a.md",
       "/root/notes/b.md",
-      "/root/drafts",
       "/root/top.md",
     ])
   })
@@ -41,6 +45,29 @@ describe("visibleRows", () => {
     const tree = dir("/root", [file("/root/a.md")])
     const rows = visibleRows(tree, new Set())
     expect(rows.map((r) => r.path)).toEqual(["/root/a.md"])
+  })
+})
+
+describe("visibleRows sorting", () => {
+  it("orders each folder's files by its own pref, default newest-first", () => {
+    const tree = dir("/root", [
+      dir("/root/notes", [file("/root/notes/old.md", 100), file("/root/notes/new.md", 200)]),
+      file("/root/a.md", 100),
+      file("/root/b.md", 200),
+    ])
+    const expanded = new Set(["/root/notes"])
+    // notes pinned to name A→Z; root left on the newest-first default.
+    const prefs = { "/root/notes": { key: "name", dir: "asc" } as const }
+    const rows = visibleRows(tree, expanded, prefs)
+    // notes is name-A→Z (`new.md` < `old.md`); the root default is newest
+    // first, so b.md (200) precedes a.md (100).
+    expect(rows.map((r) => r.path)).toEqual([
+      "/root/notes",
+      "/root/notes/new.md",
+      "/root/notes/old.md",
+      "/root/b.md",
+      "/root/a.md",
+    ])
   })
 })
 

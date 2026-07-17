@@ -17,12 +17,22 @@ pub enum TreeNode {
         /// can't report it (rare) or the value is before the epoch.
         #[serde(rename = "mtime", skip_serializing_if = "Option::is_none")]
         mtime: Option<i64>,
+        /// Creation (birth) time as Unix seconds. `None` where the
+        /// filesystem can't report birth time (e.g. some Linux setups).
+        #[serde(rename = "created", skip_serializing_if = "Option::is_none")]
+        created: Option<i64>,
     },
 }
 
 fn file_mtime_secs(path: &Path) -> Option<i64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     let dur = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(dur.as_secs()).ok()
+}
+
+fn file_created_secs(path: &Path) -> Option<i64> {
+    let created = std::fs::metadata(path).ok()?.created().ok()?;
+    let dur = created.duration_since(std::time::UNIX_EPOCH).ok()?;
     i64::try_from(dur.as_secs()).ok()
 }
 
@@ -165,7 +175,8 @@ fn build_tree(
 
     if path.is_file() {
         let mtime = file_mtime_secs(path);
-        return Ok(TreeNode::File { name, path: path.to_path_buf(), mtime });
+        let created = file_created_secs(path);
+        return Ok(TreeNode::File { name, path: path.to_path_buf(), mtime, created });
     }
 
     let mut children: Vec<TreeNode> = Vec::new();
@@ -187,10 +198,12 @@ fn build_tree(
             }
         } else if is_visible_file(&entry_path, opts) {
             let mtime = file_mtime_secs(&entry_path);
+            let created = file_created_secs(&entry_path);
             children.push(TreeNode::File {
                 name: entry_name,
                 path: entry_path,
                 mtime,
+                created,
             });
         }
     }
@@ -570,6 +583,26 @@ mod tests {
             .as_secs() as i64;
         assert!(secs <= now);
         assert!(secs > now - 3600);
+    }
+
+    #[test]
+    fn list_tree_populates_created_for_files() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.md"), "hi").unwrap();
+        let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
+        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        let TreeNode::File { created, .. } = &children[0] else { panic!() };
+        // Birth time is platform/filesystem dependent. Where the OS can
+        // report it, the node must carry it; where it can't, None is the
+        // documented contract and the frontend falls back to mtime.
+        if fs::metadata(dir.path().join("a.md")).unwrap().created().is_ok() {
+            let secs = created.expect("created should be present when the fs reports birth time");
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
+            assert!(secs > 0 && secs <= now + 5, "created {secs} out of range");
+        }
     }
 
     #[test]

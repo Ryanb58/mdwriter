@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import {
   CaretRight, CaretDown, FileText, Folder, FolderOpen,
   FilePlus, FolderPlus, PencilSimple, TrashSimple, Copy,
-  PushPinSimple, PushPinSimpleSlash,
+  PushPinSimple, PushPinSimpleSlash, ArrowsDownUp,
 } from "@phosphor-icons/react"
 import type { TreeNode as TN } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
@@ -11,9 +11,12 @@ import { TreeContextMenu, type ContextActionGroup } from "./TreeContextMenu"
 import { isMarkdown, parent, relativeTo } from "../../lib/paths"
 import { handleRowClick } from "./selection"
 import { useRowDnd } from "./useTreeDnd"
+import { FolderSortMenu } from "./FolderSortMenu"
+import { sortChildren } from "./sortChildren"
 
 export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [sortMenu, setSortMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(node.name)
   const rootPath = useStore((s) => s.rootPath)
@@ -24,8 +27,10 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
   const renamingPath = useStore((s) => s.renamingPath)
   const pinnedPaths = useStore((s) => s.pinnedPaths)
   const togglePinnedPath = useStore((s) => s.togglePinnedPath)
+  const folderSortPrefs = useStore((s) => s.folderSortPrefs)
   const actions = useTreeActions()
   const isDir = node.kind === "dir"
+  const hasCustomSort = isDir && folderSortPrefs[node.path] !== undefined
   const canPin = !isDir && isMarkdown(node.path)
   const pinned = canPin && pinnedPaths.includes(node.path)
   const expanded = isDir && expandedFolders.has(node.path)
@@ -194,6 +199,26 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
         ) : (
           <span className={`min-w-0 flex-1 truncate ${isAnchor ? "font-medium" : ""}`} title={displayName}>{displayName}</span>
         )}
+        {isDir && !renaming && (
+          <button
+            type="button"
+            className={[
+              "ml-auto flex-none rounded p-0.5 transition-colors",
+              hasCustomSort
+                ? "text-text-subtle opacity-100 hover:bg-elevated hover:text-text"
+                : "text-text-subtle opacity-0 hover:bg-elevated hover:text-text group-hover:opacity-100",
+            ].join(" ")}
+            title="Sort folder"
+            aria-label={`Sort ${displayName}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              const r = e.currentTarget.getBoundingClientRect()
+              setSortMenu({ x: r.left, y: r.bottom + 4 })
+            }}
+          >
+            <ArrowsDownUp size={12} />
+          </button>
+        )}
         {canPin && !renaming && (
           <button
             type="button"
@@ -214,10 +239,21 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
           </button>
         )}
       </div>
-      {isDir && expanded && (node as Extract<TN, { kind: "dir" }>).children.map((c) => (
+      {isDir && expanded && sortChildren(
+        (node as Extract<TN, { kind: "dir" }>).children,
+        folderSortPrefs[node.path],
+      ).map((c) => (
         <TreeNodeView key={c.path} node={c} depth={depth + 1} />
       ))}
       {menu && <TreeContextMenu x={menu.x} y={menu.y} groups={menuGroups} onClose={() => setMenu(null)} />}
+      {sortMenu && (
+        <FolderSortMenu
+          x={sortMenu.x}
+          y={sortMenu.y}
+          folderPath={node.path}
+          onClose={() => setSortMenu(null)}
+        />
+      )}
     </div>
   )
 }

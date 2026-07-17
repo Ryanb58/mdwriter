@@ -1,16 +1,21 @@
+import { useState } from "react"
 import { useStore } from "../../lib/store"
 import { TreeNodeView } from "./TreeNode"
 import { useTreeActions } from "./useTreeActions"
 import { useRootDnd } from "./useTreeDnd"
 import { useDragScroll } from "./useDragScroll"
 import { targetParentDir } from "./targetDir"
-import { FilePlus, FolderPlus } from "@phosphor-icons/react"
+import { FilePlus, FolderPlus, ArrowsDownUp } from "@phosphor-icons/react"
 import { PinnedFiles } from "./PinnedFiles"
+import { FolderSortMenu } from "./FolderSortMenu"
+import { sortChildren } from "./sortChildren"
 
 export function TreePane() {
   const tree = useStore((s) => s.tree)
   const rootPath = useStore((s) => s.rootPath)
   const selectedPath = useStore((s) => s.selectedPath)
+  const folderSortPrefs = useStore((s) => s.folderSortPrefs)
+  const [sortMenu, setSortMenu] = useState<{ x: number; y: number } | null>(null)
   const actions = useTreeActions()
   const rootDnd = useRootDnd()
   const dragScroll = useDragScroll()
@@ -36,6 +41,16 @@ export function TreePane() {
         >
           <FolderPlus size={13} />
         </button>
+        <button
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect()
+            setSortMenu({ x: r.left, y: r.bottom + 4 })
+          }}
+          className="p-1 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
+          title="Sort root files"
+        >
+          <ArrowsDownUp size={13} />
+        </button>
       </div>
       <PinnedFiles />
       <div
@@ -50,12 +65,20 @@ export function TreePane() {
         onDragLeave={rootDnd.onDragLeave}
         onDrop={rootDnd.onDrop}
       >
-        {tree.kind === "dir" && tree.children.map((c) => (
+        {tree.kind === "dir" && sortChildren(tree.children, folderSortPrefs[tree.path]).map((c) => (
           <TreeNodeView key={c.path} node={c} />
         ))}
         {/* Empty-space drop region so drops below the last row hit the vault root */}
         <div className="h-12" aria-hidden="true" />
       </div>
+      {sortMenu && (
+        <FolderSortMenu
+          x={sortMenu.x}
+          y={sortMenu.y}
+          folderPath={tree.path}
+          onClose={() => setSortMenu(null)}
+        />
+      )}
     </div>
   )
 }

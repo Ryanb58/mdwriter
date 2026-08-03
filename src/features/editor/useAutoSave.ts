@@ -4,6 +4,7 @@ import {
   scheduleOpenDocSave,
   flushOpenDocSave,
 } from "../../lib/writeDoc"
+import { isMacTauri } from "../../layout/useIsMacTauri"
 
 export function useAutoSave() {
   const doc = useStore((s) => s.openDoc)
@@ -25,9 +26,9 @@ export function useAutoSave() {
   }, [doc?.path])
 
   // Flush on window close. The autosave debounce is 500ms — without this,
-  // quitting right after the last keystroke silently drops it. Tauri defers
+  // closing right after the last keystroke silently drops it. Tauri defers
   // the close until async close-requested handlers settle, so awaiting the
-  // write here guarantees the bytes are on disk before the process exits.
+  // write guarantees the bytes are on disk before hiding or destroying.
   useEffect(() => {
     let unlisten: (() => void) | undefined
     let disposed = false
@@ -39,11 +40,18 @@ export function useAutoSave() {
           event.preventDefault()
           try {
             await flushOpenDocSave()
-            // `close()` would emit another close-requested event. Destroying
-            // after a successful flush completes the already-approved close.
-            await window.destroy()
+            if (isMacTauri()) {
+              // A macOS app normally stays alive when its final window
+              // closes. Keep this window reusable so Dock Reopen and the
+              // Window menu can reveal it without reconstructing app state.
+              await window.hide()
+            } else {
+              // `close()` would emit another close-requested event. Destroying
+              // after a successful flush completes the already-approved close.
+              await window.destroy()
+            }
           } catch (e) {
-            console.error("flush-on-close failed", e)
+            console.error("safe window close failed", e)
           }
         })
         if (disposed) stop()

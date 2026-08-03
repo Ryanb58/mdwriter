@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react"
 
 export function useIsMacTauri(): boolean {
-  const [is, setIs] = useState(() => detect())
+  const [is, setIs] = useState(() => isMacTauri())
   useEffect(() => {
     if (is) return
-    setIs(detect())
+    setIs(isMacTauri())
   }, [is])
   return is
 }
 
-function detect(): boolean {
+export function isMacTauri(): boolean {
   if (typeof window === "undefined") return false
   const inTauri = "__TAURI_INTERNALS__" in window || "__TAURI__" in window
   if (!inTauri) return false

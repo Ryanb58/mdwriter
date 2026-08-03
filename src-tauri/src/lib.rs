@@ -1,9 +1,13 @@
 mod commands;
 mod errors;
 mod state;
+mod window_lifecycle;
 
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{
+    MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder, WINDOW_SUBMENU_ID,
+};
 use tauri::Emitter;
+#[cfg(debug_assertions)]
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -34,11 +38,8 @@ pub fn run() {
     // same vault. Desktop-only — the plugin doesn't support mobile.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        use tauri::Manager;
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
+        if let Err(error) = window_lifecycle::reveal_main_window(app) {
+            log::error!("failed to reveal main window after second launch: {error}");
         }
     }));
 
@@ -63,10 +64,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                // Never restore visibility: the window starts hidden
-                // (`visible: false` in tauri.conf.json) and the frontend
-                // shows it after first paint so launch never flashes an
-                // unpainted frame.
+                // Restore legitimate geometry, but never let a previous
+                // hidden state override the app lifecycle's reveal path.
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
                         .difference(tauri_plugin_window_state::StateFlags::VISIBLE),
@@ -118,41 +117,51 @@ pub fn run() {
 
             #[cfg(debug_assertions)]
             let view_menu = SubmenuBuilder::new(app, "View")
-                .item(&PredefinedMenuItem::fullscreen(app, None)?)
-                .separator()
                 .item(&devtools_item)
                 .build()?;
-            #[cfg(not(debug_assertions))]
-            let view_menu = SubmenuBuilder::new(app, "View")
-                .item(&PredefinedMenuItem::fullscreen(app, None)?)
+
+            let center_window_item = MenuItemBuilder::new("Center Window")
+                .id(window_lifecycle::CENTER_WINDOW_MENU_ID)
+                .build(app)?;
+
+            let reset_window_item = MenuItemBuilder::new("Reset Window Size & Position")
+                .id(window_lifecycle::RESET_WINDOW_MENU_ID)
+                .build(app)?;
+
+            let window_menu = SubmenuBuilder::with_id(app, WINDOW_SUBMENU_ID, "Window")
+                .minimize()
+                .maximize_with_text("Zoom")
+                .separator()
+                .fullscreen()
+                .separator()
+                .item(&center_window_item)
+                .item(&reset_window_item)
+                .separator()
+                .bring_all_to_front()
                 .build()?;
 
-            let menu = MenuBuilder::new(app)
-                .item(&app_menu)
-                .item(&edit_menu)
-                .item(&view_menu)
-                .build()?;
+            let menu_builder = MenuBuilder::new(app).item(&app_menu).item(&edit_menu);
+            #[cfg(debug_assertions)]
+            let menu_builder = menu_builder.item(&view_menu);
+            let menu = menu_builder.item(&window_menu).build()?;
 
             app.set_menu(menu)?;
 
-            // Failsafe for the hidden-until-first-paint launch flow: if the
-            // webview never boots (frontend crash, asset load failure), show
-            // the window anyway after a grace period so the app can't end up
-            // running invisibly.
-            {
-                let app_handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    if let Some(w) = app_handle.get_webview_window("main") {
-                        if !w.is_visible().unwrap_or(true) {
-                            log::warn!("frontend never signaled ready; showing window via failsafe");
-                            let _ = w.show();
-                        }
-                    }
-                });
+            if let Err(error) = window_lifecycle::reveal_main_window(app.handle()) {
+                log::error!("failed to reveal main window during setup: {error}");
             }
 
             app.on_menu_event(move |app_handle, event| {
+                if let Some(command) =
+                    window_lifecycle::recovery_command_for_menu_id(event.id().as_ref())
+                {
+                    if let Err(error) = window_lifecycle::run_recovery_command(app_handle, command)
+                    {
+                        log::error!("failed to run window recovery command: {error}");
+                    }
+                    return;
+                }
+
                 match event.id().as_ref() {
                     "settings" => {
                         let _ = app_handle.emit("menu:settings", ());
@@ -206,11 +215,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Quitting must not orphan a running agent subprocess — the
-            // reader/waiter threads die with the app, but the spawned
-            // `claude` child would keep running without this.
-            if let tauri::RunEvent::Exit = event {
-                commands::agents::shutdown_session(app_handle);
+            match event {
+                // Quitting must not orphan a running agent subprocess — the
+                // reader/waiter threads die with the app, but the spawned
+                // `claude` child would keep running without this.
+                tauri::RunEvent::Exit => commands::agents::shutdown_session(app_handle),
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => {
+                    if let Err(error) = window_lifecycle::reveal_main_window(app_handle) {
+                        log::error!("failed to reveal main window from Dock: {error}");
+                    }
+                }
+                _ => {}
             }
         });
 }

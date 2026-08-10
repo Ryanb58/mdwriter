@@ -36,7 +36,7 @@ export type JsonValue =
  * when the filesystem can't report it — hence the optional `?`, not `| null`.
  */
 export type TreeNode =
-  | { kind: "dir"; name: string; path: string; children: TreeNode[] }
+  | { kind: "dir"; name: string; path: string; children: TreeNode[]; loaded: boolean }
   | { kind: "file"; name: string; path: string; mtime?: number }
 
 export type TreeOptions = {
@@ -187,6 +187,8 @@ type SkillMetaRaw = {
 export const ipc = {
   listTree: (root: string, options?: TreeOptions) =>
     invoke<TreeNode>("list_tree", { root, options: options ?? null }),
+  listDirectory: (path: string, options?: TreeOptions) =>
+    invoke<TreeNode>("list_directory", { path, options: options ?? null }),
   readFile: (path: string) => invoke<string>("read_file", { path }),
   writeFile: (path: string, text: string) => invoke<void>("write_file", { path, text }),
   createFile: (path: string) => invoke<void>("create_file", { path }),

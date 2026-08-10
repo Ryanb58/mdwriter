@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const harness = vi.hoisted(() => ({
   listTree: vi.fn(),
+  listDirectory: vi.fn(),
   startWatcher: vi.fn(),
   stopWatcher: vi.fn(),
   pushRecentFolder: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }))
 vi.mock("../../../lib/ipc", () => ({
   ipc: {
     listTree: harness.listTree,
+    listDirectory: harness.listDirectory,
     startWatcher: harness.startWatcher,
     stopWatcher: harness.stopWatcher,
     pushRecentFolder: harness.pushRecentFolder,
@@ -52,11 +54,21 @@ const newTree = {
       kind: "dir" as const,
       name: "notes",
       path: "/new/notes",
-      loaded: true,
-      children: [{ kind: "file" as const, name: "last.md", path: "/new/notes/last.md" }],
+      loaded: false,
+      children: [],
     },
   ],
 }
+
+const notesListing = {
+  kind: "dir" as const,
+  name: "notes",
+  path: "/new/notes",
+  loaded: true,
+  children: [{ kind: "file" as const, name: "last.md", path: "/new/notes/last.md" }],
+}
+
+const hydratedNewTree = { ...newTree, children: [notesListing] }
 
 function deps() {
   const state = useStore.getState()
@@ -80,6 +92,8 @@ describe("openFolder transaction", () => {
     harness.listTree.mockReset()
     harness.listTree.mockImplementation(async (listedPath: string) =>
       listedPath === "/old" ? oldTree : newTree)
+    harness.listDirectory.mockReset()
+    harness.listDirectory.mockResolvedValue(notesListing)
     harness.startWatcher.mockReset()
     harness.startWatcher.mockResolvedValue(undefined)
     harness.stopWatcher.mockReset()
@@ -221,11 +235,12 @@ describe("openFolder transaction", () => {
     expect(harness.release).toHaveBeenCalledTimes(1)
     const state = useStore.getState()
     expect(state.rootPath).toBe("/new")
-    expect(state.tree).toBe(newTree)
+    expect(state.tree).toEqual(hydratedNewTree)
     expect(state.openDoc).toBeNull()
     expect(state.selectedPath).toBe("/new/notes/last.md")
     expect(state.selectedPaths).toEqual(new Set(["/new/notes/last.md"]))
     expect(state.expandedFolders.has("/new/notes")).toBe(true)
+    expect(harness.listDirectory).toHaveBeenCalledWith("/new/notes", expect.anything())
     expect(state.blockModeOverrides).toEqual({})
     expect(state.blockTextIndex).toBeNull()
   })
@@ -294,7 +309,7 @@ describe("openFolder transaction", () => {
     ])
     expect(harness.startWatcher.mock.calls.at(-1)).toEqual(["/new"])
     expect(useStore.getState().rootPath).toBe("/new")
-    expect(useStore.getState().tree).toBe(newTree)
+    expect(useStore.getState().tree).toEqual(hydratedNewTree)
   })
 
   it("uses canonical tree roots and still flushes a legacy symlinked open note", async () => {

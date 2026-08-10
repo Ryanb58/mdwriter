@@ -1,7 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
-import { findNode } from "../tree/findNode"
+import { revealPath } from "../tree/treeLoader"
 import { beginOpenDocPathMutation } from "../../lib/writeDoc"
 import { pathIsWithin } from "../../lib/openDocumentPaths"
 import {
@@ -111,6 +111,8 @@ async function openFolderExclusive(
         selectedPath: null,
         selectedPaths: new Set(),
         expandedFolders: new Set(),
+        loadingFolders: new Set(),
+        folderLoadErrors: {},
         openDoc: null,
         loadError: null,
         blockModeOverrides: {},
@@ -124,7 +126,7 @@ async function openFolderExclusive(
       committed = true
 
       // Drop the user back into the note they were writing in this vault.
-      restoreLastFile(tree.path, path)
+      await restoreLastFile(tree.path, path)
     })
 
     // Bookkeeping that shouldn't block the vault becoming interactive.
@@ -168,17 +170,13 @@ async function openFolderExclusive(
  * exists) and expand its ancestor folders so the selection is visible.
  * Selection drives useOpenFile, which loads the doc from disk.
  */
-function restoreLastFile(vaultPath: string, legacyVaultPath?: string) {
+async function restoreLastFile(vaultPath: string, legacyVaultPath?: string) {
   const s = useStore.getState()
   const saved = s.recentFilesByVault[vaultPath]?.[0]
     ?? (legacyVaultPath ? s.recentFilesByVault[legacyVaultPath]?.[0] : undefined)
-  if (!saved || !findNode(s.tree, saved)) return
-  const expanded = new Set(s.expandedFolders)
-  let dir = saved.slice(0, saved.lastIndexOf("/"))
-  while (dir.length > vaultPath.length && dir.startsWith(vaultPath)) {
-    expanded.add(dir)
-    dir = dir.slice(0, dir.lastIndexOf("/"))
+  if (!saved) return
+  const result = await revealPath(saved)
+  if (result === "found" && useStore.getState().rootPath === vaultPath) {
+    useStore.getState().setSelected(saved)
   }
-  useStore.setState({ expandedFolders: expanded })
-  s.setSelected(saved)
 }

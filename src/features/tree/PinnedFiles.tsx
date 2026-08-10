@@ -1,7 +1,7 @@
 import { FileText, PushPinSimpleSlash } from "@phosphor-icons/react"
 import { basename, isMarkdown, relativeTo } from "../../lib/paths"
 import { useStore } from "../../lib/store"
-import { findNode } from "./findNode"
+import { revealPath } from "./treeLoader"
 
 function displayName(path: string): string {
   return basename(path).replace(/\.(md|markdown)$/i, "")
@@ -9,7 +9,6 @@ function displayName(path: string): string {
 
 export function PinnedFiles() {
   const rootPath = useStore((s) => s.rootPath)
-  const tree = useStore((s) => s.tree)
   const pinnedPaths = useStore((s) => s.pinnedPaths)
   const selectedPath = useStore((s) => s.selectedPath)
   const setSelected = useStore((s) => s.setSelected)
@@ -25,7 +24,6 @@ export function PinnedFiles() {
       </div>
       <div className="space-y-0.5">
         {pins.map((path) => {
-          const exists = !!findNode(tree, path)
           const active = selectedPath === path
           const rel = rootPath ? relativeTo(rootPath, path) : path
           return (
@@ -33,14 +31,15 @@ export function PinnedFiles() {
               key={path}
               className={[
                 "group flex items-center gap-1.5 rounded-md px-2 py-[3px] text-[13px] transition-colors",
-                exists ? "cursor-pointer" : "cursor-default opacity-60",
+                "cursor-pointer",
                 active
                   ? "bg-accent-soft text-text"
                   : "text-text-muted hover:bg-elevated hover:text-text",
               ].join(" ")}
-              title={exists ? rel : `${rel} (not found)`}
+              title={rel}
               onClick={() => {
-                if (exists) setSelected(path)
+                setSelected(path)
+                void revealPath(path)
               }}
             >
               <FileText size={13} weight="regular" className="flex-none text-text-subtle" />

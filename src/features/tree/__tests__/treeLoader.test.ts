@@ -19,7 +19,14 @@ vi.mock("../../../lib/ipc", async (importOriginal) => {
 })
 
 import { useStore } from "../../../lib/store"
-import { loadDirectory, revealPath } from "../treeLoader"
+import { runVaultListingExclusive } from "../../../lib/vaultTransactions"
+import { findNode } from "../findNode"
+import {
+  loadDirectory,
+  refreshDirectories,
+  reloadLoadedDirectories,
+  revealPath,
+} from "../treeLoader"
 
 const file = (path: string): TreeNode => ({
   kind: "file",
@@ -129,5 +136,68 @@ describe("treeLoader", () => {
 
     await expect(revealPath("/vault/notes/missing.md")).resolves.toBe("missing")
     expect(harness.listDirectory).toHaveBeenCalledTimes(1)
+  })
+
+  it("follows an in-flight first expansion with a fresh requested refresh", async () => {
+    const initial = deferred<TreeNode>()
+    harness.listDirectory
+      .mockReturnValueOnce(initial.promise)
+      .mockResolvedValueOnce(dir("/vault/notes", [file("/vault/notes/new.md")]))
+
+    const expanding = loadDirectory("/vault/notes")
+    const refreshing = refreshDirectories(["/vault/notes"])
+    expect(harness.listDirectory).toHaveBeenCalledTimes(1)
+
+    initial.resolve(dir("/vault/notes", [file("/vault/notes/old.md")]))
+    await vi.waitFor(() => expect(harness.listDirectory).toHaveBeenCalledTimes(2))
+    await Promise.all([expanding, refreshing])
+
+    expect(findNode(useStore.getState().tree, "/vault/notes/new.md")?.kind).toBe("file")
+    expect(findNode(useStore.getState().tree, "/vault/notes/old.md")).toBeNull()
+  })
+
+  it("waits for an active vault switch before choosing a root to reload", async () => {
+    const gate = deferred<void>()
+    const switching = runVaultListingExclusive(async () => {
+      await gate.promise
+      useStore.setState({ rootPath: "/other", tree: dir("/other") })
+    })
+    harness.listTree.mockImplementation(async (root: string) => dir(root))
+
+    const reloading = reloadLoadedDirectories()
+    await Promise.resolve()
+    expect(harness.listTree).not.toHaveBeenCalled()
+
+    gate.resolve()
+    await switching
+    await reloading
+
+    expect(harness.listTree).toHaveBeenCalledWith("/other", expect.anything())
+    expect(useStore.getState().rootPath).toBe("/other")
+  })
+
+  it("invalidates an old directory request when visibility settings reload", async () => {
+    const oldRequest = deferred<TreeNode>()
+    useStore.setState({
+      tree: dir("/vault", [
+        dir("/vault/notes", [file("/vault/notes/old.md")]),
+      ]),
+    })
+    harness.listDirectory
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockResolvedValueOnce(dir("/vault/notes", [file("/vault/notes/new.md")]))
+    harness.listTree.mockResolvedValue(
+      dir("/vault", [dir("/vault/notes", [], false)]),
+    )
+
+    const staleRefresh = loadDirectory("/vault/notes")
+    const settingsReload = reloadLoadedDirectories()
+    await vi.waitFor(() => expect(harness.listTree).toHaveBeenCalledTimes(1))
+    oldRequest.resolve(dir("/vault/notes", [file("/vault/notes/old.md")]))
+    await Promise.all([staleRefresh, settingsReload])
+
+    expect(harness.listDirectory).toHaveBeenCalledTimes(2)
+    expect(findNode(useStore.getState().tree, "/vault/notes/new.md")?.kind).toBe("file")
+    expect(findNode(useStore.getState().tree, "/vault/notes/old.md")).toBeNull()
   })
 })

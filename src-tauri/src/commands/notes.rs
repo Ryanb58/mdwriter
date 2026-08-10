@@ -1,5 +1,5 @@
 use crate::commands::fs::TreeOptions;
-use crate::errors::{AppError, Result};
+use crate::errors::Result;
 use crate::state::AppState;
 use ignore::WalkBuilder;
 use serde::Serialize;
@@ -21,19 +21,23 @@ pub fn list_markdown_notes(
     root: PathBuf,
     options: Option<TreeOptions>,
 ) -> Result<Vec<VaultNoteRecord>> {
-    state.ensure_within_active_vault(&root)?;
-    list_markdown_notes_impl(root, options.unwrap_or_default())
+    list_markdown_notes_scoped(state.inner(), root, options.unwrap_or_default())
+}
+
+fn list_markdown_notes_scoped(
+    state: &AppState,
+    root: PathBuf,
+    options: TreeOptions,
+) -> Result<Vec<VaultNoteRecord>> {
+    let canonical = state.ensure_within_active_vault(&root)?;
+    list_markdown_notes_impl(canonical, options)
 }
 
 fn list_markdown_notes_impl(
     root: PathBuf,
     options: TreeOptions,
 ) -> Result<Vec<VaultNoteRecord>> {
-    let canonical = root
-        .canonicalize()
-        .map_err(|_| AppError::NotFound(root.display().to_string()))?;
-
-    let mut walker = WalkBuilder::new(&canonical);
+    let mut walker = WalkBuilder::new(&root);
     walker
         .standard_filters(false)
         .hidden(true)
@@ -53,7 +57,7 @@ fn list_markdown_notes_impl(
 
         let path = entry.path().to_path_buf();
         let rel = path
-            .strip_prefix(&canonical)
+            .strip_prefix(&root)
             .unwrap_or(&path)
             .to_string_lossy()
             .replace('\\', "/");
@@ -94,6 +98,7 @@ fn file_mtime_secs(path: &Path) -> Option<i64> {
 mod tests {
     use super::*;
     use crate::commands::fs::TreeOptions;
+    use crate::errors::AppError;
     use std::fs;
     use tempfile::tempdir;
 
@@ -141,5 +146,22 @@ mod tests {
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].rel, "visible.md");
         assert_eq!(unfiltered.len(), 2);
+    }
+
+    #[test]
+    fn scoped_listing_rejects_a_root_outside_the_active_vault() {
+        let vault = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        fs::write(outside.path().join("secret.md"), "secret").unwrap();
+        let state = AppState::default();
+        *state.active_vault.lock().unwrap() = Some(vault.path().canonicalize().unwrap());
+
+        let result = list_markdown_notes_scoped(
+            &state,
+            outside.path().to_path_buf(),
+            TreeOptions::default(),
+        );
+
+        assert!(matches!(result, Err(AppError::InvalidPath(_))));
     }
 }

@@ -8,12 +8,23 @@ import {
   loadedDirectoryPaths,
   replaceDirectory,
 } from "./lazyTree"
+import { runVaultListingExclusive } from "../../lib/vaultTransactions"
 
 type LoadResult = "loaded" | "missing" | "stale"
 type RevealResult = "found" | "missing" | "stale"
 
 const inFlight = new Map<string, Promise<LoadResult>>()
 const generations = new Map<string, number>()
+
+function invalidateDirectoryRequests(root: string) {
+  const prefix = `${root}\0`
+  const keys = new Set([...generations.keys(), ...inFlight.keys()])
+  for (const key of keys) {
+    if (!key.startsWith(prefix)) continue
+    generations.set(key, (generations.get(key) ?? 0) + 1)
+    inFlight.delete(key)
+  }
+}
 
 export function loadDirectory(path: string): Promise<LoadResult> {
   const root = useStore.getState().rootPath
@@ -98,28 +109,44 @@ export async function revealPath(path: string): Promise<RevealResult> {
 
 export async function refreshDirectories(paths: readonly string[]): Promise<void> {
   const unique = [...new Set(paths)]
-  await Promise.all(unique.map(async (path) => {
-    const node = findNode(useStore.getState().tree, path)
-    if (node?.kind === "dir" && node.loaded) await loadDirectory(path)
-  }))
+  await Promise.all(unique.map(refreshDirectory))
+}
+
+async function refreshDirectory(path: string): Promise<void> {
+  const root = useStore.getState().rootPath
+  if (!root) return
+  const key = `${root}\0${path}`
+  const node = findNode(useStore.getState().tree, path)
+  if (node?.kind !== "dir") return
+
+  const pending = inFlight.get(key)
+  if (!node.loaded && !pending) return
+  if (pending) await pending
+
+  if (useStore.getState().rootPath !== root) return
+  const current = findNode(useStore.getState().tree, path)
+  if (current?.kind === "dir" && current.loaded) await loadDirectory(path)
 }
 
 export async function reloadLoadedDirectories(): Promise<void> {
-  const state = useStore.getState()
-  const root = state.rootPath
-  if (!root) return
-  const loaded = loadedDirectoryPaths(state.tree)
-  const options = treeOptionsFromSettings(state.settings)
-  const tree = await ipc.listTree(root, options)
-  if (useStore.getState().rootPath !== root) return
-  useStore.setState({ tree, loadingFolders: new Set(), folderLoadErrors: {} })
-
-  const descendants = loaded
-    .filter((path) => path !== root)
-    .sort((a, b) => a.length - b.length)
-  for (const path of descendants) {
+  await runVaultListingExclusive(async () => {
+    const state = useStore.getState()
+    const root = state.rootPath
+    if (!root) return
+    const loaded = loadedDirectoryPaths(state.tree)
+    const options = treeOptionsFromSettings(state.settings)
+    invalidateDirectoryRequests(root)
+    const tree = await ipc.listTree(root, options)
     if (useStore.getState().rootPath !== root) return
-    const node = findNode(useStore.getState().tree, path)
-    if (node?.kind === "dir" && !node.loaded) await loadDirectory(path)
-  }
+    useStore.setState({ tree, loadingFolders: new Set(), folderLoadErrors: {} })
+
+    const descendants = loaded
+      .filter((path) => path !== root)
+      .sort((a, b) => a.length - b.length)
+    for (const path of descendants) {
+      if (useStore.getState().rootPath !== root) return
+      const node = findNode(useStore.getState().tree, path)
+      if (node?.kind === "dir" && !node.loaded) await loadDirectory(path)
+    }
+  })
 }

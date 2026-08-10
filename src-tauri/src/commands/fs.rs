@@ -218,7 +218,7 @@ fn build_shallow_directory(
         }
     }
 
-    children.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
+    children.sort_by_key(sort_key);
 
     Ok(TreeNode::Dir { name, path: path.to_path_buf(), children, loaded: true })
 }

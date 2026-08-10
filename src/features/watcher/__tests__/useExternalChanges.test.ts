@@ -271,6 +271,7 @@ describe("handleVaultChange — tree refresh", () => {
       name: string
       path: string
       children: never[]
+      loaded: boolean
     }>()
     vi.mocked(ipcMod.ipc.listTree).mockImplementationOnce(() => oldRefresh.promise)
 
@@ -281,6 +282,7 @@ describe("handleVaultChange — tree refresh", () => {
       name: "other",
       path: "/other",
       children: [],
+      loaded: true,
     }
     useStore.setState({ rootPath: "/other", tree: newerTree })
 
@@ -289,6 +291,7 @@ describe("handleVaultChange — tree refresh", () => {
       name: "vault",
       path: "/vault",
       children: [],
+      loaded: true,
     })
     await refreshing
 

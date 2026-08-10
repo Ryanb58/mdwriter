@@ -157,7 +157,8 @@ describe("useOpenFile", () => {
         kind: "dir",
         name: "vault",
         path: "/vault",
-        children: [{ kind: "dir", name: "notes", path: "/vault/notes", children: [] }],
+        loaded: true,
+        children: [{ kind: "dir", name: "notes", path: "/vault/notes", children: [], loaded: true }],
       },
     })
     render(<Harness />)
@@ -273,7 +274,8 @@ describe("useOpenFile", () => {
         kind: "dir",
         name: "vault",
         path: "/vault",
-        children: [{ kind: "dir", name: "notes", path: "/vault/notes", children: [] }],
+        loaded: true,
+        children: [{ kind: "dir", name: "notes", path: "/vault/notes", children: [], loaded: true }],
       },
     })
     const { rerender } = render(<Harness />)

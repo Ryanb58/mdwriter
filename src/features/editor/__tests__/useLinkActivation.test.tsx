@@ -9,6 +9,7 @@ const tree: TreeNode = {
   kind: "dir",
   name: "vault",
   path: "/vault",
+  loaded: true,
   children: [
     { kind: "file", name: "Three laws of motion.md", path: "/vault/Three laws of motion.md" },
     { kind: "file", name: "Inertia.md", path: "/vault/Inertia.md" },

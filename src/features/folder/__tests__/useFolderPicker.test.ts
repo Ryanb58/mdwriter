@@ -38,6 +38,7 @@ const oldTree = {
   kind: "dir" as const,
   name: "old",
   path: "/old",
+  loaded: true,
   children: [{ kind: "file" as const, name: "draft.md", path: "/old/draft.md" }],
 }
 
@@ -45,11 +46,13 @@ const newTree = {
   kind: "dir" as const,
   name: "new",
   path: "/new",
+  loaded: true,
   children: [
     {
       kind: "dir" as const,
       name: "notes",
       path: "/new/notes",
+      loaded: true,
       children: [{ kind: "file" as const, name: "last.md", path: "/new/notes/last.md" }],
     },
   ],
@@ -299,6 +302,7 @@ describe("openFolder transaction", () => {
       kind: "dir" as const,
       name: "old",
       path: "/real/old",
+      loaded: true,
       children: [
         {
           kind: "file" as const,
@@ -311,6 +315,7 @@ describe("openFolder transaction", () => {
       kind: "dir" as const,
       name: "new",
       path: "/real/new",
+      loaded: true,
       children: [
         {
           kind: "file" as const,
@@ -355,6 +360,7 @@ describe("openFolder transaction", () => {
       kind: "dir" as const,
       name: "old",
       path: "/real/old",
+      loaded: true,
       children: [
         {
           kind: "file" as const,

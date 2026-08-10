@@ -62,6 +62,7 @@ async function openFolderExclusive(
   let oldWatcherStopped = false
   let newWatcherStarted = false
   let committed = false
+  let openedVaultPath = path
   const opts = treeOptionsFromSettings(useStore.getState().settings)
 
   try {
@@ -124,19 +125,8 @@ async function openFolderExclusive(
         renamingPath: null,
       })
       committed = true
-
-      // Drop the user back into the note they were writing in this vault.
-      await restoreLastFile(tree.path, path)
+      openedVaultPath = tree.path
     })
-
-    // Bookkeeping that shouldn't block the vault becoming interactive.
-    ipc.pushRecentFolder(path)
-      .then(() => ipc.getRecentFolders())
-      .then(deps.setRecent)
-      .catch(() => {})
-    // Best-effort: seed AGENTS.md if missing so the AI agent has vault
-    // conventions on hand. Don't block vault open if this fails.
-    ipc.ensureVaultAgentsMd(path).catch(() => {})
   } catch (error) {
     // Once the old watcher has been stopped, any setup/save failure restores
     // both Rust's filesystem scope (listTree) and the watcher before the guard
@@ -163,6 +153,16 @@ async function openFolderExclusive(
   } finally {
     guard.release()
   }
+
+  // Post-open work is best-effort and should not delay the vault becoming
+  // interactive. Restoration selects the saved note if its reveal succeeds.
+  void restoreLastFile(openedVaultPath, path).catch(() => {})
+  ipc.pushRecentFolder(path)
+    .then(() => ipc.getRecentFolders())
+    .then(deps.setRecent)
+    .catch(() => {})
+  // Seed AGENTS.md if missing so the AI agent has vault conventions on hand.
+  ipc.ensureVaultAgentsMd(path).catch(() => {})
 }
 
 /**

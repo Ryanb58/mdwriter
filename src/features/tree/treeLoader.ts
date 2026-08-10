@@ -9,20 +9,19 @@ import {
   replaceDirectory,
 } from "./lazyTree"
 import { runVaultListingExclusive } from "../../lib/vaultTransactions"
+import { DirectoryRequestGuards } from "./directoryRequestGuards"
 
 type LoadResult = "loaded" | "missing" | "stale"
 type RevealResult = "found" | "missing" | "stale"
 
 const inFlight = new Map<string, Promise<LoadResult>>()
-const generations = new Map<string, number>()
+const requestGuards = new DirectoryRequestGuards()
 
 function invalidateDirectoryRequests(root: string) {
   const prefix = `${root}\0`
-  const keys = new Set([...generations.keys(), ...inFlight.keys()])
-  for (const key of keys) {
-    if (!key.startsWith(prefix)) continue
-    generations.set(key, (generations.get(key) ?? 0) + 1)
-    inFlight.delete(key)
+  requestGuards.invalidateRoot(root)
+  for (const key of inFlight.keys()) {
+    if (key.startsWith(prefix)) inFlight.delete(key)
   }
 }
 
@@ -36,8 +35,7 @@ export function loadDirectory(path: string): Promise<LoadResult> {
   const node = findNode(useStore.getState().tree, path)
   if (node?.kind !== "dir") return Promise.resolve("missing")
 
-  const generation = (generations.get(key) ?? 0) + 1
-  generations.set(key, generation)
+  const token = requestGuards.begin(key)
   const { setFolderLoading, setFolderLoadError } = useStore.getState()
   setFolderLoading(path, true)
   setFolderLoadError(path, null)
@@ -49,7 +47,7 @@ export function loadDirectory(path: string): Promise<LoadResult> {
       const current = useStore.getState()
       if (
         current.rootPath !== root ||
-        generations.get(key) !== generation
+        !requestGuards.isCurrent(key, token)
       ) {
         return "stale"
       }
@@ -62,7 +60,7 @@ export function loadDirectory(path: string): Promise<LoadResult> {
       const current = useStore.getState()
       if (
         current.rootPath !== root ||
-        generations.get(key) !== generation
+        !requestGuards.isCurrent(key, token)
       ) {
         return "stale"
       }
@@ -72,11 +70,11 @@ export function loadDirectory(path: string): Promise<LoadResult> {
       const current = useStore.getState()
       if (
         current.rootPath === root &&
-        generations.get(key) === generation
+        requestGuards.isCurrent(key, token)
       ) {
         current.setFolderLoading(path, false)
       }
-      if (generations.get(key) === generation) inFlight.delete(key)
+      if (requestGuards.finish(key, token)) inFlight.delete(key)
     }
   })()
 

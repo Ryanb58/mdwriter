@@ -1,5 +1,6 @@
 import { FileText, PushPinSimpleSlash } from "@phosphor-icons/react"
 import { basename, isMarkdown, relativeTo } from "../../lib/paths"
+import { pathIsWithin } from "../../lib/openDocumentPaths"
 import { useStore } from "../../lib/store"
 import { revealPath } from "./treeLoader"
 
@@ -24,20 +25,29 @@ export function PinnedFiles() {
       </div>
       <div className="space-y-0.5">
         {pins.map((path) => {
-          const active = selectedPath === path
-          const rel = rootPath ? relativeTo(rootPath, path) : path
+          const inCurrentVault = Boolean(
+            rootPath && pathIsWithin(path, rootPath),
+          )
+          const active = inCurrentVault && selectedPath === path
+          const rel = inCurrentVault && rootPath
+            ? relativeTo(rootPath, path)
+            : path
           return (
             <div
               key={path}
               className={[
                 "group flex items-center gap-1.5 rounded-md px-2 py-[3px] text-[13px] transition-colors",
-                "cursor-pointer",
+                inCurrentVault ? "cursor-pointer" : "cursor-default opacity-60",
                 active
                   ? "bg-accent-soft text-text"
-                  : "text-text-muted hover:bg-elevated hover:text-text",
+                  : inCurrentVault
+                    ? "text-text-muted hover:bg-elevated hover:text-text"
+                    : "text-text-muted",
               ].join(" ")}
               title={rel}
+              aria-disabled={!inCurrentVault}
               onClick={() => {
+                if (!inCurrentVault) return
                 setSelected(path)
                 void revealPath(path)
               }}

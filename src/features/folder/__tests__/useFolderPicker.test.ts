@@ -233,6 +233,9 @@ describe("openFolder transaction", () => {
     expect(activeVault).toBe("/new")
     expect(harness.discard).toHaveBeenCalledWith(["/old"])
     expect(harness.release).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => {
+      expect(useStore.getState().selectedPath).toBe("/new/notes/last.md")
+    })
     const state = useStore.getState()
     expect(state.rootPath).toBe("/new")
     expect(state.tree).toEqual(hydratedNewTree)
@@ -243,6 +246,27 @@ describe("openFolder transaction", () => {
     expect(harness.listDirectory).toHaveBeenCalledWith("/new/notes", expect.anything())
     expect(state.blockModeOverrides).toEqual({})
     expect(state.blockTextIndex).toBeNull()
+  })
+
+  it("does not wait for recent-file restoration before opening the vault", async () => {
+    const listing = deferred<typeof notesListing>()
+    harness.listDirectory.mockReturnValue(listing.promise)
+
+    let opened = false
+    const switching = openFolder("/new", deps()).then(() => {
+      opened = true
+    })
+    await vi.waitFor(() => expect(harness.listDirectory).toHaveBeenCalledTimes(1))
+    await Promise.resolve()
+
+    expect(opened).toBe(true)
+    expect(harness.release).toHaveBeenCalledTimes(1)
+
+    listing.resolve(notesListing)
+    await switching
+    await vi.waitFor(() => {
+      expect(useStore.getState().selectedPath).toBe("/new/notes/last.md")
+    })
   })
 
   it("leaves the new vault as the backend filesystem scope after switching", async () => {

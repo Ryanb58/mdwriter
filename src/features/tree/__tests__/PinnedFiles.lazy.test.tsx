@@ -38,4 +38,25 @@ describe("PinnedFiles with a partial sidebar tree", () => {
     expect(useStore.getState().selectedPath).toBe("/vault/deep/note.md")
     expect(harness.revealPath).toHaveBeenCalledWith("/vault/deep/note.md")
   })
+
+  it("does not select a pin outside the active vault", () => {
+    useStore.setState({ pinnedPaths: ["/other/note.md"] })
+    render(<PinnedFiles />)
+
+    const pin = screen.getByText("note").closest("div[title]")
+    fireEvent.click(pin!)
+
+    expect(useStore.getState().selectedPath).toBeNull()
+    expect(harness.revealPath).not.toHaveBeenCalled()
+  })
+
+  it("does not select a pin when no vault is open", () => {
+    useStore.setState({ rootPath: null })
+    render(<PinnedFiles />)
+
+    fireEvent.click(screen.getByText("note").closest("div[title]")!)
+
+    expect(useStore.getState().selectedPath).toBeNull()
+    expect(harness.revealPath).not.toHaveBeenCalled()
+  })
 })

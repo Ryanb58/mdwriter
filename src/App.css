@@ -336,7 +336,7 @@ body {
 
 /* Wikilinks and internal markdown links — shared across BlockNote inline
    content and CodeMirror raw-mode decorations. The `.wikilink` class is
-   the contract; modifiers `--resolved` / `--broken` adjust the color.
+   the contract; modifiers reflect whether the loaded data can resolve it.
    Internal `<a>` tags inside the editor inherit the same look so pasted
    markdown links to vault notes don't look out of place. */
 .wikilink {
@@ -355,6 +355,9 @@ body {
   color: var(--color-danger);
   border-bottom-style: dotted;
   border-bottom-color: var(--color-danger);
+}
+.wikilink--unknown {
+  color: var(--color-accent);
 }
 
 /* BlockNote renders our custom inline content via createReactInlineContentSpec

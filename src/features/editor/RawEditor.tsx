@@ -5,7 +5,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
 import { markdown } from "@codemirror/lang-markdown"
 import { useRawImagePaste } from "./useRawImagePaste"
 import { useLinkActivation } from "./useLinkActivation"
-import { useVaultNotes } from "../../lib/vaultNotes"
+import { useLoadedVaultNotes, useOnDemandVaultNotes } from "../../lib/vaultNotes"
 import { useStore } from "../../lib/store"
 import { scrollViewToMatch } from "./scrollViewToMatch"
 import { flashHighlight } from "./flashHighlight"
@@ -32,12 +32,13 @@ export function RawEditor({
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const [trigger, setTrigger] = useState<WikilinkCompletionState | null>(null)
-  const notes = useVaultNotes()
+  const loadedNotes = useLoadedVaultNotes()
+  const completeNotes = useOnDemandVaultNotes(trigger !== null)
   // Hold the live note list in a ref so the CM decoration callback —
   // which lives outside React and doesn't re-run on prop changes — can
   // always reach the current vault when resolving links.
-  const notesRef = useRef(notes)
-  notesRef.current = notes
+  const notesRef = useRef(loadedNotes)
+  notesRef.current = loadedNotes
 
   // `wikilinkCompletion` returns both the extension and a `dismiss()`
   // entrypoint the popup calls on Esc; build them once per editor mount.
@@ -98,7 +99,7 @@ export function RawEditor({
     const v = viewRef.current
     if (!v) return
     v.dispatch({ effects: rebuildLinkDecorations.of() })
-  }, [notes])
+  }, [loadedNotes])
 
   useRawImagePaste(viewRef)
   useLinkActivation(hostRef)
@@ -110,7 +111,8 @@ export function RawEditor({
       <div ref={hostRef} className="h-full overflow-auto" />
       <RawWikilinkPopup
         state={trigger}
-        notes={notes}
+        notes={completeNotes.notes}
+        status={completeNotes.status}
         viewRef={viewRef}
         onDismiss={completion.dismiss}
       />

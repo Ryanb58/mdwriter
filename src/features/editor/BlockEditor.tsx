@@ -21,7 +21,7 @@ import {
   postprocessWikilinks,
 } from "./wikilinkRoundtrip"
 import { useLinkActivation } from "./useLinkActivation"
-import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
+import { fetchVaultNotes, useLoadedVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { WikilinkSuggestionMenu } from "./WikilinkSuggestionMenu"
 import { showToast, errorText } from "../../lib/toast"
 import { buildBlockTextIndex, findRenderedBlockMatches } from "./blockTextSearch"
@@ -63,14 +63,14 @@ export function BlockEditor({
   const activeFindCleanup = useRef<(() => void) | null>(null)
   const activeFindTimer = useRef<number | null>(null)
   const handledFindRequest = useRef<number | null>(null)
-  const notes = useVaultNotes()
+  const loadedNotes = useLoadedVaultNotes()
 
   // Keep the inline-content renderer's module-local note list in sync with
   // the live vault. The renderer can't `useStore` because BlockNote renders
   // it outside our React tree.
   useEffect(() => {
-    setWikilinkNotes(notes)
-  }, [notes])
+    setWikilinkNotes(loadedNotes)
+  }, [loadedNotes])
 
   const editor = useCreateBlockNote(
     useMemo(
@@ -519,7 +519,17 @@ export function BlockEditor({
         <MarkdownTableHandles />
         <SuggestionMenuController
           triggerCharacter="[["
-          getItems={async (query: string) => filterForMenu(notes, query)}
+          getItems={async (query: string) => {
+            const root = useStore.getState().rootPath
+            if (!root) return []
+            try {
+              const notes = await fetchVaultNotes(root)
+              if (useStore.getState().rootPath !== root) return []
+              return filterForMenu(notes, query)
+            } catch {
+              return []
+            }
+          }}
           suggestionMenuComponent={WikilinkSuggestionMenu}
           onItemClick={(item) => {
             // BlockNote's SuggestionMenuWrapper has already deleted the

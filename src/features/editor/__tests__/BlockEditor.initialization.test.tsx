@@ -83,7 +83,8 @@ vi.mock("../../../lib/store", () => {
 })
 
 vi.mock("../../../lib/vaultNotes", () => ({
-  useVaultNotes: () => [],
+  useLoadedVaultNotes: () => [],
+  fetchVaultNotes: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock("../wikilinkInline", () => ({

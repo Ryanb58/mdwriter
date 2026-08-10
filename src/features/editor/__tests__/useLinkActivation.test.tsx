@@ -1,9 +1,29 @@
-import { afterEach, describe, it, expect, beforeEach } from "vitest"
-import { render } from "@testing-library/react"
+import { afterEach, describe, it, expect, beforeEach, vi } from "vitest"
+import { render, waitFor } from "@testing-library/react"
 import { useRef } from "react"
+
+vi.mock("../../../lib/vaultNotes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/vaultNotes")>()
+  return {
+    ...actual,
+    useVaultNotes: () => [
+      { name: "Three laws of motion", path: "/vault/Three laws of motion.md", rel: "Three laws of motion.md" },
+      { name: "Inertia", path: "/vault/Inertia.md", rel: "Inertia.md" },
+    ],
+    fetchVaultNotes: vi.fn(),
+  }
+})
+
+vi.mock("../../tree/treeLoader", () => ({ revealPath: vi.fn() }))
+
 import { useLinkActivation } from "../useLinkActivation"
 import { useStore } from "../../../lib/store"
 import type { TreeNode } from "../../../lib/ipc"
+import { fetchVaultNotes } from "../../../lib/vaultNotes"
+import { revealPath } from "../../tree/treeLoader"
+
+const fetchNotes = vi.mocked(fetchVaultNotes)
+const reveal = vi.mocked(revealPath)
 
 const tree: TreeNode = {
   kind: "dir",
@@ -38,6 +58,9 @@ function Host() {
       </p>
       <p>
         <span className="wikilink" data-target="Nonexistent">missing</span>
+      </p>
+      <p>
+        <span className="wikilink" data-target="Elsewhere">elsewhere</span>
       </p>
     </div>
   )
@@ -112,6 +135,13 @@ describe("useLinkActivation", () => {
     s.setRoot("/vault")
     s.setTree(tree)
     s.setSelected(null)
+    fetchNotes.mockReset()
+    fetchNotes.mockResolvedValue([
+      { name: "Three laws of motion", path: "/vault/Three laws of motion.md", rel: "Three laws of motion.md" },
+      { name: "Inertia", path: "/vault/Inertia.md", rel: "Inertia.md" },
+    ])
+    reveal.mockReset()
+    reveal.mockResolvedValue("found")
   })
 
   afterEach(() => {
@@ -139,21 +169,21 @@ describe("useLinkActivation", () => {
     expectCaretToEqual(caret)
   })
 
-  it("opens a resolved wikilink on Ctrl-click outside Apple platforms", () => {
+  it("opens a resolved wikilink on Ctrl-click outside Apple platforms", async () => {
     const { getByText } = render(<Host />)
     const event = clickHTMLElement(getByText("3LoM"), { ctrlKey: true })
-    expect(useStore.getState().selectedPath).toBe("/vault/Three laws of motion.md")
+    await waitFor(() => expect(useStore.getState().selectedPath).toBe("/vault/Three laws of motion.md"))
     expect(event.defaultPrevented).toBe(true)
   })
 
-  it("opens a resolved wikilink on Cmd-click on macOS", () => {
+  it("opens a resolved wikilink on Cmd-click on macOS", async () => {
     Object.defineProperty(window.navigator, "platform", {
       configurable: true,
       value: "MacIntel",
     })
     const { getByText } = render(<Host />)
     clickHTMLElement(getByText("3LoM"), { metaKey: true })
-    expect(useStore.getState().selectedPath).toBe("/vault/Three laws of motion.md")
+    await waitFor(() => expect(useStore.getState().selectedPath).toBe("/vault/Three laws of motion.md"))
   })
 
   it("ignores the wrong modifier for the platform", () => {
@@ -162,10 +192,10 @@ describe("useLinkActivation", () => {
     expect(useStore.getState().selectedPath).toBeNull()
   })
 
-  it("opens an internal markdown link only with the platform modifier", () => {
+  it("opens an internal markdown link only with the platform modifier", async () => {
     const { getByText } = render(<Host />)
     clickHTMLElement(getByText("Inertia"), { ctrlKey: true })
-    expect(useStore.getState().selectedPath).toBe("/vault/Inertia.md")
+    await waitFor(() => expect(useStore.getState().selectedPath).toBe("/vault/Inertia.md"))
   })
 
   it("ignores external links", () => {
@@ -174,9 +204,36 @@ describe("useLinkActivation", () => {
     expect(useStore.getState().selectedPath).toBeNull()
   })
 
-  it("does nothing for unresolved wikilinks", () => {
+  it("does nothing for unresolved wikilinks", async () => {
     const { getByText } = render(<Host />)
     clickHTMLElement(getByText("missing"), { ctrlKey: true })
+    await waitFor(() => expect(fetchNotes).toHaveBeenCalled())
     expect(useStore.getState().selectedPath).toBeNull()
+  })
+
+  it("opens a note that is not loaded in the sidebar and reveals its folders", async () => {
+    fetchNotes.mockResolvedValue([
+      { name: "Elsewhere", path: "/vault/deep/Elsewhere.md", rel: "deep/Elsewhere.md" },
+    ])
+    const { getByText } = render(<Host />)
+
+    clickHTMLElement(getByText("elsewhere"), { ctrlKey: true })
+
+    await waitFor(() => expect(useStore.getState().selectedPath).toBe("/vault/deep/Elsewhere.md"))
+    expect(reveal).toHaveBeenCalledWith("/vault/deep/Elsewhere.md")
+  })
+
+  it("discards a completed lookup after the vault changes", async () => {
+    let resolve!: (notes: Awaited<ReturnType<typeof fetchVaultNotes>>) => void
+    fetchNotes.mockReturnValue(new Promise((done) => { resolve = done }))
+    const { getByText } = render(<Host />)
+
+    clickHTMLElement(getByText("elsewhere"), { ctrlKey: true })
+    useStore.setState({ rootPath: "/new", selectedPath: null, selectedPaths: new Set() })
+    resolve([{ name: "Elsewhere", path: "/vault/deep/Elsewhere.md", rel: "deep/Elsewhere.md" }])
+
+    await Promise.resolve()
+    expect(useStore.getState().selectedPath).toBeNull()
+    expect(reveal).not.toHaveBeenCalled()
   })
 })

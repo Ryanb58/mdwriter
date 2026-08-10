@@ -102,13 +102,20 @@ describe("link decoration presentation", () => {
 
   it("labels unresolved raw links without promising navigation", () => {
     expect(
-      linkDecorationPresentation("Missing", notes, "cm-wikilink", "MacIntel"),
+      linkDecorationPresentation("Missing", notes, "cm-wikilink", "MacIntel", false),
     ).toEqual({
-      className: "wikilink wikilink--broken cm-wikilink",
+      className: "wikilink wikilink--unknown cm-wikilink",
       attributes: {
         "data-target": "Missing",
-        title: "Note not found: Missing",
+        title: "Open Missing (Cmd-click)",
       },
     })
+  })
+
+  it("marks a missing target broken only after a complete lookup", () => {
+    expect(
+      linkDecorationPresentation("Missing", notes, "cm-wikilink", "MacIntel", true)
+        .className,
+    ).toContain("wikilink--broken")
   })
 })

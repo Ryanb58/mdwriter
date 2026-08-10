@@ -4,6 +4,7 @@ import { ipc, type SearchHit, type SearchResult } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { basename } from "../../lib/paths"
 import { debounce } from "../../lib/debounce"
+import { revealPath } from "../tree/treeLoader"
 
 const DEBOUNCE_MS = 180
 const MIN_QUERY = 2
@@ -104,6 +105,7 @@ export function SearchMode({
       occurrence,
     })
     setSelected(hit.path)
+    void revealPath(hit.path)
     close()
   }
 

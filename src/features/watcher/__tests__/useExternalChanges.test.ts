@@ -8,9 +8,11 @@ vi.mock("../../../lib/ipc", () => {
     // helpers emit.
     files: Map<string, string>
     listTreeCalls: number
+    listDirectoryCalls: string[]
   } = {
     files: new Map(),
     listTreeCalls: 0,
+    listDirectoryCalls: [],
   }
   return {
     __fs: fs,
@@ -22,7 +24,17 @@ vi.mock("../../../lib/ipc", () => {
       }),
       listTree: vi.fn(async () => {
         fs.listTreeCalls++
-        return { kind: "dir" as const, name: "vault", path: "/vault", children: [] }
+        return { kind: "dir" as const, name: "vault", path: "/vault", children: [], loaded: true }
+      }),
+      listDirectory: vi.fn(async (path: string) => {
+        fs.listDirectoryCalls.push(path)
+        return {
+          kind: "dir" as const,
+          name: path.slice(path.lastIndexOf("/") + 1) || "vault",
+          path,
+          children: [],
+          loaded: true,
+        }
       }),
     },
   }
@@ -38,7 +50,7 @@ import { useStore } from "../../../lib/store"
 import * as ipcMod from "../../../lib/ipc"
 import { analyzeDocument } from "../../../lib/documentAnalysis"
 
-function fs(): { files: Map<string, string>; listTreeCalls: number } {
+function fs(): { files: Map<string, string>; listTreeCalls: number; listDirectoryCalls: string[] } {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (ipcMod as any).__fs
 }
@@ -87,6 +99,7 @@ function openClean(path: string, body: string, frontmatter: Record<string, unkno
 beforeEach(() => {
   fs().files.clear()
   fs().listTreeCalls = 0
+  fs().listDirectoryCalls = []
   vi.mocked(ipcMod.ipc.readFile).mockClear()
   cancelSpy.mockClear()
   useStore.setState({
@@ -256,31 +269,53 @@ describe("handleVaultChange — open-doc reload", () => {
 })
 
 describe("handleVaultChange — tree refresh", () => {
-  it("refreshes the tree for an external change", async () => {
-    openClean("/vault/a.md", "old")
+  it("refreshes only loaded parents affected by external changes", async () => {
+    useStore.setState({
+      rootPath: "/vault",
+      tree: {
+        kind: "dir",
+        name: "vault",
+        path: "/vault",
+        loaded: true,
+        children: [
+          { kind: "dir", name: "loaded", path: "/vault/loaded", loaded: true, children: [] },
+          { kind: "dir", name: "cold", path: "/vault/cold", loaded: false, children: [] },
+        ],
+      },
+    })
 
-    await handleVaultChange(["/vault/b.md"])
+    await handleVaultChange([
+      "/vault/loaded/a.md",
+      "/vault/cold/b.md",
+      "/vault/root.md",
+    ])
 
-    expect(fs().listTreeCalls).toBe(1)
+    expect(fs().listDirectoryCalls).toEqual(["/vault/loaded", "/vault"])
+    expect(fs().listTreeCalls).toBe(0)
   })
 
   it("does not let a stale refresh replace a newer vault tree", async () => {
-    openClean("/vault/a.md", "old")
+    useStore.setState({
+      rootPath: "/vault",
+      tree: { kind: "dir", name: "vault", path: "/vault", children: [], loaded: true },
+    })
     const oldRefresh = deferred<{
       kind: "dir"
       name: string
       path: string
       children: never[]
+      loaded: boolean
     }>()
-    vi.mocked(ipcMod.ipc.listTree).mockImplementationOnce(() => oldRefresh.promise)
+    vi.mocked(ipcMod.ipc.listDirectory).mockImplementationOnce(() => oldRefresh.promise)
 
     const refreshing = handleVaultChange(["/vault/b.md"])
-    await vi.waitFor(() => expect(ipcMod.ipc.listTree).toHaveBeenCalled())
+    await vi.waitFor(() => expect(ipcMod.ipc.listDirectory).toHaveBeenCalled())
     const newerTree = {
       kind: "dir" as const,
       name: "other",
       path: "/other",
       children: [],
+      loaded: true,
     }
     useStore.setState({ rootPath: "/other", tree: newerTree })
 
@@ -289,6 +324,7 @@ describe("handleVaultChange — tree refresh", () => {
       name: "vault",
       path: "/vault",
       children: [],
+      loaded: true,
     })
     await refreshing
 
@@ -301,12 +337,12 @@ describe("handleVaultChange — tree refresh", () => {
 
     await handleVaultChange(["/vault/a.md"])
 
-    expect(fs().listTreeCalls).toBe(0)
+    expect(fs().listDirectoryCalls).toEqual([])
   })
 
   it("bails entirely when there's no rootPath", async () => {
     // No openClean — rootPath remains null from beforeEach
     await handleVaultChange(["/vault/a.md"])
-    expect(fs().listTreeCalls).toBe(0)
+    expect(fs().listDirectoryCalls).toEqual([])
   })
 })

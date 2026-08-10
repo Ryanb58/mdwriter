@@ -2,12 +2,14 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useStore } from "../../../lib/store"
 
-const ipcHarness = vi.hoisted(() => ({ searchVault: vi.fn() }))
+const ipcHarness = vi.hoisted(() => ({ searchVault: vi.fn(), revealPath: vi.fn() }))
 
 vi.mock("../../../lib/ipc", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../lib/ipc")>()
   return { ...actual, ipc: { ...actual.ipc, searchVault: ipcHarness.searchVault } }
 })
+
+vi.mock("../../tree/treeLoader", () => ({ revealPath: ipcHarness.revealPath }))
 
 import { SearchMode } from "../SearchMode"
 
@@ -59,6 +61,7 @@ describe("SearchMode reveal targets", () => {
       occurrence: 0,
     })
     expect(useStore.getState().selectedPath).toBe("/vault/notes/result.md")
+    expect(ipcHarness.revealPath).toHaveBeenCalledWith("/vault/notes/result.md")
     expect(close).toHaveBeenCalledTimes(1)
   })
 })

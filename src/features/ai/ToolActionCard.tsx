@@ -15,6 +15,7 @@ import {
 import type { ToolCall } from "../../lib/store"
 import { useStore } from "../../lib/store"
 import { getToolPath, numberField, stringField, truncate } from "./toolInput"
+import { revealPath } from "../tree/treeLoader"
 
 export function ToolActionCard({
   tool,
@@ -89,6 +90,7 @@ function CitationLink({ path, label }: { path: string; label: string }) {
     if (!rootPath) return
     const full = isAbsolute(path) ? path : joinPath(rootPath, path)
     setSelected(full)
+    void revealPath(full)
   }
   return (
     <button

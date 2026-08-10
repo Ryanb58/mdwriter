@@ -9,7 +9,7 @@ use tauri::State;
 #[derive(Serialize, Debug)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum TreeNode {
-    Dir { name: String, path: PathBuf, children: Vec<TreeNode> },
+    Dir { name: String, path: PathBuf, children: Vec<TreeNode>, loaded: bool },
     File {
         name: String,
         path: PathBuf,
@@ -120,11 +120,15 @@ fn collect_rev<'a>(tail: &[Component<'a>]) -> Vec<Component<'a>> {
 /// Look up the active vault root, erroring if no vault is open. Resolves
 /// `target` against it and returns the canonical, in-scope path.
 fn guard_path(state: &State<'_, AppState>, target: &Path) -> Result<PathBuf> {
-    let guard = state.active_vault.lock().unwrap();
-    let root = guard
+    let root = active_vault_root(state)?;
+    resolve_in_root(&root, target)
+}
+
+fn active_vault_root(state: &State<'_, AppState>) -> Result<PathBuf> {
+    state.active_vault.lock().unwrap()
         .as_ref()
-        .ok_or_else(|| AppError::InvalidPath("no active vault".into()))?;
-    resolve_in_root(root, target)
+        .cloned()
+        .ok_or_else(|| AppError::InvalidPath("no active vault".into()))
 }
 
 #[tauri::command]
@@ -142,9 +146,27 @@ pub fn list_tree(
 }
 
 fn list_tree_inner(canonical: &Path, options: Option<TreeOptions>) -> Result<TreeNode> {
+    list_directory_inner(canonical, canonical, options)
+}
+
+#[tauri::command]
+pub fn list_directory(
+    state: State<'_, AppState>,
+    path: PathBuf,
+    options: Option<TreeOptions>,
+) -> Result<TreeNode> {
+    let root = active_vault_root(&state)?;
+    let canonical = resolve_in_root(&root, &path)?;
+    list_directory_inner(&root, &canonical, options)
+}
+
+fn list_directory_inner(root: &Path, path: &Path, options: Option<TreeOptions>) -> Result<TreeNode> {
+    if !path.is_dir() {
+        return Err(AppError::InvalidPath(format!("not a directory: {}", path.display())));
+    }
     let opts = options.unwrap_or_default();
-    let gi = if opts.hide_gitignored { build_gitignore(canonical) } else { None };
-    build_tree(canonical, canonical, &opts, gi.as_ref())
+    let gi = if opts.hide_gitignored { build_gitignore(root) } else { None };
+    build_shallow_directory(path, &opts, gi.as_ref())
 }
 
 fn build_gitignore(root: &Path) -> Option<Gitignore> {
@@ -153,9 +175,8 @@ fn build_gitignore(root: &Path) -> Option<Gitignore> {
     builder.build().ok()
 }
 
-fn build_tree(
+fn build_shallow_directory(
     path: &Path,
-    root: &Path,
     opts: &TreeOptions,
     gi: Option<&Gitignore>,
 ) -> Result<TreeNode> {
@@ -181,10 +202,12 @@ fn build_tree(
         }
 
         if is_dir {
-            let subtree = build_tree(&entry_path, root, opts, gi)?;
-            if has_visible_file(&subtree) {
-                children.push(subtree);
-            }
+            children.push(TreeNode::Dir {
+                name: entry_name,
+                path: entry_path,
+                children: Vec::new(),
+                loaded: false,
+            });
         } else if is_visible_file(&entry_path, opts) {
             let mtime = file_mtime_secs(&entry_path);
             children.push(TreeNode::File {
@@ -195,9 +218,9 @@ fn build_tree(
         }
     }
 
-    children.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
+    children.sort_by_key(sort_key);
 
-    Ok(TreeNode::Dir { name, path: path.to_path_buf(), children })
+    Ok(TreeNode::Dir { name, path: path.to_path_buf(), children, loaded: true })
 }
 
 fn sort_key(node: &TreeNode) -> (u8, String) {
@@ -229,18 +252,6 @@ fn is_visible_file(p: &Path, opts: &TreeOptions) -> bool {
     if opts.include_images && is_image_file(p) { return true; }
     if opts.include_unsupported && !is_markdown_file(p) && !is_pdf_file(p) && !is_image_file(p) { return true; }
     false
-}
-
-fn has_visible_file(node: &TreeNode) -> bool {
-    match node {
-        TreeNode::File { .. } => true,
-        // Dirs are kept if they hold visible content OR if they're empty after
-        // filtering — otherwise a freshly-created (still empty) folder would
-        // be invisible the moment it's created.
-        TreeNode::Dir { children, .. } => {
-            children.is_empty() || children.iter().any(has_visible_file)
-        }
-    }
 }
 
 /// Read a file as plain text. Frontmatter parsing now happens on the
@@ -441,6 +452,16 @@ mod tests {
         list_tree_inner(&canonical, options)
     }
 
+    fn list_directory_for_test(
+        root: &Path,
+        path: &Path,
+        options: Option<TreeOptions>,
+    ) -> Result<TreeNode> {
+        let canonical_root = root.canonicalize()?;
+        let canonical_path = path.canonicalize()?;
+        list_directory_inner(&canonical_root, &canonical_path, options)
+    }
+
     #[test]
     fn lists_only_markdown_files() {
         let dir = tempdir().unwrap();
@@ -504,15 +525,38 @@ mod tests {
     }
 
     #[test]
-    fn nested_markdown_is_returned() {
+    fn root_listing_does_not_load_nested_markdown() {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join("notes")).unwrap();
         fs::write(dir.path().join("notes/a.md"), "").unwrap();
         let tree = list_tree(dir.path().to_path_buf(), None).unwrap();
-        let TreeNode::Dir { children, .. } = tree else { panic!() };
+        let TreeNode::Dir { children, loaded, .. } = tree else { panic!() };
+        assert!(loaded);
         assert_eq!(children.len(), 1);
-        let TreeNode::Dir { children: subc, .. } = &children[0] else { panic!() };
-        assert_eq!(subc.len(), 1);
+        let TreeNode::Dir { children: subc, loaded, .. } = &children[0] else { panic!() };
+        assert!(!loaded);
+        assert!(subc.is_empty());
+    }
+
+    #[test]
+    fn directory_listing_loads_only_the_requested_level() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("notes/deeper")).unwrap();
+        fs::write(dir.path().join("notes/a.md"), "").unwrap();
+        fs::write(dir.path().join("notes/deeper/b.md"), "").unwrap();
+
+        let listing = list_directory_for_test(
+            dir.path(),
+            &dir.path().join("notes"),
+            None,
+        ).unwrap();
+
+        let TreeNode::Dir { children, loaded, .. } = listing else { panic!() };
+        assert!(loaded);
+        assert_eq!(children.len(), 2);
+        let TreeNode::Dir { children, loaded, .. } = &children[0] else { panic!() };
+        assert!(!loaded);
+        assert!(children.is_empty());
     }
 
     #[test]

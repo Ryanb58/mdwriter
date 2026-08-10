@@ -40,13 +40,13 @@ export const wikilinkInlineSpec = createReactInlineContentSpec(
       const display = alias || target
       const className = resolved
         ? "wikilink wikilink--resolved"
-        : "wikilink wikilink--broken"
+        : "wikilink wikilink--unknown"
       return (
         <span
           className={className}
           data-target={target}
           data-alias={alias || undefined}
-          title={wikilinkTooltip(target, resolved?.rel ?? null)}
+          title={resolved ? wikilinkTooltip(target, resolved.rel) : `Open ${target}`}
         >
           {display}
         </span>

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, isValidElement, type ReactNode } from "react"
-import ReactMarkdown, { type Components } from "react-markdown"
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import { Check, Copy, ArrowsClockwise, Plus, Eye, FilePlus } from "@phosphor-icons/react"
@@ -7,6 +7,7 @@ import { useStore } from "../../lib/store"
 import { applyToOpenDoc, type ApplyOp } from "./applyToNote"
 import { DiffModal } from "./DiffModal"
 import "highlight.js/styles/github-dark.css"
+import { revealPath } from "../tree/treeLoader"
 
 /**
  * Render assistant text as markdown with GFM + syntax highlighting. Wikilinks
@@ -26,7 +27,7 @@ export function MarkdownView({ text }: { text: string }) {
       a: ({ href, children, ...rest }) => {
         const url = href ?? ""
         if (url.startsWith("mdwriter:")) {
-          const target = decodeURIComponent(url.slice("mdwriter:".length))
+          const target = decodeInternalTarget(url.slice("mdwriter:".length))
           return (
             <button
               type="button"
@@ -60,11 +61,20 @@ export function MarkdownView({ text }: { text: string }) {
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         components={components}
+        urlTransform={(url) => url.startsWith("mdwriter:") ? url : defaultUrlTransform(url)}
       >
         {preprocessed}
       </ReactMarkdown>
     </div>
   )
+}
+
+function decodeInternalTarget(encoded: string): string {
+  try {
+    return decodeURIComponent(encoded)
+  } catch {
+    return encoded
+  }
 }
 
 /**
@@ -81,6 +91,7 @@ function useOpenVaultFile() {
     if (!rel) return
     const full = join(root, rel)
     state.setSelected(full)
+    void revealPath(full)
   }, [])
 }
 

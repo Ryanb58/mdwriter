@@ -4,8 +4,9 @@
  *
  *   • `decorateLinks` — adds a `.wikilink` class to runs that match the
  *     wikilink or markdown-internal-link pattern. The class carries a
- *     `--resolved` or `--broken` modifier so the shared CSS shows broken
- *     links in danger tint (matches the BlockNote inline-content behavior).
+ *     `--resolved` or `--unknown` modifier. Partial sidebar data cannot prove
+ *     that a target is broken, so failure styling is reserved for a complete
+ *     lookup performed when the user activates the link.
  *     The shared click handler in `useLinkActivation` picks up clicks via
  *     the `data-target` attribute regardless of resolution state.
  *   • `wikilinkCompletion` — a manual popup that opens when the caret
@@ -17,7 +18,7 @@ import { Decoration, EditorView, MatchDecorator, ViewPlugin, type DecorationSet,
 import { StateEffect, type Extension } from "@codemirror/state"
 import type { VaultNote } from "../../lib/vaultNotes"
 import { isInternalHref, resolveLinkTarget } from "../../lib/wikilinkResolve"
-import { wikilinkTooltip } from "./linkAffordance"
+import { modifierClickLabel, wikilinkTooltip } from "./linkAffordance"
 
 // A wikilink `[[Foo]]` or `[[Foo.md|alias]]`.
 const WIKILINK_RE = /\[\[([^\[\]\r\n]+?)\]\]/g
@@ -28,18 +29,35 @@ const MD_LINK_RE = /(?<!!)\[([^\]\r\n]+)\]\(([^)\r\n]+)\)/g
 
 type LinkDecorationKind = "cm-wikilink" | "cm-md-link"
 
+export type LinkResolutionState = "resolved" | "unknown" | "broken"
+
+export function linkResolutionState(
+  target: string,
+  notes: VaultNote[],
+  complete: boolean,
+): LinkResolutionState {
+  if (resolveLinkTarget(target, notes)) return "resolved"
+  return complete ? "broken" : "unknown"
+}
+
 export function linkDecorationPresentation(
   target: string,
   notes: VaultNote[],
   kind: LinkDecorationKind,
   platform?: string,
+  complete = false,
 ) {
   const resolved = resolveLinkTarget(target, notes)
+  const state = linkResolutionState(target, notes, complete)
   return {
-    className: `wikilink ${resolved ? "wikilink--resolved" : "wikilink--broken"} ${kind}`,
+    className: `wikilink wikilink--${state} ${kind}`,
     attributes: {
       "data-target": target,
-      title: wikilinkTooltip(target, resolved?.rel ?? null, platform),
+      title: resolved
+        ? wikilinkTooltip(target, resolved.rel, platform)
+        : complete
+          ? wikilinkTooltip(target, null, platform)
+          : `Open ${target} (${modifierClickLabel(platform)})`,
     },
   }
 }

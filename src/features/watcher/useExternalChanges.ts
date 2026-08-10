@@ -1,9 +1,11 @@
 import { useEffect } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { ipc } from "../../lib/ipc"
-import { useStore, treeOptionsFromSettings } from "../../lib/store"
+import { useStore } from "../../lib/store"
 import { cancelQueuedOpenDocSave } from "../../lib/writeDoc"
 import { runVaultListingExclusive } from "../../lib/vaultTransactions"
+import { parent } from "../../lib/paths"
+import { refreshDirectories } from "../tree/treeLoader"
 
 type VaultEvent = { paths: string[] }
 
@@ -53,10 +55,8 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
 
     if (nonSelfPaths.length > 0) {
       try {
-        const opts = treeOptionsFromSettings(useStore.getState().settings)
-        const tree = await ipc.listTree(root, opts)
+        await refreshDirectories(nonSelfPaths.map(parent))
         if (useStore.getState().rootPath !== root) return
-        useStore.setState({ tree })
       } catch (_err) { /* root went away */ }
     }
 

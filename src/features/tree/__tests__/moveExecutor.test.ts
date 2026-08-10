@@ -32,9 +32,8 @@ vi.mock("../../watcher/useExternalChanges", () => ({
   noteSelfWrite: vi.fn(),
 }))
 
-vi.mock("../useTreeActions", async () => ({
-  refreshTree: vi.fn(async () => {}),
-  useTreeActions: () => ({}),
+vi.mock("../treeLoader", async () => ({
+  refreshDirectories: vi.fn(async () => {}),
 }))
 
 vi.mock("../../../lib/writeDoc", () => ({
@@ -43,7 +42,7 @@ vi.mock("../../../lib/writeDoc", () => ({
 
 import { moveItems } from "../moveExecutor"
 import * as ipcMod from "../../../lib/ipc"
-import { refreshTree } from "../useTreeActions"
+import { refreshDirectories } from "../treeLoader"
 
 function fsState(): { existing: Set<string> } {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,8 +59,8 @@ beforeEach(() => {
   })
   fsState().existing.clear()
   vi.mocked(ipcMod.ipc.renamePath).mockClear()
-  vi.mocked(refreshTree).mockReset()
-  vi.mocked(refreshTree).mockResolvedValue(undefined)
+  vi.mocked(refreshDirectories).mockReset()
+  vi.mocked(refreshDirectories).mockResolvedValue(undefined)
   saveHarness.begin.mockReset()
   saveHarness.remap.mockReset()
   saveHarness.discard.mockReset()
@@ -252,7 +251,7 @@ describe("moveItems", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       openDoc: { path: "/root/a.md", text: "", dirty: false, savedAt: 0, parseError: null } as any,
     })
-    vi.mocked(refreshTree).mockRejectedValueOnce(new Error("refresh failed"))
+    vi.mocked(refreshDirectories).mockRejectedValueOnce(new Error("refresh failed"))
 
     await expect(moveItems(["/root/a.md"], "/root/notes")).rejects.toThrow("refresh failed")
 

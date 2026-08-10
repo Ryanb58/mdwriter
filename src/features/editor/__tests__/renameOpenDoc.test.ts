@@ -34,8 +34,8 @@ vi.mock("../../watcher/useExternalChanges", () => ({
   noteSelfWrite: vi.fn(),
 }))
 
-vi.mock("../../tree/useTreeActions", () => ({
-  refreshTree: vi.fn(async () => {}),
+vi.mock("../../tree/treeLoader", () => ({
+  refreshDirectories: vi.fn(async () => {}),
 }))
 
 vi.mock("../../../lib/writeDoc", () => ({

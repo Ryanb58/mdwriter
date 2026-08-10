@@ -8,6 +8,7 @@ describe("flattenNotes", () => {
       kind: "dir",
       name: "vault",
       path: "/vault",
+      loaded: true,
       children: [
         { kind: "file", name: "old.md", path: "/vault/old.md", mtime: 100 },
         { kind: "file", name: "new.md", path: "/vault/new.md", mtime: 200 },
@@ -25,6 +26,7 @@ describe("flattenNotes", () => {
       kind: "dir",
       name: "vault",
       path: "/vault",
+      loaded: true,
       children: [{ kind: "file", name: "a.md", path: "/vault/a.md" }],
     }
     const [note] = flattenNotes(tree, "/vault")

@@ -1,12 +1,13 @@
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import { useStore } from "../../lib/store"
-import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
+import { fetchVaultNotes } from "../../lib/vaultNotes"
 import {
   decodeTarget,
   isInternalHref,
   resolveLinkTarget,
 } from "../../lib/wikilinkResolve"
 import { isLinkActivationModifier } from "./linkAffordance"
+import { revealPath } from "../tree/treeLoader"
 
 /**
  * Capture-phase click handler for the editor surface. Two kinds of links
@@ -23,12 +24,6 @@ import { isLinkActivationModifier } from "./linkAffordance"
  * link, matching Obsidian and Tolaria.
  */
 export function useLinkActivation(host: React.RefObject<HTMLElement | null>) {
-  const notes = useVaultNotes()
-  // Stash the latest note list in a ref so the listener doesn't need to
-  // re-attach when the vault tree updates (and lose the click in flight).
-  const notesRef = useRef<VaultNote[]>(notes)
-  notesRef.current = notes
-
   useEffect(() => {
     const el = host.current
     if (!el) return
@@ -46,7 +41,7 @@ export function useLinkActivation(host: React.RefObject<HTMLElement | null>) {
       const wikilink = target.closest<HTMLElement>('.wikilink[data-target]')
       if (wikilink) {
         const raw = wikilink.getAttribute("data-target") || ""
-        navigate(raw, notesRef.current)
+        void navigate(raw, wikilink)
         e.preventDefault()
         e.stopPropagation()
         return
@@ -55,7 +50,7 @@ export function useLinkActivation(host: React.RefObject<HTMLElement | null>) {
       if (anchor) {
         const href = anchor.getAttribute("href") || ""
         if (!isInternalHref(href)) return
-        navigate(decodeTarget(href), notesRef.current)
+        void navigate(decodeTarget(href), anchor)
         e.preventDefault()
         e.stopPropagation()
       }
@@ -72,10 +67,26 @@ export function useLinkActivation(host: React.RefObject<HTMLElement | null>) {
   }, [host])
 }
 
-function navigate(rawTarget: string, notes: VaultNote[]) {
+async function navigate(rawTarget: string, clicked: HTMLElement) {
+  const root = useStore.getState().rootPath
+  if (!root) return
+  let notes
+  try {
+    notes = await fetchVaultNotes(root)
+  } catch {
+    return
+  }
+  if (useStore.getState().rootPath !== root) return
   const resolved = resolveLinkTarget(rawTarget, notes)
-  if (!resolved) return
+  if (!resolved) {
+    clicked.classList.remove("wikilink--unknown", "wikilink--resolved")
+    clicked.classList.add("wikilink--broken")
+    return
+  }
+  clicked.classList.remove("wikilink--unknown", "wikilink--broken")
+  clicked.classList.add("wikilink--resolved")
   // Same pipeline used by the tree and the command palette: setting the
   // selected path triggers useOpenFile to load the doc.
   useStore.getState().setSelected(resolved.path)
+  void revealPath(resolved.path)
 }

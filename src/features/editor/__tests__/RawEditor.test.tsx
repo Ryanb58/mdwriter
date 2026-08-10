@@ -99,7 +99,8 @@ vi.mock("../useLinkActivation", () => ({
 }))
 
 vi.mock("../../../lib/vaultNotes", () => ({
-  useVaultNotes: () => [],
+  useLoadedVaultNotes: () => [],
+  useOnDemandVaultNotes: () => ({ notes: [], status: "idle", error: null }),
 }))
 
 vi.mock("../../../lib/store", () => {

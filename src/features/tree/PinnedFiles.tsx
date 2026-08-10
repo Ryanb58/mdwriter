@@ -1,7 +1,8 @@
 import { FileText, PushPinSimpleSlash } from "@phosphor-icons/react"
 import { basename, isMarkdown, relativeTo } from "../../lib/paths"
+import { pathIsWithin } from "../../lib/openDocumentPaths"
 import { useStore } from "../../lib/store"
-import { findNode } from "./findNode"
+import { revealPath } from "./treeLoader"
 
 function displayName(path: string): string {
   return basename(path).replace(/\.(md|markdown)$/i, "")
@@ -9,7 +10,6 @@ function displayName(path: string): string {
 
 export function PinnedFiles() {
   const rootPath = useStore((s) => s.rootPath)
-  const tree = useStore((s) => s.tree)
   const pinnedPaths = useStore((s) => s.pinnedPaths)
   const selectedPath = useStore((s) => s.selectedPath)
   const setSelected = useStore((s) => s.setSelected)
@@ -25,22 +25,31 @@ export function PinnedFiles() {
       </div>
       <div className="space-y-0.5">
         {pins.map((path) => {
-          const exists = !!findNode(tree, path)
-          const active = selectedPath === path
-          const rel = rootPath ? relativeTo(rootPath, path) : path
+          const inCurrentVault = Boolean(
+            rootPath && pathIsWithin(path, rootPath),
+          )
+          const active = inCurrentVault && selectedPath === path
+          const rel = inCurrentVault && rootPath
+            ? relativeTo(rootPath, path)
+            : path
           return (
             <div
               key={path}
               className={[
                 "group flex items-center gap-1.5 rounded-md px-2 py-[3px] text-[13px] transition-colors",
-                exists ? "cursor-pointer" : "cursor-default opacity-60",
+                inCurrentVault ? "cursor-pointer" : "cursor-default opacity-60",
                 active
                   ? "bg-accent-soft text-text"
-                  : "text-text-muted hover:bg-elevated hover:text-text",
+                  : inCurrentVault
+                    ? "text-text-muted hover:bg-elevated hover:text-text"
+                    : "text-text-muted",
               ].join(" ")}
-              title={exists ? rel : `${rel} (not found)`}
+              title={rel}
+              aria-disabled={!inCurrentVault}
               onClick={() => {
-                if (exists) setSelected(path)
+                if (!inCurrentVault) return
+                setSelected(path)
+                void revealPath(path)
               }}
             >
               <FileText size={13} weight="regular" className="flex-none text-text-subtle" />

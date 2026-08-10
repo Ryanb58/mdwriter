@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const harness = vi.hoisted(() => ({
   listTree: vi.fn(),
+  listDirectory: vi.fn(),
   startWatcher: vi.fn(),
   stopWatcher: vi.fn(),
   pushRecentFolder: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }))
 vi.mock("../../../lib/ipc", () => ({
   ipc: {
     listTree: harness.listTree,
+    listDirectory: harness.listDirectory,
     startWatcher: harness.startWatcher,
     stopWatcher: harness.stopWatcher,
     pushRecentFolder: harness.pushRecentFolder,
@@ -38,6 +40,7 @@ const oldTree = {
   kind: "dir" as const,
   name: "old",
   path: "/old",
+  loaded: true,
   children: [{ kind: "file" as const, name: "draft.md", path: "/old/draft.md" }],
 }
 
@@ -45,15 +48,27 @@ const newTree = {
   kind: "dir" as const,
   name: "new",
   path: "/new",
+  loaded: true,
   children: [
     {
       kind: "dir" as const,
       name: "notes",
       path: "/new/notes",
-      children: [{ kind: "file" as const, name: "last.md", path: "/new/notes/last.md" }],
+      loaded: false,
+      children: [],
     },
   ],
 }
+
+const notesListing = {
+  kind: "dir" as const,
+  name: "notes",
+  path: "/new/notes",
+  loaded: true,
+  children: [{ kind: "file" as const, name: "last.md", path: "/new/notes/last.md" }],
+}
+
+const hydratedNewTree = { ...newTree, children: [notesListing] }
 
 function deps() {
   const state = useStore.getState()
@@ -77,6 +92,8 @@ describe("openFolder transaction", () => {
     harness.listTree.mockReset()
     harness.listTree.mockImplementation(async (listedPath: string) =>
       listedPath === "/old" ? oldTree : newTree)
+    harness.listDirectory.mockReset()
+    harness.listDirectory.mockResolvedValue(notesListing)
     harness.startWatcher.mockReset()
     harness.startWatcher.mockResolvedValue(undefined)
     harness.stopWatcher.mockReset()
@@ -216,15 +233,40 @@ describe("openFolder transaction", () => {
     expect(activeVault).toBe("/new")
     expect(harness.discard).toHaveBeenCalledWith(["/old"])
     expect(harness.release).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => {
+      expect(useStore.getState().selectedPath).toBe("/new/notes/last.md")
+    })
     const state = useStore.getState()
     expect(state.rootPath).toBe("/new")
-    expect(state.tree).toBe(newTree)
+    expect(state.tree).toEqual(hydratedNewTree)
     expect(state.openDoc).toBeNull()
     expect(state.selectedPath).toBe("/new/notes/last.md")
     expect(state.selectedPaths).toEqual(new Set(["/new/notes/last.md"]))
     expect(state.expandedFolders.has("/new/notes")).toBe(true)
+    expect(harness.listDirectory).toHaveBeenCalledWith("/new/notes", expect.anything())
     expect(state.blockModeOverrides).toEqual({})
     expect(state.blockTextIndex).toBeNull()
+  })
+
+  it("does not wait for recent-file restoration before opening the vault", async () => {
+    const listing = deferred<typeof notesListing>()
+    harness.listDirectory.mockReturnValue(listing.promise)
+
+    let opened = false
+    const switching = openFolder("/new", deps()).then(() => {
+      opened = true
+    })
+    await vi.waitFor(() => expect(harness.listDirectory).toHaveBeenCalledTimes(1))
+    await Promise.resolve()
+
+    expect(opened).toBe(true)
+    expect(harness.release).toHaveBeenCalledTimes(1)
+
+    listing.resolve(notesListing)
+    await switching
+    await vi.waitFor(() => {
+      expect(useStore.getState().selectedPath).toBe("/new/notes/last.md")
+    })
   })
 
   it("leaves the new vault as the backend filesystem scope after switching", async () => {
@@ -291,7 +333,7 @@ describe("openFolder transaction", () => {
     ])
     expect(harness.startWatcher.mock.calls.at(-1)).toEqual(["/new"])
     expect(useStore.getState().rootPath).toBe("/new")
-    expect(useStore.getState().tree).toBe(newTree)
+    expect(useStore.getState().tree).toEqual(hydratedNewTree)
   })
 
   it("uses canonical tree roots and still flushes a legacy symlinked open note", async () => {
@@ -299,6 +341,7 @@ describe("openFolder transaction", () => {
       kind: "dir" as const,
       name: "old",
       path: "/real/old",
+      loaded: true,
       children: [
         {
           kind: "file" as const,
@@ -311,6 +354,7 @@ describe("openFolder transaction", () => {
       kind: "dir" as const,
       name: "new",
       path: "/real/new",
+      loaded: true,
       children: [
         {
           kind: "file" as const,
@@ -355,6 +399,7 @@ describe("openFolder transaction", () => {
       kind: "dir" as const,
       name: "old",
       path: "/real/old",
+      loaded: true,
       children: [
         {
           kind: "file" as const,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { ArrowUp, Stop, TextAa, X, Lightning } from "@phosphor-icons/react"
 import { useStore } from "../../lib/store"
-import { useVaultNotes, type VaultNote } from "../../lib/vaultNotes"
+import { useOnDemandVaultNotes, type VaultNote } from "../../lib/vaultNotes"
 import { sendPrompt, cancelSession } from "./useAiSession"
 import {
   detectMentionTrigger,
@@ -38,7 +38,7 @@ export function MessageInput() {
   const consumeSkillInsertRequest = useStore((s) => s.consumeAiSkillInsertRequest)
   const openDocPath = useStore((s) => s.openDoc?.path ?? null)
   const hasSelection = useStore((s) => !!s.editorSelection?.text)
-  const notes = useVaultNotes()
+  const { notes } = useOnDemandVaultNotes(trigger !== null)
   const editorRef = useRef<HTMLDivElement>(null)
 
   const slashQuery = useMemo(() => detectSlashTrigger(draft), [draft])

@@ -36,7 +36,7 @@ export type JsonValue =
  * when the filesystem can't report it — hence the optional `?`, not `| null`.
  */
 export type TreeNode =
-  | { kind: "dir"; name: string; path: string; children: TreeNode[] }
+  | { kind: "dir"; name: string; path: string; children: TreeNode[]; loaded: boolean }
   | { kind: "file"; name: string; path: string; mtime?: number }
 
 export type TreeOptions = {
@@ -44,6 +44,14 @@ export type TreeOptions = {
   includeImages?: boolean
   includeUnsupported?: boolean
   hideGitignored?: boolean
+}
+
+/** A markdown note returned by the request-scoped vault enumeration. */
+export type VaultNoteRecord = {
+  name: string
+  path: string
+  rel: string
+  mtime?: number
 }
 
 export type SearchHit = {
@@ -187,6 +195,10 @@ type SkillMetaRaw = {
 export const ipc = {
   listTree: (root: string, options?: TreeOptions) =>
     invoke<TreeNode>("list_tree", { root, options: options ?? null }),
+  listDirectory: (path: string, options?: TreeOptions) =>
+    invoke<TreeNode>("list_directory", { path, options: options ?? null }),
+  listMarkdownNotes: (root: string, options?: TreeOptions) =>
+    invoke<VaultNoteRecord[]>("list_markdown_notes", { root, options: options ?? null }),
   readFile: (path: string) => invoke<string>("read_file", { path }),
   writeFile: (path: string, text: string) => invoke<void>("write_file", { path, text }),
   createFile: (path: string) => invoke<void>("create_file", { path }),

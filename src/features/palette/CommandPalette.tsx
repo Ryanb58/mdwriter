@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Command } from "cmdk"
 import { MagnifyingGlass, FileText, Sparkle, ArrowUp } from "@phosphor-icons/react"
 import { useStore } from "../../lib/store"
-import { useVaultNotes } from "../../lib/vaultNotes"
+import { useOnDemandVaultNotes } from "../../lib/vaultNotes"
 import { sendPrompt } from "../ai/useAiSession"
 import { openPanel } from "../../layout/layoutControl"
 import {
@@ -14,6 +14,7 @@ import { WikilinkPopover, useWikilinkResults } from "../ai/WikilinkPopover"
 import { SearchMode } from "./SearchMode"
 import { CommandMode } from "./CommandMode"
 import { onOpenPalette } from "./openPalette"
+import { revealPath } from "../tree/treeLoader"
 
 type Mode = "file" | "ask" | "search" | "command"
 
@@ -142,7 +143,7 @@ function FileMode({
   onQueryChange: (q: string) => void
   close: () => void
 }) {
-  const notes = useVaultNotes()
+  const { notes, status, error } = useOnDemandVaultNotes(true)
   // cmdk ranks items by query match when there's a query, and falls back to
   // DOM order otherwise. Sorting by mtime desc means the empty-query view
   // surfaces the user's most-recently-touched notes first.
@@ -171,9 +172,15 @@ function FileMode({
         <kbd className="text-[10px] font-mono text-text-subtle border border-border rounded px-1.5 py-0.5">esc</kbd>
       </div>
       <Command.List className="max-h-[360px] overflow-y-auto py-1.5">
-        <Command.Empty className="px-4 py-6 text-[12px] text-text-subtle text-center">
-          No matching files.
-        </Command.Empty>
+        {status === "loading" ? (
+          <div className="px-4 py-6 text-[12px] text-text-subtle text-center">Loading files…</div>
+        ) : status === "error" ? (
+          <div className="px-4 py-6 text-[12px] text-danger text-center">{error}</div>
+        ) : (
+          <Command.Empty className="px-4 py-6 text-[12px] text-text-subtle text-center">
+            No matching files.
+          </Command.Empty>
+        )}
         {files.map((f) => {
           const folder = f.rel.replace(/[\\/]?[^\\/]+$/, "")
           return (
@@ -182,6 +189,7 @@ function FileMode({
               value={`${f.rel} ${f.name}`}
               onSelect={() => {
                 useStore.getState().setSelected(f.path)
+                void revealPath(f.path)
                 close()
               }}
               className="mx-1.5 px-2.5 py-1.5 rounded-md text-[13px] flex items-center gap-2.5 cursor-pointer aria-selected:bg-accent-soft aria-selected:text-text text-text-muted"
@@ -204,7 +212,7 @@ function AskMode({ initialQuery, close }: { initialQuery: string; close: () => v
   const [trigger, setTrigger] = useState<WikilinkTrigger | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const taRef = useRef<HTMLTextAreaElement>(null)
-  const notes = useVaultNotes()
+  const { notes } = useOnDemandVaultNotes(trigger !== null)
   const results = useWikilinkResults(notes, trigger?.query ?? "")
 
   useEffect(() => {

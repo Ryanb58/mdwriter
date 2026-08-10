@@ -13,6 +13,7 @@ const dir = (path: string, children: TreeNode[]): TreeNode => ({
   name: path.split("/").pop()!,
   path,
   children,
+  loaded: true,
 })
 
 describe("targetParentDir", () => {

@@ -14,7 +14,7 @@ const saveHarness = vi.hoisted(() => ({
 vi.mock("../../../lib/ipc", () => ({
   ipc: { renamePath: (from: string, to: string) => renamePath(from, to) },
 }))
-vi.mock("../tree/useTreeActions", () => ({ refreshTree: vi.fn(async () => {}) }))
+vi.mock("../../tree/treeLoader", () => ({ refreshDirectories: vi.fn(async () => {}) }))
 vi.mock("../watcher/useExternalChanges", () => ({ noteSelfWrite: vi.fn() }))
 vi.mock("../../../lib/writeDoc", () => ({
   beginOpenDocPathMutation: saveHarness.begin,

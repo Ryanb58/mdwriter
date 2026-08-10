@@ -8,6 +8,7 @@ import { applyWikilinkInsertion, filterNotes, type WikilinkCompletionState } fro
 type Props = {
   state: WikilinkCompletionState | null
   notes: VaultNote[]
+  status?: "idle" | "loading" | "ready" | "error"
   viewRef: React.RefObject<EditorView | null>
   /** Suppress the popup until the trigger context changes. Plugin-state
    *  only — does not mutate the document. */
@@ -23,7 +24,7 @@ type Props = {
  * Keyboard handling is attached to the document so the editor keeps focus
  * — the popup never becomes the active element.
  */
-export function RawWikilinkPopup({ state, notes, viewRef, onDismiss }: Props) {
+export function RawWikilinkPopup({ state, notes, status, viewRef, onDismiss }: Props) {
   const results = state ? filterNotes(notes, state.query) : []
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -86,7 +87,9 @@ export function RawWikilinkPopup({ state, notes, viewRef, onDismiss }: Props) {
       <div className="text-[10px] uppercase tracking-[0.14em] text-text-subtle px-3 pt-2 pb-1">
         Link a note
       </div>
-      {results.length === 0 ? (
+      {status === "loading" ? (
+        <div className="px-3 pb-2 text-[12px] text-text-subtle">Loading notes…</div>
+      ) : results.length === 0 ? (
         <div className="px-3 pb-2 text-[12px] text-text-subtle">No matching notes.</div>
       ) : (
         results.map((n, i) => {

@@ -119,6 +119,8 @@ export type AppStore = {
   // the store so shift-range selection and drag-hover auto-expand can
   // both reason about visibility.
   expandedFolders: Set<string>
+  loadingFolders: Set<string>
+  folderLoadErrors: Record<string, string>
   pinnedPaths: string[]
   /**
    * Files most recently *opened in the app* per vault, newest first,
@@ -184,6 +186,9 @@ export type AppStore = {
   setSelected(path: string | null): void
   setSelectedPaths(paths: Set<string>, anchor: string | null): void
   toggleFolderExpanded(path: string, expanded?: boolean): void
+  setFolderLoading(path: string, loading: boolean): void
+  setFolderLoadError(path: string, message: string | null): void
+  clearFolderLoadState(): void
   pinPath(path: string): void
   unpinPath(path: string): void
   togglePinnedPath(path: string): void
@@ -472,6 +477,8 @@ export const useStore = create<AppStore>()(
       selectedPath: null,
       selectedPaths: new Set<string>(),
       expandedFolders: new Set<string>(),
+      loadingFolders: new Set<string>(),
+      folderLoadErrors: {},
       pinnedPaths: [],
       recentFilesByVault: {},
       openDoc: null,
@@ -526,6 +533,27 @@ export const useStore = create<AppStore>()(
           else next.delete(path)
           return { expandedFolders: next }
         }),
+      setFolderLoading: (path, loading) =>
+        set((s) => {
+          const next = new Set(s.loadingFolders)
+          if (loading) next.add(path)
+          else next.delete(path)
+          return { loadingFolders: next }
+        }),
+      setFolderLoadError: (path, message) =>
+        set((s) => {
+          if (message === null) {
+            if (!(path in s.folderLoadErrors)) return {}
+            const { [path]: _removed, ...rest } = s.folderLoadErrors
+            void _removed
+            return { folderLoadErrors: rest }
+          }
+          return {
+            folderLoadErrors: { ...s.folderLoadErrors, [path]: message },
+          }
+        }),
+      clearFolderLoadState: () =>
+        set({ loadingFolders: new Set<string>(), folderLoadErrors: {} }),
       pinPath: (path) =>
         set((s) => s.pinnedPaths.includes(path) ? {} : { pinnedPaths: [...s.pinnedPaths, path] }),
       unpinPath: (path) =>

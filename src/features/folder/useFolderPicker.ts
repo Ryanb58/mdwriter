@@ -1,7 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog"
 import { ipc } from "../../lib/ipc"
 import { useStore, treeOptionsFromSettings } from "../../lib/store"
-import { findNode } from "../tree/findNode"
+import { revealPath } from "../tree/treeLoader"
 import { beginOpenDocPathMutation } from "../../lib/writeDoc"
 import { pathIsWithin } from "../../lib/openDocumentPaths"
 import {
@@ -62,6 +62,7 @@ async function openFolderExclusive(
   let oldWatcherStopped = false
   let newWatcherStarted = false
   let committed = false
+  let openedVaultPath = path
   const opts = treeOptionsFromSettings(useStore.getState().settings)
 
   try {
@@ -111,6 +112,8 @@ async function openFolderExclusive(
         selectedPath: null,
         selectedPaths: new Set(),
         expandedFolders: new Set(),
+        loadingFolders: new Set(),
+        folderLoadErrors: {},
         openDoc: null,
         loadError: null,
         blockModeOverrides: {},
@@ -122,19 +125,8 @@ async function openFolderExclusive(
         renamingPath: null,
       })
       committed = true
-
-      // Drop the user back into the note they were writing in this vault.
-      restoreLastFile(tree.path, path)
+      openedVaultPath = tree.path
     })
-
-    // Bookkeeping that shouldn't block the vault becoming interactive.
-    ipc.pushRecentFolder(path)
-      .then(() => ipc.getRecentFolders())
-      .then(deps.setRecent)
-      .catch(() => {})
-    // Best-effort: seed AGENTS.md if missing so the AI agent has vault
-    // conventions on hand. Don't block vault open if this fails.
-    ipc.ensureVaultAgentsMd(path).catch(() => {})
   } catch (error) {
     // Once the old watcher has been stopped, any setup/save failure restores
     // both Rust's filesystem scope (listTree) and the watcher before the guard
@@ -161,6 +153,16 @@ async function openFolderExclusive(
   } finally {
     guard.release()
   }
+
+  // Post-open work is best-effort and should not delay the vault becoming
+  // interactive. Restoration selects the saved note if its reveal succeeds.
+  void restoreLastFile(openedVaultPath, path).catch(() => {})
+  ipc.pushRecentFolder(path)
+    .then(() => ipc.getRecentFolders())
+    .then(deps.setRecent)
+    .catch(() => {})
+  // Seed AGENTS.md if missing so the AI agent has vault conventions on hand.
+  ipc.ensureVaultAgentsMd(path).catch(() => {})
 }
 
 /**
@@ -168,17 +170,13 @@ async function openFolderExclusive(
  * exists) and expand its ancestor folders so the selection is visible.
  * Selection drives useOpenFile, which loads the doc from disk.
  */
-function restoreLastFile(vaultPath: string, legacyVaultPath?: string) {
+async function restoreLastFile(vaultPath: string, legacyVaultPath?: string) {
   const s = useStore.getState()
   const saved = s.recentFilesByVault[vaultPath]?.[0]
     ?? (legacyVaultPath ? s.recentFilesByVault[legacyVaultPath]?.[0] : undefined)
-  if (!saved || !findNode(s.tree, saved)) return
-  const expanded = new Set(s.expandedFolders)
-  let dir = saved.slice(0, saved.lastIndexOf("/"))
-  while (dir.length > vaultPath.length && dir.startsWith(vaultPath)) {
-    expanded.add(dir)
-    dir = dir.slice(0, dir.lastIndexOf("/"))
+  if (!saved) return
+  const result = await revealPath(saved)
+  if (result === "found" && useStore.getState().rootPath === vaultPath) {
+    useStore.getState().setSelected(saved)
   }
-  useStore.setState({ expandedFolders: expanded })
-  s.setSelected(saved)
 }

@@ -11,6 +11,7 @@ import { TreeContextMenu, type ContextActionGroup } from "./TreeContextMenu"
 import { isMarkdown, parent, relativeTo } from "../../lib/paths"
 import { handleRowClick } from "./selection"
 import { useRowDnd } from "./useTreeDnd"
+import { loadDirectory } from "./treeLoader"
 
 export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
@@ -20,6 +21,8 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
   const selectedPath = useStore((s) => s.selectedPath)
   const selectedPaths = useStore((s) => s.selectedPaths)
   const expandedFolders = useStore((s) => s.expandedFolders)
+  const loading = useStore((s) => s.loadingFolders.has(node.path))
+  const loadError = useStore((s) => s.folderLoadErrors[node.path] ?? null)
   const toggleFolderExpanded = useStore((s) => s.toggleFolderExpanded)
   const renamingPath = useStore((s) => s.renamingPath)
   const pinnedPaths = useStore((s) => s.pinnedPaths)
@@ -158,7 +161,9 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
             shift: e.shiftKey,
           })
           if (isDir && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
-            toggleFolderExpanded(node.path)
+            const opening = !expanded
+            toggleFolderExpanded(node.path, opening)
+            if (opening && !node.loaded) void loadDirectory(node.path)
           }
         }}
         onDoubleClick={(e) => {
@@ -214,6 +219,29 @@ export function TreeNodeView({ node, depth = 0 }: { node: TN; depth?: number }) 
           </button>
         )}
       </div>
+      {isDir && expanded && loading && (
+        <div
+          className="py-1 text-[11px] text-text-subtle"
+          style={{ paddingLeft: 28 + indent }}
+        >
+          Loading…
+        </div>
+      )}
+      {isDir && expanded && !loading && loadError && (
+        <div
+          className="flex items-center gap-2 py-1 text-[11px] text-danger"
+          style={{ paddingLeft: 28 + indent }}
+        >
+          <span className="truncate">{loadError}</span>
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-text-muted hover:bg-elevated hover:text-text"
+            onClick={() => { void loadDirectory(node.path) }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {isDir && expanded && (node as Extract<TN, { kind: "dir" }>).children.map((c) => (
         <TreeNodeView key={c.path} node={c} depth={depth + 1} />
       ))}

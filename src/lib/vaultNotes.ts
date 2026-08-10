@@ -1,7 +1,8 @@
-import { useMemo } from "react"
-import type { TreeNode } from "./ipc"
-import { useStore } from "./store"
+import { useEffect, useMemo, useState } from "react"
+import { ipc, type TreeNode } from "./ipc"
+import { useStore, treeOptionsFromSettings } from "./store"
 import { isMarkdown } from "./paths"
+import { errorText } from "./toast"
 
 export type VaultNote = {
   /** Display name without the `.md` extension. */
@@ -42,9 +43,61 @@ export function flattenNotes(node: TreeNode | null, rootPath: string | null): Va
   return out
 }
 
-/** React hook that returns the current vault's markdown notes. */
-export function useVaultNotes(): VaultNote[] {
+/** Markdown notes that are already present in the partially loaded sidebar. */
+export function useLoadedVaultNotes(): VaultNote[] {
   const tree = useStore((s) => s.tree)
   const rootPath = useStore((s) => s.rootPath)
   return useMemo(() => flattenNotes(tree, rootPath), [tree, rootPath])
+}
+
+/** Compatibility alias for consumers migrated in the next implementation step. */
+export const useVaultNotes = useLoadedVaultNotes
+
+/** Enumerate the current vault once, without retaining the result globally. */
+export function fetchVaultNotes(root: string): Promise<VaultNote[]> {
+  const options = treeOptionsFromSettings(useStore.getState().settings)
+  return ipc.listMarkdownNotes(root, options)
+}
+
+export type OnDemandVaultNotes = {
+  notes: VaultNote[]
+  status: "idle" | "loading" | "ready" | "error"
+  error: string | null
+}
+
+const IDLE_NOTES: OnDemandVaultNotes = { notes: [], status: "idle", error: null }
+
+/**
+ * Owns a complete note list for one mounted UI surface. Closing that surface
+ * unmounts the hook and releases the list; reopening performs a fresh walk.
+ */
+export function useOnDemandVaultNotes(enabled: boolean): OnDemandVaultNotes {
+  const root = useStore((state) => state.rootPath)
+  const [result, setResult] = useState<OnDemandVaultNotes>(IDLE_NOTES)
+
+  useEffect(() => {
+    if (!enabled || !root) {
+      setResult(IDLE_NOTES)
+      return
+    }
+
+    let cancelled = false
+    setResult({ notes: [], status: "loading", error: null })
+    void fetchVaultNotes(root).then(
+      (notes) => {
+        if (cancelled || useStore.getState().rootPath !== root) return
+        setResult({ notes, status: "ready", error: null })
+      },
+      (error) => {
+        if (cancelled || useStore.getState().rootPath !== root) return
+        setResult({ notes: [], status: "error", error: errorText(error) })
+      },
+    )
+
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, root])
+
+  return result
 }

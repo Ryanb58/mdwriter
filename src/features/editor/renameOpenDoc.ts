@@ -2,7 +2,7 @@ import { ipc } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { basename, parent, joinPath } from "../../lib/paths"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
-import { refreshTree } from "../tree/useTreeActions"
+import { refreshDirectories } from "../tree/treeLoader"
 import { beginOpenDocPathMutation } from "../../lib/writeDoc"
 import { remapOpenDocumentPath } from "../../lib/openDocumentPaths"
 import { errorText } from "../../lib/toast"
@@ -55,7 +55,7 @@ export async function renameOpenDoc(rawName: string): Promise<void> {
     guard.remap(oldPath, newPath)
     remapOpenDocumentPath(oldPath, newPath)
 
-    await refreshTree()
+    await refreshDirectories([...new Set([parent(oldPath), parent(newPath)])])
   } finally {
     guard.release()
   }

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react"
 import { ipc } from "../../lib/ipc"
 import { useStore, type OpenDoc } from "../../lib/store"
 import { basename, parent, joinPath } from "../../lib/paths"
-import { refreshTree } from "../tree/useTreeActions"
+import { refreshDirectories } from "../tree/treeLoader"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
 import { getBody } from "../../lib/doc"
 import { beginOpenDocPathMutation } from "../../lib/writeDoc"
@@ -106,7 +106,7 @@ async function performRename(
           renamedAway.add(fromPath)
           guard.remap(fromPath, target)
           remapOpenDocumentPath(fromPath, target)
-          await refreshTree()
+          await refreshDirectories([parentDir])
           return
         } catch (e) {
           // Only a name collision is retriable — try the next suffix. Any other

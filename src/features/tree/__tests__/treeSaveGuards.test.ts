@@ -26,6 +26,11 @@ vi.mock("../../watcher/useExternalChanges", () => ({
   noteSelfWrite: vi.fn(),
 }))
 
+vi.mock("../treeLoader", () => ({
+  refreshDirectories: vi.fn(async () => {}),
+  reloadLoadedDirectories: vi.fn(async () => {}),
+}))
+
 import { useStore } from "../../../lib/store"
 import { useTreeActions } from "../useTreeActions"
 

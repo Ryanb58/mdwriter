@@ -1,7 +1,7 @@
 import { ipc } from "../../lib/ipc"
 import { basename, joinPath } from "../../lib/paths"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
-import { refreshTree } from "./useTreeActions"
+import { refreshDirectories } from "./treeLoader"
 import { requestCollision, requestConfirm, type CollisionChoice } from "./dndPrompts"
 
 const MARKDOWN_EXTS = ["md", "markdown"]
@@ -160,7 +160,7 @@ export async function importDroppedFiles(
     }
 
     if (choice === "cancel") {
-      await refreshTree()
+      await refreshDirectories([targetDir])
       return { imported, skipped: skipCount, cancelled: true }
     }
     if (choice === "skip") {
@@ -177,6 +177,6 @@ export async function importDroppedFiles(
     }
   }
 
-  await refreshTree()
+  await refreshDirectories([targetDir])
   return { imported, skipped: skipCount, cancelled: false }
 }

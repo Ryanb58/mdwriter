@@ -3,7 +3,7 @@ import { basename, joinPath, parent } from "../../lib/paths"
 import { beginOpenDocPathMutation } from "../../lib/writeDoc"
 import { remapOpenDocumentPath } from "../../lib/openDocumentPaths"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
-import { refreshTree } from "./useTreeActions"
+import { refreshDirectories } from "./treeLoader"
 import { requestCollision, type CollisionChoice } from "./dndPrompts"
 import { pruneSubpaths } from "./pruneSubpaths"
 
@@ -81,9 +81,9 @@ export async function moveItems(
   let applyToRest: { choice: CollisionChoice } | null = null
 
   if (sources.length === 0) {
-    await refreshTree()
     return { moved, skipped, cancelled: false }
   }
+  const affectedDirectories = [...new Set([...sources.map(parent), targetDir])]
 
   const guard = await beginOpenDocPathMutation(sources)
   try {
@@ -120,7 +120,7 @@ export async function moveItems(
           choice = decision.choice
         }
         if (choice === "cancel") {
-          await refreshTree()
+          await refreshDirectories(affectedDirectories)
           return { moved, skipped, cancelled: true }
         }
         if (choice === "skip") {
@@ -150,7 +150,7 @@ export async function moveItems(
       moved++
     }
 
-    await refreshTree()
+    await refreshDirectories(affectedDirectories)
     return { moved, skipped, cancelled: false }
   } finally {
     guard.release()

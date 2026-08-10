@@ -1,5 +1,5 @@
 import { ipc } from "../../lib/ipc"
-import { useStore, treeOptionsFromSettings } from "../../lib/store"
+import { useStore } from "../../lib/store"
 import { joinPath, parent, basename } from "../../lib/paths"
 import { beginOpenDocPathMutation } from "../../lib/writeDoc"
 import {
@@ -8,16 +8,10 @@ import {
 } from "../../lib/openDocumentPaths"
 import { noteSelfWrite } from "../watcher/useExternalChanges"
 import { pruneSubpaths } from "./pruneSubpaths"
-import { runVaultListingExclusive } from "../../lib/vaultTransactions"
+import { refreshDirectories, reloadLoadedDirectories } from "./treeLoader"
 
 export async function refreshTree() {
-  await runVaultListingExclusive(async () => {
-    const root = useStore.getState().rootPath
-    if (!root) return
-    const opts = treeOptionsFromSettings(useStore.getState().settings)
-    const tree = await ipc.listTree(root, opts)
-    if (useStore.getState().rootPath === root) useStore.setState({ tree })
-  })
+  await reloadLoadedDirectories()
 }
 
 async function trashImpl(paths: readonly string[]) {
@@ -41,7 +35,7 @@ async function trashImpl(paths: readonly string[]) {
     // deleted editor path or leave its queued bytes behind.
     guard.discard(successful)
     removeOpenDocumentPaths(successful)
-    await refreshTree()
+    await refreshDirectories([...new Set(successful.map(parent))])
   } finally {
     guard.release()
   }
@@ -71,7 +65,7 @@ export async function createNewFile(parentDir: string) {
       if (n > 50) throw new Error("Too many untitled files")
     }
   }
-  await refreshTree()
+  await refreshDirectories([parentDir])
   useStore.getState().toggleFolderExpanded(parentDir, true)
   // Flag this path so the editor that opens it lands the cursor at end
   // of the seeded `# ` heading. Must be set before setSelected so the
@@ -97,7 +91,7 @@ export function useTreeActions() {
           if (n > 50) throw new Error("Too many untitled folders")
         }
       }
-      await refreshTree()
+      await refreshDirectories([parentDir])
       useStore.getState().toggleFolderExpanded(parentDir, true)
       useStore.getState().setSelected(candidate)
       useStore.getState().setRenamingPath(candidate)
@@ -115,7 +109,7 @@ export function useTreeActions() {
         await ipc.renamePath(from, to)
         guard.remap(from, to)
         remapOpenDocumentPath(from, to)
-        await refreshTree()
+        await refreshDirectories([...new Set([parent(from), parent(to)])])
       } finally {
         guard.release()
       }

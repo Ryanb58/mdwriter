@@ -4,7 +4,7 @@ import { getVersion } from "@tauri-apps/api/app"
 import { X, Sun, Moon, Monitor, ArrowClockwise } from "@phosphor-icons/react"
 import { useStore, type Theme, type ImagesLocation } from "../../lib/store"
 import { Toggle } from "./Toggle"
-import { refreshTree } from "../tree/useTreeActions"
+import { reloadLoadedDirectories } from "../tree/treeLoader"
 
 export function SettingsPanel() {
   const open = useStore((s) => s.settingsOpen)
@@ -44,7 +44,7 @@ export function SettingsPanel() {
     setSetting(key, value)
     // Tree-affecting toggles re-fetch the tree immediately.
     if (key === "hideGitignored" || key === "showPdfs" || key === "showImages" || key === "showUnsupported") {
-      refreshTree().catch(console.error)
+      reloadLoadedDirectories().catch(console.error)
     }
   }
 

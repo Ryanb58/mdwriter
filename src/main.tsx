@@ -7,9 +7,18 @@ import "@fontsource/ia-writer-quattro/400-italic.css";
 import "@fontsource/ia-writer-quattro/700.css";
 import "@fontsource/ia-writer-quattro/700-italic.css";
 import App from "./App";
+import {
+  loadTauriIntegrationGuest,
+  TAURI_INTEGRATION_TEST,
+} from "./lib/tauriIntegrationMode";
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+async function bootstrap() {
+  await loadTauriIntegrationGuest(TAURI_INTEGRATION_TEST)
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  )
+}
+
+void bootstrap()

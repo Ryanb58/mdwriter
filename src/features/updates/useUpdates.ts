@@ -3,6 +3,10 @@ import { check, type Update } from "@tauri-apps/plugin-updater"
 import { relaunch } from "@tauri-apps/plugin-process"
 import { listen } from "@tauri-apps/api/event"
 import { getVersion } from "@tauri-apps/api/app"
+import {
+  shouldScheduleSilentUpdateCheck,
+  TAURI_INTEGRATION_TEST,
+} from "../../lib/tauriIntegrationMode"
 
 export type UpdateStatus =
   | { kind: "idle" }
@@ -119,6 +123,7 @@ export function useUpdates() {
 
   // Initial silent check after the app settles.
   useEffect(() => {
+    if (!shouldScheduleSilentUpdateCheck(TAURI_INTEGRATION_TEST)) return
     const t = setTimeout(() => runCheck(true), SILENT_INITIAL_DELAY_MS)
     return () => clearTimeout(t)
   }, [])

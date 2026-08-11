@@ -32,11 +32,6 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
 
-    #[cfg(feature = "tauri-integration-tests")]
-    let builder = builder
-        .plugin(tauri_plugin_wdio::init())
-        .plugin(tauri_plugin_wdio_webdriver::init());
-
     // single-instance must be registered FIRST in the plugin chain (per the
     // plugin docs). When a second copy launches, focus the existing window
     // instead of opening a duplicate that would fight the file watcher on the
@@ -47,6 +42,11 @@ pub fn run() {
             log::error!("failed to reveal main window after second launch: {error}");
         }
     }));
+
+    #[cfg(feature = "tauri-integration-tests")]
+    let builder = builder
+        .plugin(tauri_plugin_wdio::init())
+        .plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
         .plugin(

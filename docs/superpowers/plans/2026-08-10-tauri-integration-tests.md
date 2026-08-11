@@ -278,6 +278,7 @@ git commit -m "test: gate the Tauri test guest"
 - Create: `e2e-tauri/specs/boot.spec.ts`
 - Modify: `package.json`
 - Modify: `pnpm-lock.yaml`
+- Modify: `pnpm-workspace.yaml`
 - Modify: `.gitignore`
 
 **Interfaces:**
@@ -287,6 +288,14 @@ git commit -m "test: gate the Tauri test guest"
 - Consumes: Task 1 Cargo feature/config and Task 2 frontend test flag.
 
 - [ ] **Step 1: Add the WebdriverIO dependencies and scripts**
+
+Replace the placeholder build policy in `pnpm-workspace.yaml` with the explicit
+dependency build permission required by Vite:
+
+```yaml
+allowBuilds:
+  esbuild: true
+```
 
 Install matching WebdriverIO 9 packages:
 
@@ -387,7 +396,7 @@ Expected: the app bundle builds and the boot spec passes against WKWebView.
 - [ ] **Step 6: Commit the harness**
 
 ```bash
-git add e2e-tauri package.json pnpm-lock.yaml .gitignore
+git add e2e-tauri package.json pnpm-lock.yaml pnpm-workspace.yaml .gitignore
 git commit -m "test: launch the real macOS app"
 ```
 

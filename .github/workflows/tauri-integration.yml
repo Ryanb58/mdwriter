@@ -1,0 +1,43 @@
+name: Tauri integration
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tauri-integration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: Tauri integration (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: macos-tauri-e2e-${{ hashFiles('src-tauri/Cargo.lock') }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:tauri
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-integration-failure
+          path: test-results/tauri
+          if-no-files-found: ignore

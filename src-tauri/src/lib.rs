@@ -43,23 +43,24 @@ pub fn run() {
         }
     }));
 
+    let builder = builder.plugin(
+        tauri_plugin_log::Builder::new()
+            .level(log_level)
+            .target(tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::Stdout,
+            ))
+            .target(tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::LogDir { file_name: None },
+            ))
+            .build(),
+    );
+
     #[cfg(feature = "tauri-integration-tests")]
     let builder = builder
         .plugin(tauri_plugin_wdio::init())
         .plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .level(log_level)
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::Stdout,
-                ))
-                .target(tauri_plugin_log::Target::new(
-                    tauri_plugin_log::TargetKind::LogDir { file_name: None },
-                ))
-                .build(),
-        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

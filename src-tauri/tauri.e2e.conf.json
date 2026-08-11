@@ -1,0 +1,37 @@
+{
+  "identifier": "dev.mdwriter.editor.e2e",
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "capabilities": [
+        {
+          "identifier": "e2e-main",
+          "windows": ["main"],
+          "permissions": [
+            "core:default",
+            "core:window:allow-start-dragging",
+            "core:window:allow-toggle-maximize",
+            "core:window:allow-show",
+            "core:window:allow-hide",
+            "core:window:allow-set-focus",
+            "core:window:allow-destroy",
+            "opener:default",
+            "dialog:allow-open",
+            "updater:allow-check",
+            "updater:allow-download-and-install",
+            "process:allow-restart",
+            "clipboard-manager:allow-read-image",
+            "clipboard-manager:allow-read-text",
+            "window-state:default",
+            "wdio:default",
+            "wdio-webdriver:default"
+          ]
+        }
+      ]
+    }
+  },
+  "bundle": {
+    "targets": ["app"],
+    "createUpdaterArtifacts": false
+  }
+}

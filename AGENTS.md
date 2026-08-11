@@ -21,6 +21,9 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib       # Rust unit tests
 cargo test --manifest-path src-tauri/Cargo.toml --lib fs::tests::lists_only_markdown_files  # one test
 
 pnpm test:e2e                                               # Playwright smoke (boots Vite, not Tauri)
+pnpm test:tauri                                             # build and run real macOS Tauri integration tests
+pnpm test:tauri:build                                       # build the isolated macOS Tauri test app
+pnpm test:tauri:run                                         # run WebdriverIO against the built test app
 ```
 
 Releases are cut via the manual `Release` GitHub Actions workflow — see `docs/RELEASING.md`. Do not change `plugins.updater.pubkey` in `tauri.conf.json` without an upgrade plan: every installed copy only trusts updates signed by that exact key.
@@ -101,6 +104,13 @@ If you change one side, change the other and update `inferType.test.ts` / the Ru
 ### E2E test scope
 
 Playwright (`e2e/`) drives `pnpm dev` (browser-only — no Tauri runtime). Anything that requires real `invoke()` calls is silently no-op'd by `useStartupRestore`'s try/catch. The current smoke test only verifies the empty state renders.
+
+WebdriverIO (`e2e-tauri/`) is the macOS-only real-app suite. `pnpm test:tauri`
+builds an isolated debug `.app` with `--features tauri-integration-tests` and
+then drives its WKWebView and real Tauri IPC. Use `test:tauri:build` followed
+by `test:tauri:run` for faster iteration. The feature and
+`src-tauri/tauri.e2e.conf.json` are test-only and must never be used for
+release builds; Playwright remains browser-only.
 
 ### Vite chunking
 

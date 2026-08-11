@@ -22,8 +22,11 @@ describe("Tauri vault watcher", () => {
         if (stop) await stop()
       })
     } finally {
-      if (watcherStarted) await invoke("stop_watcher")
-      vault.cleanup()
+      try {
+        if (watcherStarted) await invoke("stop_watcher")
+      } finally {
+        vault.cleanup()
+      }
     }
   })
 

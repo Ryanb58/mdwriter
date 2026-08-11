@@ -1,4 +1,10 @@
-import { assertAppBinaryExists, appBinaryPath } from "./helpers/paths"
+import { browser } from "@wdio/globals"
+import { captureFailureScreenshot } from "./helpers/artifacts"
+import {
+  assertAppBinaryExists,
+  appBinaryPath,
+  resetTestApplicationSupport,
+} from "./helpers/paths"
 
 export const config: WebdriverIO.Config = {
   runner: "local",
@@ -29,5 +35,15 @@ export const config: WebdriverIO.Config = {
   connectionRetryCount: 1,
   outputDir: "test-results/tauri",
   mochaOpts: { ui: "bdd", timeout: 60_000 },
-  onPrepare: assertAppBinaryExists,
+  onPrepare() {
+    assertAppBinaryExists()
+    resetTestApplicationSupport()
+  },
+  async afterTest(test, _context, { passed }) {
+    await captureFailureScreenshot({
+      passed,
+      testName: test.fullTitle || test.title,
+      saveScreenshot: (path) => browser.saveScreenshot(path),
+    })
+  },
 }

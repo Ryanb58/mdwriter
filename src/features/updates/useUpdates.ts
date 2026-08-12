@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { check, type Update } from "@tauri-apps/plugin-updater"
 import { relaunch } from "@tauri-apps/plugin-process"
-import { listen } from "@tauri-apps/api/event"
+import { listenForThisWindow } from "../../lib/windowEvents"
 import { getVersion } from "@tauri-apps/api/app"
 
 export type UpdateStatus =
@@ -125,7 +125,7 @@ export function useUpdates() {
 
   // Native menu / settings button trigger a non-silent check.
   useEffect(() => {
-    const u = listen("menu:check-updates", () => runCheck(false))
+    const u = listenForThisWindow("menu:check-updates", () => runCheck(false))
     return () => { u.then((fn) => fn()) }
   }, [])
 

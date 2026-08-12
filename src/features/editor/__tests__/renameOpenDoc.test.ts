@@ -90,6 +90,7 @@ function openAt(path: string, opts: { dirty?: boolean; body?: string } = {}) {
       ...analyzeDocument(path, text),
       saveStatus: opts.dirty ? "queued" : "clean",
       saveError: null,
+      diskDigest: null,
     },
   })
 }

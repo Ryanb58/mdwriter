@@ -1,13 +1,26 @@
 import { useEffect } from "react"
-import { listen } from "@tauri-apps/api/event"
-import { ipc, type AiStreamEvent, type AiPermissionRequest } from "../../lib/ipc"
+import {
+  agentBusyDetail,
+  ipc,
+  type AgentBusyDetail,
+  type AiStreamEvent,
+  type AiPermissionRequest,
+} from "../../lib/ipc"
 import { useStore, type AssistantMessage } from "../../lib/store"
+import { listenForThisWindow } from "../../lib/windowEvents"
 import { buildPrompt, extractSkillRefs } from "./buildPrompt"
 
 /**
  * Detect installed agents on mount and listen for the streaming events that
  * Rust emits while a session is alive. Each event mutates the latest assistant
  * message in the store so the UI re-renders.
+ *
+ * Both subscriptions are window-scoped. Rust addresses `ai-stream` and
+ * `ai-permission` at the window that owns the session (`emit_to`), and a bare
+ * `listen()` would undo that: it registers `EventTarget::Any`, which Tauri
+ * delivers to regardless of the emit target. Another window would then render
+ * this session's tokens — and, worse, its approval cards. See
+ * `src/lib/windowEvents.ts`.
  */
 export function useAiSession() {
   useEffect(() => {
@@ -27,7 +40,7 @@ export function useAiSession() {
   }, [])
 
   useEffect(() => {
-    const unlisten = listen<AiStreamEvent>("ai-stream", (e) => {
+    const unlisten = listenForThisWindow<AiStreamEvent>("ai-stream", (e) => {
       const ev = e.payload
       const store = useStore.getState()
       switch (ev.kind) {
@@ -77,7 +90,7 @@ export function useAiSession() {
   }, [])
 
   useEffect(() => {
-    const unlisten = listen<AiPermissionRequest>("ai-permission", (e) => {
+    const unlisten = listenForThisWindow<AiPermissionRequest>("ai-permission", (e) => {
       useStore.getState().addPendingPermission(e.payload)
     })
     return () => { unlisten.then((u) => u()) }
@@ -125,14 +138,33 @@ export async function sendPrompt(text: string) {
 
   try {
     await ipc.startAiSession(store.aiAgent, wrapped, root, store.aiPermissionMode)
+    // The lock was free after all (or is ours) — drop any stale busy notice.
+    store.setAiBusy(null)
   } catch (e) {
+    // One agent subprocess exists process-wide. Another window holding it is a
+    // normal, recoverable state, not an error: name the vault and let the panel
+    // offer to focus that window.
+    const busy = agentBusyDetail(e)
+    if (busy) store.setAiBusy(busy)
     store.patchLastAssistantMessage((m) => ({
       ...m,
-      text: `**Error:** ${String(e)}`,
+      text: busy ? agentBusyMessage(busy) : `**Error:** ${String(e)}`,
       finished: true,
     }))
     store.setAiRunning(false)
   }
+}
+
+/** Chat-transcript wording for a refused start. */
+export function agentBusyMessage(busy: AgentBusyDetail): string {
+  const where = busy.ownerVault ? ` in **${vaultName(busy.ownerVault)}**` : ""
+  return `**Agent busy** — another window${where} is running the agent. Only one agent session runs at a time.`
+}
+
+/** Last path segment of a vault root, for display. */
+export function vaultName(path: string): string {
+  const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/)
+  return parts[parts.length - 1] || path
 }
 
 export async function cancelSession() {

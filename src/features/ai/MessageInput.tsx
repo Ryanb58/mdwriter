@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { ArrowUp, Stop, TextAa, X, Lightning } from "@phosphor-icons/react"
 import { useStore } from "../../lib/store"
 import { useOnDemandVaultNotes, type VaultNote } from "../../lib/vaultNotes"
-import { sendPrompt, cancelSession } from "./useAiSession"
+import { sendPrompt, cancelSession, vaultName } from "./useAiSession"
 import {
   detectMentionTrigger,
   type WikilinkTrigger,
@@ -31,6 +31,7 @@ export function MessageInput() {
   const [activeIdx, setActiveIdx] = useState(0)
   const [slashActiveIdx, setSlashActiveIdx] = useState(0)
   const running = useStore((s) => s.aiRunning)
+  const busyElsewhere = useStore((s) => s.aiBusy)
   const pausedOnApproval = useStore((s) => s.pendingPermissionOrder.length > 0)
   const draftRequest = useStore((s) => s.aiDraftRequest)
   const consumeAiDraftRequest = useStore((s) => s.consumeAiDraftRequest)
@@ -127,7 +128,7 @@ export function MessageInput() {
   }
 
   function submit() {
-    if (running) return
+    if (running || busyElsewhere) return
     const t = draft.trim()
     if (!t) return
     sendPrompt(t)
@@ -264,6 +265,7 @@ export function MessageInput() {
   return (
     <div className="border-t border-border p-2.5" data-mdwriter-ai-composer>
       <SelectionChip />
+      {busyElsewhere && <AgentBusyNotice />}
       {pausedOnApproval && (
         <div className="mb-2 text-[11px] text-warning flex items-center gap-1.5">
           <span className="inline-block size-1.5 rounded-full bg-warning animate-pulse" />
@@ -273,7 +275,7 @@ export function MessageInput() {
       <div className="relative rounded-md border border-border bg-elevated focus-within:border-accent transition-colors">
         <div
           ref={editorRef}
-          contentEditable
+          contentEditable={!busyElsewhere}
           suppressContentEditableWarning
           role="textbox"
           aria-multiline="true"
@@ -317,7 +319,7 @@ export function MessageInput() {
           ) : (
             <button
               onClick={submit}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || !!busyElsewhere}
               className="p-1.5 rounded-md bg-accent text-accent-fg disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
               title="Send (Enter)"
               aria-label="Send"
@@ -610,6 +612,45 @@ function SelectionChip() {
         aria-label="Don't include selection"
       >
         <X size={10} weight="bold" />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * One agent subprocess runs at a time, and another window has it. Rather than a
+ * dead composer with no explanation, name the vault that is busy and offer to go
+ * there. Dismiss re-enables the composer so the user can retry — the lock may
+ * well have been released by then, and a retry is the only way to find out (the
+ * owner's release is not broadcast).
+ */
+function AgentBusyNotice() {
+  const busy = useStore((s) => s.aiBusy)
+  const dismiss = useStore((s) => s.setAiBusy)
+  if (!busy) return null
+  const where = busy.ownerVault ? vaultName(busy.ownerVault) : "another window"
+  return (
+    <div
+      role="status"
+      className="mb-2 flex items-center gap-1.5 text-[11px] text-warning"
+    >
+      <span className="inline-block size-1.5 rounded-full bg-warning" />
+      <span className="flex-1 truncate">
+        Agent is busy in <span className="font-medium">{where}</span>.
+      </span>
+      <button
+        onClick={() => ipc.focusWindow(busy.ownerLabel).catch(console.error)}
+        className="flex-none px-1.5 py-0.5 rounded bg-warning/15 hover:bg-warning/25 transition-colors"
+      >
+        Focus
+      </button>
+      <button
+        onClick={() => dismiss(null)}
+        className="flex-none p-0.5 rounded text-text-subtle hover:text-text hover:bg-elevated transition-colors"
+        title="Dismiss"
+        aria-label="Dismiss"
+      >
+        <X size={10} />
       </button>
     </div>
   )

@@ -1,12 +1,13 @@
 mod commands;
 mod errors;
+#[cfg(test)]
+mod ipc_isolation_tests;
 mod state;
 mod window_lifecycle;
 
 use tauri::menu::{
     MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder, WINDOW_SUBMENU_ID,
 };
-use tauri::Emitter;
 #[cfg(debug_assertions)]
 use tauri::Manager;
 
@@ -38,8 +39,10 @@ pub fn run() {
     // same vault. Desktop-only — the plugin doesn't support mobile.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        if let Err(error) = window_lifecycle::reveal_main_window(app) {
-            log::error!("failed to reveal main window after second launch: {error}");
+        // Focus whichever window the user was last in, not specifically "main":
+        // with several windows open, hoisting "main" would reorder them.
+        if let Err(error) = window_lifecycle::reveal_active_window(app) {
+            log::error!("failed to reveal a window after second launch: {error}");
         }
     }));
 
@@ -99,6 +102,17 @@ pub fn run() {
                 .item(&PredefinedMenuItem::quit(app, None)?)
                 .build()?;
 
+            let new_window_item = MenuItemBuilder::new("New Window")
+                .id(window_lifecycle::NEW_WINDOW_MENU_ID)
+                .accelerator("CmdOrCtrl+Shift+N")
+                .build(app)?;
+
+            let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_window_item)
+                .separator()
+                .item(&PredefinedMenuItem::close_window(app, None)?)
+                .build()?;
+
             let edit_menu = SubmenuBuilder::new(app, "Edit")
                 .item(&PredefinedMenuItem::undo(app, None)?)
                 .item(&PredefinedMenuItem::redo(app, None)?)
@@ -140,18 +154,33 @@ pub fn run() {
                 .bring_all_to_front()
                 .build()?;
 
-            let menu_builder = MenuBuilder::new(app).item(&app_menu).item(&edit_menu);
+            let menu_builder = MenuBuilder::new(app)
+                .item(&app_menu)
+                .item(&file_menu)
+                .item(&edit_menu);
             #[cfg(debug_assertions)]
             let menu_builder = menu_builder.item(&view_menu);
             let menu = menu_builder.item(&window_menu).build()?;
 
             app.set_menu(menu)?;
 
-            if let Err(error) = window_lifecycle::reveal_main_window(app.handle()) {
+            if let Err(error) = window_lifecycle::reveal_active_window(app.handle()) {
                 log::error!("failed to reveal main window during setup: {error}");
             }
 
             app.on_menu_event(move |app_handle, event| {
+                if event.id().as_ref() == window_lifecycle::NEW_WINDOW_MENU_ID {
+                    // Off the menu-event thread: building a window from an event
+                    // handler deadlocks on Windows (WebView2 reentrancy).
+                    let app = app_handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(error) = window_lifecycle::open_new_window(&app) {
+                            log::error!("failed to open a new window: {error}");
+                        }
+                    });
+                    return;
+                }
+
                 if let Some(command) =
                     window_lifecycle::recovery_command_for_menu_id(event.id().as_ref())
                 {
@@ -162,16 +191,20 @@ pub fn run() {
                     return;
                 }
 
+                // Menu events are addressed to the window the user is looking
+                // at, never broadcast — see `window_lifecycle::emit_menu_event`.
                 match event.id().as_ref() {
-                    "settings" => {
-                        let _ = app_handle.emit("menu:settings", ());
-                    }
+                    "settings" => window_lifecycle::emit_menu_event(app_handle, "menu:settings"),
                     "check-updates" => {
-                        let _ = app_handle.emit("menu:check-updates", ());
+                        window_lifecycle::emit_menu_event(app_handle, "menu:check-updates")
                     }
                     #[cfg(debug_assertions)]
                     "devtools" => {
-                        if let Some(w) = app_handle.get_webview_window("main") {
+                        // Toggle devtools for the focused window, not whichever
+                        // window happens to be labelled "main".
+                        if let Some(w) = window_lifecycle::menu_target_label(app_handle)
+                            .and_then(|label| app_handle.get_webview_window(&label))
+                        {
                             if w.is_devtools_open() {
                                 w.close_devtools();
                             } else {
@@ -213,6 +246,10 @@ pub fn run() {
             commands::chats::write_chat,
             commands::chats::delete_chat,
             commands::skills::list_skills,
+            commands::windows::open_new_window,
+            commands::windows::find_vault_window,
+            commands::windows::close_window,
+            commands::windows::focus_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -222,10 +259,28 @@ pub fn run() {
                 // reader/waiter threads die with the app, but the spawned
                 // `claude` child would keep running without this.
                 tauri::RunEvent::Exit => commands::agents::shutdown_session(app_handle),
+                // A closed window's per-window state (vault scope + file
+                // watcher) is reclaimed here. Destroyed — not CloseRequested —
+                // because the close can still be prevented, and the watcher must
+                // outlive a cancelled close (reference behavior S3.1, S3.2).
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } => window_lifecycle::on_window_destroyed(app_handle, &label),
+                // S3.4: on macOS, closing the last window leaves the app
+                // running — the Dock icon stays and `Reopen` below builds a
+                // fresh window. `code: None` is specifically tauri's
+                // "no windows left" exit; Quit and the updater's restart carry a
+                // code and are never prevented.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::ExitRequested {
+                    code: None, api, ..
+                } => api.prevent_exit(),
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { .. } => {
-                    if let Err(error) = window_lifecycle::reveal_main_window(app_handle) {
-                        log::error!("failed to reveal main window from Dock: {error}");
+                    if let Err(error) = window_lifecycle::reveal_active_window(app_handle) {
+                        log::error!("failed to reveal a window from the Dock: {error}");
                     }
                 }
                 _ => {}

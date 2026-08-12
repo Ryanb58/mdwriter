@@ -86,14 +86,18 @@ pub trait PermissionBroker: Send + Sync {
 /// `Arc<dyn PermissionBroker>` rather than `Box` so the session state,
 /// the cancel command, and the subprocess waiter can each hold a clone
 /// — there's no single owner.
-pub fn broker_for(
+///
+/// `owner_label` is the window that owns the session; the broker addresses its
+/// approval events there instead of broadcasting them.
+pub fn broker_for<R: tauri::Runtime>(
     agent: super::AgentId,
-    app: AppHandle,
+    app: AppHandle<R>,
+    owner_label: String,
 ) -> std::io::Result<Option<std::sync::Arc<dyn PermissionBroker>>> {
     match agent {
         super::AgentId::ClaudeCode => {
             let exe = std::env::current_exe()?;
-            let broker = claude_mcp::ClaudeCodeMcpBroker::spawn(app, exe)?;
+            let broker = claude_mcp::ClaudeCodeMcpBroker::spawn(app, exe, owner_label)?;
             Ok(Some(std::sync::Arc::new(broker)))
         }
         // Codex's approval model isn't MCP-shaped; its broker is a

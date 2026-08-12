@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { listen } from "@tauri-apps/api/event"
+import { listenForThisWindow } from "../../lib/windowEvents"
 import { ipc } from "../../lib/ipc"
 import { useStore } from "../../lib/store"
 import { cancelQueuedOpenDocSave } from "../../lib/writeDoc"
@@ -69,7 +69,7 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
     }
 
     try {
-      const text = await ipc.readFile(doc.path)
+      const snapshot = await ipc.readFile(doc.path)
       // The read crosses an async boundary. The user may have typed, switched
       // files, or otherwise replaced the buffer while Rust was reading. Only
       // apply the result to the same unchanged, still-clean document snapshot.
@@ -84,23 +84,29 @@ export async function handleVaultChange(paths: string[]): Promise<void> {
       }
       // Short-circuit on byte-identical content. This is what makes it safe
       // to bypass the self-write filter above: an autosave echo reads back as
-      // bytes-equal to the buffer, while a real external edit doesn't.
-      if (text === current.text) return
+      // bytes-equal to the buffer, while a real external edit doesn't. The
+      // digest is a pure function of those bytes, so it already matches too.
+      if (snapshot.text === current.text) return
 
       // Drop only queued-not-started work for this path. An active IPC write is
       // never cancelled (and cannot reach this branch because it keeps the
       // document dirty until it settles).
       cancelQueuedOpenDocSave(current.path)
 
+      // S2.1: a clean receiver just reloads. Taking the new digest with the
+      // text is what keeps this window's next save in-precondition instead of
+      // conflicting against the write it just absorbed.
       const { openAnalyzedDocument } = useStore.getState()
-      openAnalyzedDocument(current.path, text, "external")
+      openAnalyzedDocument(current.path, snapshot.text, "external", snapshot.digest)
     } catch (_e) { /* file gone */ }
   })
 }
 
 export function useExternalChanges() {
   useEffect(() => {
-    const unlistenP = listen<VaultEvent>("vault-changed", (e) => {
+    // Labelled subscription: this window only hears about changes under the
+    // vault *it* asked the Rust watcher to watch (reference behavior S1.3).
+    const unlistenP = listenForThisWindow<VaultEvent>("vault-changed", (e) => {
       void handleVaultChange(e.payload.paths)
     })
     return () => { unlistenP.then((u) => u()) }

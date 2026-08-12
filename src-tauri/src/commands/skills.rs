@@ -13,10 +13,12 @@
 /// Frontmatter is optional — when absent, name falls back to the folder name
 /// and description to the first 80 chars of the body.
 use crate::errors::Result;
+use crate::state::AppState;
 use gray_matter::{engine::YAML, Matter};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use tauri::State;
 
 #[derive(Serialize, Debug, Clone, Copy)]
 #[serde(rename_all = "kebab-case")]
@@ -38,11 +40,39 @@ pub struct SkillMeta {
 }
 
 #[tauri::command]
-pub fn list_skills(root_path: Option<String>) -> Result<Vec<SkillMeta>> {
+pub fn list_skills<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: State<'_, AppState>,
+    root_path: Option<String>,
+) -> Result<Vec<SkillMeta>> {
+    list_skills_scoped(state.inner(), window.label(), root_path)
+}
+
+/// The vault half of the scan is validated against the vault the *calling
+/// window* has open, so window B can't enumerate (and later ask an agent to
+/// read) skills out of window A's vault by passing A's root. The user-level
+/// half (`~/.claude`, `~/.agents`) is deliberately unscoped — it belongs to the
+/// person, not to a vault, and every window sees the same list.
+fn list_skills_scoped(
+    state: &AppState,
+    label: &str,
+    root_path: Option<String>,
+) -> Result<Vec<SkillMeta>> {
+    let vault_root = match root_path.as_deref() {
+        Some(root) => Some(
+            state
+                .get_or_create(label)
+                .ensure_within_active_vault(Path::new(root))?,
+        ),
+        None => None,
+    };
+    Ok(list_skills_impl(vault_root.as_deref()))
+}
+
+fn list_skills_impl(root_path: Option<&Path>) -> Vec<SkillMeta> {
     let mut out: Vec<SkillMeta> = Vec::new();
 
-    if let Some(root) = root_path.as_deref() {
-        let root = Path::new(root);
+    if let Some(root) = root_path {
         scan_dir(
             &root.join(".claude").join("skills"),
             SkillSource::VaultClaude,
@@ -85,7 +115,7 @@ pub fn list_skills(root_path: Option<String>) -> Result<Vec<SkillMeta>> {
     });
 
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    Ok(out)
+    out
 }
 
 fn scan_dir(dir: &Path, source: SkillSource, vault_root: Option<&Path>, out: &mut Vec<SkillMeta>) {
@@ -220,7 +250,7 @@ mod tests {
             "---\ndescription: Outline\n---\nbody",
         );
 
-        let result = list_skills(Some(root.to_string_lossy().into_owned())).unwrap();
+        let result = list_skills_impl(Some(root));
         // Plus any user-level skills picked up from $HOME on the test runner.
         let names: Vec<&str> = result.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"summarize"));
@@ -240,15 +270,82 @@ mod tests {
         let root = tmp.path();
         let empty = root.join(".claude/skills/empty");
         fs::create_dir_all(&empty).unwrap();
-        let result = list_skills(Some(root.to_string_lossy().into_owned())).unwrap();
+        let result = list_skills_impl(Some(root));
         assert!(result.iter().all(|s| s.name != "empty"));
+    }
+
+    #[test]
+    fn a_window_can_list_skills_from_its_own_vault() {
+        let vault = tempdir().unwrap();
+        let unique = format!("mdwriter-scope-own-{}", std::process::id());
+        write_skill(
+            &vault.path().join(".claude/skills"),
+            &unique,
+            "---\ndescription: mine\n---\nbody",
+        );
+        let state = AppState::default();
+        state
+            .get_or_create("a")
+            .set_active_vault(Some(vault.path().canonicalize().unwrap()));
+
+        let result =
+            list_skills_scoped(&state, "a", Some(vault.path().to_string_lossy().into_owned()))
+                .unwrap();
+
+        assert!(result.iter().any(|s| s.name == unique));
+    }
+
+    #[test]
+    fn a_window_cannot_list_skills_from_another_windows_vault() {
+        // S1.3: window B passing window A's root — a perfectly valid vault path
+        // for A — must be rejected rather than silently enumerating A's vault.
+        let vault_a = tempdir().unwrap();
+        let vault_b = tempdir().unwrap();
+        let unique = format!("mdwriter-scope-cross-{}", std::process::id());
+        write_skill(
+            &vault_a.path().join(".claude/skills"),
+            &unique,
+            "---\ndescription: a only\n---\nbody",
+        );
+        let state = AppState::default();
+        state
+            .get_or_create("a")
+            .set_active_vault(Some(vault_a.path().canonicalize().unwrap()));
+        state
+            .get_or_create("b")
+            .set_active_vault(Some(vault_b.path().canonicalize().unwrap()));
+
+        let cross = list_skills_scoped(
+            &state,
+            "b",
+            Some(vault_a.path().to_string_lossy().into_owned()),
+        );
+
+        assert!(matches!(cross, Err(crate::errors::AppError::InvalidPath(_))));
+        // And B asking for its own (skill-less) vault sees none of A's skills.
+        let own = list_skills_scoped(
+            &state,
+            "b",
+            Some(vault_b.path().to_string_lossy().into_owned()),
+        )
+        .unwrap();
+        assert!(own.iter().all(|s| s.name != unique));
+    }
+
+    #[test]
+    fn a_null_root_still_lists_user_skills_for_a_vaultless_window() {
+        // The palette opens before a vault is picked; `rootPath: null` must not
+        // become an error just because the window has no active vault.
+        let state = AppState::default();
+
+        assert!(list_skills_scoped(&state, "a", None).is_ok());
     }
 
     #[test]
     fn list_skills_with_none_root_only_scans_user_dirs() {
         // No vault root → should not panic and should return a vec
         // (possibly empty depending on the test runner's $HOME).
-        let _ = list_skills(None).unwrap();
+        let _ = list_skills_impl(None);
     }
 
     #[cfg(unix)]
@@ -275,7 +372,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = list_skills(Some(root.to_string_lossy().into_owned())).unwrap();
+        let result = list_skills_impl(Some(root));
 
         let matches: Vec<_> = result.iter().filter(|s| s.name == unique).collect();
         assert_eq!(matches.len(), 1, "symlinked duplicate should be removed");

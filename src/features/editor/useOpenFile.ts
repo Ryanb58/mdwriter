@@ -84,7 +84,7 @@ export function useOpenFile() {
       }
 
       try {
-        const text = await ipc.readFile(selectedPath)
+        const snapshot = await ipc.readFile(selectedPath)
         if (cancelled || useStore.getState().selectedPath !== selectedPath) return
 
         // The read can be slow enough for the user to type into the old note.
@@ -103,7 +103,9 @@ export function useOpenFile() {
         }
         if (cancelled || useStore.getState().selectedPath !== selectedPath) return
         if (useStore.getState().openDoc?.path === selectedPath) return
-        openAnalyzedDocument(selectedPath, text, "disk")
+        // The digest travels with the text: it is the precondition every save
+        // of this buffer asserts against (S2.3).
+        openAnalyzedDocument(selectedPath, snapshot.text, "disk", snapshot.digest)
       } catch (e) {
         if (cancelled) return
         setLoadError({

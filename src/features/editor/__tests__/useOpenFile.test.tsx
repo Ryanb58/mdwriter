@@ -16,11 +16,18 @@ vi.mock("../../../lib/writeDoc", () => ({
 }))
 
 import { ipc } from "../../../lib/ipc"
+import type { FileSnapshot } from "../../../lib/ipc"
 import { useStore } from "../../../lib/store"
 import { DocumentLoadState } from "../DocumentLoadState"
 import { useOpenFile } from "../useOpenFile"
 
 const readFile = vi.mocked(ipc.readFile)
+
+/** `readFile` returns bytes plus the digest that becomes the save
+ *  precondition; these tests only care about the bytes. */
+function snapshot(text: string): FileSnapshot {
+  return { text, digest: `digest:${text}` }
+}
 
 function Harness() {
   const { retry } = useOpenFile()
@@ -63,7 +70,7 @@ describe("useOpenFile", () => {
   })
 
   it("opens a risky read directly in raw mode", async () => {
-    readFile.mockResolvedValue("A note with a footnote[^one].")
+    readFile.mockResolvedValue(snapshot("A note with a footnote[^one]."))
     useStore.setState({
       selectedPath: "/vault/risky.md",
       selectedPaths: new Set(["/vault/risky.md"]),
@@ -127,7 +134,7 @@ describe("useOpenFile", () => {
   })
 
   it("retries the selected read and clears the error only after success", async () => {
-    const retryRead = deferred<string>()
+    const retryRead = deferred<FileSnapshot>()
     readFile
       .mockRejectedValueOnce(new Error("temporarily unavailable"))
       .mockImplementationOnce(() => retryRead.promise)
@@ -143,7 +150,7 @@ describe("useOpenFile", () => {
     expect(readFile).toHaveBeenCalledTimes(2)
     expect(useStore.getState().loadError?.path).toBe("/vault/retry.md")
 
-    retryRead.resolve("# Recovered")
+    retryRead.resolve(snapshot("# Recovered"))
     await waitFor(() => expect(useStore.getState().loadError).toBeNull())
     expect(useStore.getState().openDoc?.text).toBe("# Recovered")
   })
@@ -182,7 +189,7 @@ describe("useOpenFile", () => {
     })
     readFile.mockImplementation(async () => {
       order.push("read")
-      return "B"
+      return snapshot("B")
     })
     useStore.getState().setSelected("/vault/b.md")
 
@@ -212,7 +219,7 @@ describe("useOpenFile", () => {
   })
 
   it("flushes an edit made while the next file is being read before replacing it", async () => {
-    const nextRead = deferred<string>()
+    const nextRead = deferred<FileSnapshot>()
     const finalFlush = deferred<void>()
     useStore.getState().openAnalyzedDocument("/vault/a.md", "A", "disk")
     useStore.getState().editOpenDoc("first A")
@@ -228,7 +235,7 @@ describe("useOpenFile", () => {
     await waitFor(() => expect(readFile).toHaveBeenCalledWith("/vault/b.md"))
 
     act(() => useStore.getState().editOpenDoc("latest A"))
-    nextRead.resolve("B")
+    nextRead.resolve(snapshot("B"))
     await waitFor(() => expect(saveHarness.flushOpenDocSave).toHaveBeenCalledTimes(2))
     expect(useStore.getState().openDoc?.path).toBe("/vault/a.md")
 
@@ -237,7 +244,7 @@ describe("useOpenFile", () => {
   })
 
   it("follows a renamed source when an edit lands during the replacement read", async () => {
-    const nextRead = deferred<string>()
+    const nextRead = deferred<FileSnapshot>()
     useStore.getState().openAnalyzedDocument("/vault/old.md", "A", "disk")
     useStore.getState().editOpenDoc("first A")
     saveHarness.flushOpenDocSave
@@ -256,7 +263,7 @@ describe("useOpenFile", () => {
     await waitFor(() => expect(readFile).toHaveBeenCalledWith("/vault/b.md"))
 
     act(() => useStore.getState().editOpenDoc("latest renamed A"))
-    nextRead.resolve("B")
+    nextRead.resolve(snapshot("B"))
 
     await waitFor(() => expect(useStore.getState().openDoc?.path).toBe("/vault/b.md"))
     expect(saveHarness.flushOpenDocSave).toHaveBeenNthCalledWith(
@@ -292,8 +299,10 @@ describe("useOpenFile", () => {
   })
 
   it("does not let a stale intermediate read replace a newer selection", async () => {
-    const b = deferred<string>()
-    readFile.mockImplementation((path) => path === "/vault/b.md" ? b.promise : Promise.resolve("C"))
+    const b = deferred<FileSnapshot>()
+    readFile.mockImplementation((path) =>
+      path === "/vault/b.md" ? b.promise : Promise.resolve(snapshot("C")),
+    )
     useStore.getState().openAnalyzedDocument("/vault/a.md", "A", "disk")
     useStore.getState().setSelected("/vault/b.md")
     render(<Harness />)
@@ -301,7 +310,7 @@ describe("useOpenFile", () => {
 
     act(() => useStore.getState().setSelected("/vault/c.md"))
     await waitFor(() => expect(useStore.getState().openDoc?.path).toBe("/vault/c.md"))
-    b.resolve("B")
+    b.resolve(snapshot("B"))
     await act(async () => { await Promise.resolve() })
 
     expect(useStore.getState().openDoc?.path).toBe("/vault/c.md")

@@ -61,31 +61,60 @@ struct ChatFile {
 }
 
 // The #[tauri::command] wrappers validate the frontend-supplied vault path
-// against the active vault (set by list_tree) before touching disk, so a
-// compromised webview can't aim the chat store at an arbitrary directory.
+// against the vault the *calling window* has open (set by that window's
+// list_tree) before touching disk, so a compromised webview can't aim the chat
+// store at an arbitrary directory — nor at another window's vault.
 // The *_impl functions hold the real logic and stay directly unit-testable.
 
+/// Vault-scope guard for every chat command, resolved through the calling
+/// window's label.
+fn ensure_chat_scope(state: &AppState, label: &str, vault_path: &str) -> Result<PathBuf> {
+    state
+        .get_or_create(label)
+        .ensure_within_active_vault(Path::new(vault_path))
+}
+
 #[tauri::command]
-pub fn list_chats(state: State<'_, AppState>, vault_path: String) -> Result<Vec<ChatSummary>> {
-    state.ensure_within_active_vault(Path::new(&vault_path))?;
+pub fn list_chats<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: State<'_, AppState>,
+    vault_path: String,
+) -> Result<Vec<ChatSummary>> {
+    ensure_chat_scope(state.inner(), window.label(), &vault_path)?;
     list_chats_impl(vault_path)
 }
 
 #[tauri::command]
-pub fn read_chat(state: State<'_, AppState>, vault_path: String, id: String) -> Result<serde_json::Value> {
-    state.ensure_within_active_vault(Path::new(&vault_path))?;
+pub fn read_chat<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: State<'_, AppState>,
+    vault_path: String,
+    id: String,
+) -> Result<serde_json::Value> {
+    ensure_chat_scope(state.inner(), window.label(), &vault_path)?;
     read_chat_impl(vault_path, id)
 }
 
 #[tauri::command]
-pub fn write_chat(state: State<'_, AppState>, vault_path: String, id: String, data: serde_json::Value) -> Result<()> {
-    state.ensure_within_active_vault(Path::new(&vault_path))?;
+pub fn write_chat<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: State<'_, AppState>,
+    vault_path: String,
+    id: String,
+    data: serde_json::Value,
+) -> Result<()> {
+    ensure_chat_scope(state.inner(), window.label(), &vault_path)?;
     write_chat_impl(vault_path, id, data)
 }
 
 #[tauri::command]
-pub fn delete_chat(state: State<'_, AppState>, vault_path: String, id: String) -> Result<()> {
-    state.ensure_within_active_vault(Path::new(&vault_path))?;
+pub fn delete_chat<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+    state: State<'_, AppState>,
+    vault_path: String,
+    id: String,
+) -> Result<()> {
+    ensure_chat_scope(state.inner(), window.label(), &vault_path)?;
     delete_chat_impl(vault_path, id)
 }
 
@@ -273,5 +302,28 @@ mod tests {
         delete_chat_impl(vault.clone(), "nope".into()).unwrap();
         // Second call must also succeed.
         delete_chat_impl(vault, "nope".into()).unwrap();
+    }
+
+    #[test]
+    fn chat_scope_is_per_window() {
+        // Every chat command routes through this guard. It used to validate
+        // against one process-wide vault, so window B could list, read, write
+        // and delete window A's chats by passing A's vault path.
+        let vault_a = tempdir().unwrap();
+        let vault_b = tempdir().unwrap();
+        let state = AppState::default();
+        state
+            .get_or_create("a")
+            .set_active_vault(Some(vault_a.path().canonicalize().unwrap()));
+        state
+            .get_or_create("b")
+            .set_active_vault(Some(vault_b.path().canonicalize().unwrap()));
+
+        let a_path = vault_a.path().to_string_lossy().to_string();
+        assert!(ensure_chat_scope(&state, "a", &a_path).is_ok());
+        assert!(matches!(
+            ensure_chat_scope(&state, "b", &a_path),
+            Err(AppError::InvalidPath(_))
+        ));
     }
 }

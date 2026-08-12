@@ -8,6 +8,8 @@ const harness = vi.hoisted(() => ({
   pushRecentFolder: vi.fn(),
   getRecentFolders: vi.fn(),
   ensureVaultAgentsMd: vi.fn(),
+  findVaultWindow: vi.fn(),
+  focusWindow: vi.fn(),
   begin: vi.fn(),
   flush: vi.fn(),
   remap: vi.fn(),
@@ -26,6 +28,8 @@ vi.mock("../../../lib/ipc", () => ({
     pushRecentFolder: harness.pushRecentFolder,
     getRecentFolders: harness.getRecentFolders,
     ensureVaultAgentsMd: harness.ensureVaultAgentsMd,
+    findVaultWindow: harness.findVaultWindow,
+    focusWindow: harness.focusWindow,
   },
 }))
 
@@ -104,6 +108,10 @@ describe("openFolder transaction", () => {
     harness.getRecentFolders.mockResolvedValue(["/new", "/old"])
     harness.ensureVaultAgentsMd.mockReset()
     harness.ensureVaultAgentsMd.mockResolvedValue(undefined)
+    harness.findVaultWindow.mockReset()
+    harness.findVaultWindow.mockResolvedValue(null)
+    harness.focusWindow.mockReset()
+    harness.focusWindow.mockResolvedValue(undefined)
     harness.begin.mockReset()
     harness.flush.mockReset()
     harness.flush.mockResolvedValue(undefined)
@@ -426,6 +434,41 @@ describe("openFolder transaction", () => {
     expect(harness.startWatcher.mock.calls.at(-1)).toEqual(["/real/old"])
     expect(useStore.getState().rootPath).toBe("/alias/old")
     expect(useStore.getState().openDoc?.path).toBe("/real/old/draft.md")
+  })
+
+  it("focuses the window that already has the vault instead of opening it twice", async () => {
+    // Reference behavior S1.5. Two windows on one vault would mean two watchers
+    // and two autosave loops on the same files.
+    harness.findVaultWindow.mockResolvedValue("w-other")
+
+    await openFolder("/new", deps())
+
+    expect(harness.focusWindow).toHaveBeenCalledWith("w-other")
+    // This window is left exactly as it was: no teardown, no listing, no
+    // watcher churn.
+    expectOldVaultIntact()
+    expect(harness.stopWatcher).not.toHaveBeenCalled()
+    expect(harness.listTree).not.toHaveBeenCalled()
+    expect(harness.startWatcher).not.toHaveBeenCalled()
+    expect(harness.begin).not.toHaveBeenCalled()
+  })
+
+  it("opens normally when no other window has the vault", async () => {
+    await openFolder("/new", deps())
+
+    expect(harness.findVaultWindow).toHaveBeenCalledWith("/new")
+    expect(harness.focusWindow).not.toHaveBeenCalled()
+    expect(useStore.getState().rootPath).toBe("/new")
+  })
+
+  it("opens normally when the duplicate check itself fails", async () => {
+    // A lookup failure must not be able to block opening a folder.
+    harness.findVaultWindow.mockRejectedValue(new Error("no tauri"))
+
+    await openFolder("/new", deps())
+
+    expect(harness.focusWindow).not.toHaveBeenCalled()
+    expect(useStore.getState().rootPath).toBe("/new")
   })
 })
 

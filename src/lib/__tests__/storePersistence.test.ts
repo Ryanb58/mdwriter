@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest"
-import { useStore } from "../store"
+import { persistedStorageForTests, useStore } from "../store"
 
 describe("store persistence boundaries", () => {
   beforeEach(() => {
-    localStorage.removeItem("mdwriter:store")
     useStore.setState({
       openDoc: null,
       editorMode: "block",
@@ -13,6 +12,10 @@ describe("store persistence boundaries", () => {
       selectedPath: null,
       rightPaneTab: "properties",
     })
+    // Drop every scoped entry (and this window's write cache) *after* the
+    // setState above, since persisting is what that setState does — otherwise
+    // the fresh per-key entries would shadow the legacy blob under test.
+    persistedStorageForTests.removeItem("mdwriter")
   })
 
   it("drops legacy editor session state while restoring allowed preferences", async () => {

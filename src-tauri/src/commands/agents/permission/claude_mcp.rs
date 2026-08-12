@@ -71,6 +71,11 @@ type Allowlist = Arc<Mutex<Vec<AllowRule>>>;
 pub struct ClaudeCodeMcpBroker {
     port: u16,
     token: String,
+    /// Window label that owns this session. Approval events are addressed here
+    /// with `emit_to` rather than broadcast: an approval card is a request to
+    /// authorize a write inside *this* window's vault, so it must not appear in
+    /// (or be answerable from) any other window.
+    owner_label: String,
     /// Directory holding the generated mcp-config.json. Removed on drop.
     tmp_dir: PathBuf,
     mcp_config_path: PathBuf,
@@ -85,7 +90,11 @@ impl ClaudeCodeMcpBroker {
     /// Bind a fresh loopback port, generate a token, write the
     /// `--mcp-config` file, and spawn the acceptor thread. The returned
     /// broker is ready to be wired into an [`AgentCommand`].
-    pub fn spawn(app: AppHandle, exe_path: PathBuf) -> std::io::Result<Self> {
+    pub fn spawn<R: tauri::Runtime>(
+        app: AppHandle<R>,
+        exe_path: PathBuf,
+        owner_label: String,
+    ) -> std::io::Result<Self> {
         // tiny_http binds for us — pass port 0 to ask the OS for one and
         // ask the listener for its address back.
         let server = Server::http("127.0.0.1:0").map_err(|e| {
@@ -119,6 +128,7 @@ impl ClaudeCodeMcpBroker {
         let allowlist_for_thread = allowlist.clone();
         let shutdown_for_thread = shutdown_flag.clone();
         let token_for_thread = token.clone();
+        let owner_for_thread = owner_label.clone();
         thread::spawn(move || {
             run_acceptor(
                 server,
@@ -127,12 +137,14 @@ impl ClaudeCodeMcpBroker {
                 allowlist_for_thread,
                 shutdown_for_thread,
                 token_for_thread,
+                owner_for_thread,
             );
         });
 
         Ok(Self {
             port,
             token,
+            owner_label,
             tmp_dir,
             mcp_config_path,
             pending,
@@ -182,6 +194,7 @@ impl PermissionBroker for ClaudeCodeMcpBroker {
     }
 
     fn shutdown(&self) {
+        log::debug!("permission broker for window {} shutting down", self.owner_label);
         *self.shutdown_flag.lock().unwrap() = true;
         let drained: Vec<(String, Sender<Decision>)> =
             self.pending.lock().unwrap().drain().collect();
@@ -206,13 +219,14 @@ impl Drop for ClaudeCodeMcpBroker {
     }
 }
 
-fn run_acceptor(
+fn run_acceptor<R: tauri::Runtime>(
     server: Server,
-    app: AppHandle,
+    app: AppHandle<R>,
     pending: PendingMap,
     allowlist: Allowlist,
     shutdown_flag: Arc<Mutex<bool>>,
     token: String,
+    owner_label: String,
 ) {
     // recv_timeout lets us poll the shutdown flag without a separate
     // wakeup channel. 50ms is fast enough that shutdown feels instant.
@@ -227,18 +241,20 @@ fn run_acceptor(
         let pending = pending.clone();
         let allowlist = allowlist.clone();
         let token = token.clone();
+        let owner_label = owner_label.clone();
         thread::spawn(move || {
-            handle_request(request, app, pending, allowlist, token);
+            handle_request(request, app, pending, allowlist, token, owner_label);
         });
     }
 }
 
-fn handle_request(
+fn handle_request<R: tauri::Runtime>(
     mut request: tiny_http::Request,
-    app: AppHandle,
+    app: AppHandle<R>,
     pending: PendingMap,
     allowlist: Allowlist,
     token: String,
+    owner_label: String,
 ) {
     // Route + method check first so we can fast-reject bad probes
     // before we touch the body.
@@ -293,7 +309,7 @@ fn handle_request(
         input: wire.input.clone(),
         tool_use_id: wire.tool_use_id.clone(),
     };
-    let _ = app.emit("ai-permission", &event);
+    emit_permission_request(&app, &owner_label, &event);
 
     // Wait — possibly for minutes — for the UI to respond. Shutdown
     // drains the sender, so this will unblock cleanly on session end.
@@ -305,6 +321,21 @@ fn handle_request(
     pending.lock().unwrap().remove(&id);
 
     let _ = request.respond(json_response(&decision));
+}
+
+/// Address an approval request at the session's owning window.
+///
+/// A broadcast `emit` puts the card in every open window, and since
+/// `respond_permission` resolves by opaque id against the one process-global
+/// broker, whichever window answers first authorizes a tool call inside the
+/// *owner's* vault. `emit_to` is half the fix; the receiving side has to
+/// register against its own label too (`listenForThisWindow`).
+pub(crate) fn emit_permission_request<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner_label: &str,
+    event: &PermissionEvent,
+) {
+    let _ = app.emit_to(owner_label, "ai-permission", event);
 }
 
 fn json_response(decision: &Decision) -> Response<std::io::Cursor<Vec<u8>>> {
@@ -484,6 +515,26 @@ mod tests {
         let t = generate_token();
         assert_eq!(t.len(), 32);
         assert!(t.chars().all(|c| c.is_ascii_hexdigit()), "token contained non-hex chars: {t}");
+    }
+
+    /// The owner label has to survive `spawn` — the acceptor thread it starts is
+    /// what addresses every `ai-permission` event, and a broker that lost the
+    /// label would have nothing to address them to.
+    #[test]
+    fn a_spawned_broker_remembers_which_window_owns_it() {
+        let app = tauri::test::mock_app();
+        let broker = ClaudeCodeMcpBroker::spawn(
+            app.handle().clone(),
+            // Never executed: nothing runs the MCP server in this test.
+            PathBuf::from("/nonexistent/mdwriter"),
+            "w-second".to_string(),
+        )
+        .expect("the broker binds a loopback port");
+
+        assert_eq!(broker.owner_label, "w-second");
+        // Stop the acceptor thread before the test ends; `Drop` also removes the
+        // generated mcp-config directory.
+        broker.shutdown();
     }
 
     /// Allowlist short-circuit: when a rule matches, the broker resolves

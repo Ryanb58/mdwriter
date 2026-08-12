@@ -1,3 +1,16 @@
+//! Recently-opened folders.
+//!
+//! Deliberately **not** window-scoped: the recents list is one per user, shared
+//! by every window, and the two commands below take no path that could be aimed
+//! at another window's vault (`get` reads the shared list, `push` prepends the
+//! folder the user just picked). Windows are meant to see each other's history
+//! here — it is also what lets "open a folder already open elsewhere" focus the
+//! window that has it (reference behavior S1.5).
+//!
+//! The concurrent read-modify-write on `recent.json` when two windows open a
+//! vault at the same moment is a real race, and it is P7's (shared-storage
+//! hygiene), not this piece's — no amount of label scoping fixes it.
+
 use crate::errors::Result;
 use std::path::PathBuf;
 use tauri::Manager;

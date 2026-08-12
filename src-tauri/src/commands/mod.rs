@@ -6,3 +6,4 @@ pub mod recent;
 pub mod search;
 pub mod skills;
 pub mod watch;
+pub mod windows;

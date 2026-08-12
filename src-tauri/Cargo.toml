@@ -51,4 +51,9 @@ tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 tempfile = "3"
+# `test` pulls in tauri's mock runtime (no extra crates — the feature is empty
+# apart from unlocking `tauri::test`). It is what lets the IPC-routing tests
+# drive real `#[tauri::command]` invocations from two labelled webviews instead
+# of only exercising the plain-Rust seams underneath them.
+tauri = { version = "2", features = ["test"] }
 

@@ -7,6 +7,7 @@ import { TreePane } from "./features/tree/TreePane"
 import { useTreeShortcuts } from "./features/tree/useTreeShortcuts"
 import { DndModals } from "./features/tree/DndModals"
 import { EditorPane } from "./features/editor/EditorPane"
+import { SaveConflictDialog } from "./features/editor/SaveConflictDialog"
 import { AiPanel } from "./features/ai/AiPanel"
 import { PropertiesPane } from "./features/properties/PropertiesPane"
 import { useAiSession } from "./features/ai/useAiSession"
@@ -21,12 +22,14 @@ import { useExternalChanges } from "./features/watcher/useExternalChanges"
 import { useUpdates } from "./features/updates/useUpdates"
 import { UpdateBanner } from "./features/updates/UpdateBanner"
 import { usePasteDiagnostic } from "./lib/pasteDiagnostic"
+import { useSharedPersistSync } from "./lib/sharedPersistSync"
 import { LayoutShell, useLayout } from "./layout/LayoutShell"
 import { Toasts } from "./components/Toasts"
 import "./App.css"
 
 export default function App() {
   useStartupRestore()
+  useSharedPersistSync()
   useExternalChanges()
   useTheme()
   useTreeShortcuts()
@@ -80,6 +83,7 @@ export default function App() {
       <SettingsPanel />
       <ShortcutsModal />
       <DndModals />
+      <SaveConflictDialog />
       <UpdateBanner status={updates.status} onInstall={updates.install} onDismiss={updates.dismiss} />
       <Toasts />
     </>

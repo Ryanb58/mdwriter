@@ -16,20 +16,31 @@ pub struct VaultNoteRecord {
 }
 
 #[tauri::command]
-pub fn list_markdown_notes(
+pub fn list_markdown_notes<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
     state: State<'_, AppState>,
     root: PathBuf,
     options: Option<TreeOptions>,
 ) -> Result<Vec<VaultNoteRecord>> {
-    list_markdown_notes_scoped(state.inner(), root, options.unwrap_or_default())
+    list_markdown_notes_scoped(
+        state.inner(),
+        window.label(),
+        root,
+        options.unwrap_or_default(),
+    )
 }
 
 fn list_markdown_notes_scoped(
     state: &AppState,
+    label: &str,
     root: PathBuf,
     options: TreeOptions,
 ) -> Result<Vec<VaultNoteRecord>> {
-    let canonical = state.ensure_within_active_vault(&root)?;
+    // Validated against the *calling window's* vault, so window B can't list
+    // window A's vault by passing A's root.
+    let canonical = state
+        .get_or_create(label)
+        .ensure_within_active_vault(&root)?;
     list_markdown_notes_impl(canonical, options)
 }
 
@@ -154,14 +165,50 @@ mod tests {
         let outside = tempdir().unwrap();
         fs::write(outside.path().join("secret.md"), "secret").unwrap();
         let state = AppState::default();
-        *state.active_vault.lock().unwrap() = Some(vault.path().canonicalize().unwrap());
+        state
+            .get_or_create("main")
+            .set_active_vault(Some(vault.path().canonicalize().unwrap()));
 
         let result = list_markdown_notes_scoped(
             &state,
+            "main",
             outside.path().to_path_buf(),
             TreeOptions::default(),
         );
 
         assert!(matches!(result, Err(AppError::InvalidPath(_))));
+    }
+
+    #[test]
+    fn scoped_listing_is_scoped_to_the_calling_window() {
+        let vault_a = tempdir().unwrap();
+        let vault_b = tempdir().unwrap();
+        fs::write(vault_a.path().join("a.md"), "a").unwrap();
+        fs::write(vault_b.path().join("b.md"), "b").unwrap();
+        let state = AppState::default();
+        state
+            .get_or_create("a")
+            .set_active_vault(Some(vault_a.path().canonicalize().unwrap()));
+        state
+            .get_or_create("b")
+            .set_active_vault(Some(vault_b.path().canonicalize().unwrap()));
+
+        let own = list_markdown_notes_scoped(
+            &state,
+            "a",
+            vault_a.path().to_path_buf(),
+            TreeOptions::default(),
+        )
+        .unwrap();
+        let cross = list_markdown_notes_scoped(
+            &state,
+            "b",
+            vault_a.path().to_path_buf(),
+            TreeOptions::default(),
+        );
+
+        assert_eq!(own.len(), 1);
+        assert_eq!(own[0].rel, "a.md");
+        assert!(matches!(cross, Err(AppError::InvalidPath(_))));
     }
 }

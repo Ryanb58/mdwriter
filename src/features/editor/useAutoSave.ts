@@ -4,7 +4,7 @@ import {
   scheduleOpenDocSave,
   flushOpenDocSave,
 } from "../../lib/writeDoc"
-import { isMacTauri } from "../../layout/useIsMacTauri"
+import { ipc } from "../../lib/ipc"
 
 export function useAutoSave() {
   const doc = useStore((s) => s.openDoc)
@@ -26,9 +26,9 @@ export function useAutoSave() {
   }, [doc?.path])
 
   // Flush on window close. The autosave debounce is 500ms — without this,
-  // closing right after the last keystroke silently drops it. Tauri defers
-  // the close until async close-requested handlers settle, so awaiting the
-  // write guarantees the bytes are on disk before hiding or destroying.
+  // closing right after the last keystroke silently drops it. Registering this
+  // listener at all makes Tauri prevent the close for this window, so the
+  // handler owns finishing it: flush, then hand back to Rust.
   useEffect(() => {
     let unlisten: (() => void) | undefined
     let disposed = false
@@ -40,16 +40,14 @@ export function useAutoSave() {
           event.preventDefault()
           try {
             await flushOpenDocSave()
-            if (isMacTauri()) {
-              // A macOS app normally stays alive when its final window
-              // closes. Keep this window reusable so Dock Reopen and the
-              // Window menu can reveal it without reconstructing app state.
-              await window.hide()
-            } else {
-              // `close()` would emit another close-requested event. Destroying
-              // after a successful flush completes the already-approved close.
-              await window.destroy()
-            }
+            // Rust finishes the close: it destroys this window (which is what
+            // fires `WindowEvent::Destroyed` and so releases this window's file
+            // watcher and its claim on its vault), except for the last window on
+            // macOS, which it hides so the app stays running and reopenable.
+            // Deciding here is what broke it before: only the backend can count
+            // the live windows, and hiding unconditionally on macOS meant no
+            // window was ever destroyed and no closed window ever cleaned up.
+            await ipc.closeWindow()
           } catch (e) {
             console.error("safe window close failed", e)
           }

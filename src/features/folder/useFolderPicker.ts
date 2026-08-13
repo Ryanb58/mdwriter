@@ -29,7 +29,30 @@ export async function openFolder(
     setRecent: (l: string[]) => void
   },
 ) {
+  // Reference behavior S1.5: a vault already open in another window focuses
+  // that window instead of opening a second copy. Two windows on one vault
+  // means two watchers and two autosave loops on the same files.
+  const openElsewhere = await vaultWindow(path)
+  if (openElsewhere) {
+    await ipc.focusWindow(openElsewhere)
+    return
+  }
   return runFolderSwitchExclusive(() => openFolderExclusive(path, deps))
+}
+
+/**
+ * Label of another window already holding `path`, or `null`.
+ *
+ * Swallows failures: browser-only dev has no Tauri to ask, and a lookup error
+ * must not block opening a folder — the worst case is the pre-multi-window
+ * behavior (a duplicate window).
+ */
+export async function vaultWindow(path: string): Promise<string | null> {
+  try {
+    return await ipc.findVaultWindow(path)
+  } catch {
+    return null
+  }
 }
 
 async function openFolderExclusive(

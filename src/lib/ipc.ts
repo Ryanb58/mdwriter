@@ -133,6 +133,87 @@ export type AiPermissionRequest = {
 export type PermissionDecision = "allow" | "deny"
 
 /**
+ * Payload of Rust `AppError::AgentBusy`. There is one agent subprocess for the
+ * whole app, owned by the window that started it; a second window asking for one
+ * is refused and told who has it.
+ */
+export type AgentBusyDetail = {
+  /** Tauri label of the window running the agent — pass to `focusWindow`. */
+  ownerLabel: string
+  /** Vault that window has open, when it still has one. */
+  ownerVault: string | null
+}
+
+/**
+ * Recognize an `AgentBusy` rejection from any of the session commands
+ * (`start_ai_session`, `stop_ai_session`, `respond_permission`,
+ * `add_permission_rule`).
+ *
+ * Tauri rejects with the serialized `AppError`, which is adjacently tagged:
+ * `{ kind: "AgentBusy", message: { ownerLabel, ownerVault } }`. Anything else —
+ * a plain string, another error kind — returns null so callers fall back to
+ * generic error handling.
+ */
+export function agentBusyDetail(error: unknown): AgentBusyDetail | null {
+  if (!error || typeof error !== "object") return null
+  const e = error as { kind?: unknown; message?: unknown }
+  if (e.kind !== "AgentBusy" || !e.message || typeof e.message !== "object") return null
+  const detail = e.message as { ownerLabel?: unknown; ownerVault?: unknown }
+  if (typeof detail.ownerLabel !== "string" || detail.ownerLabel === "") return null
+  return {
+    ownerLabel: detail.ownerLabel,
+    ownerVault: typeof detail.ownerVault === "string" ? detail.ownerVault : null,
+  }
+}
+
+/**
+ * Mirror of Rust `commands::fs::FileSnapshot`. `digest` is a content hash of
+ * the exact bytes read; handing it back to `writeFile` is what makes a save
+ * conditional on the file not having moved on since (reference behavior S2.3).
+ */
+export type FileSnapshot = {
+  text: string
+  digest: string
+}
+
+/**
+ * Payload of Rust `AppError::SaveConflict`: the write was refused because the
+ * file changed on disk after this window read it. The frontend keeps the user's
+ * buffer and offers a resolution rather than retrying (S2.4/S2.5).
+ */
+export type SaveConflictDetail = {
+  path: string
+  /** Digest this window believed the file had. */
+  expectedDigest: string
+  /** Digest of the bytes actually on disk when the save was attempted. */
+  actualDigest: string
+}
+
+/**
+ * Recognize a `SaveConflict` rejection from `writeFile`. Tauri rejects with the
+ * adjacently-tagged `AppError`:
+ * `{ kind: "SaveConflict", message: { path, expectedDigest, actualDigest } }`.
+ * Anything else — a plain string, an `Io` failure — returns null so the caller
+ * falls back to ordinary retryable-error handling.
+ */
+export function saveConflictDetail(error: unknown): SaveConflictDetail | null {
+  if (!error || typeof error !== "object") return null
+  const e = error as { kind?: unknown; message?: unknown }
+  if (e.kind !== "SaveConflict" || !e.message || typeof e.message !== "object") return null
+  const detail = e.message as {
+    path?: unknown
+    expectedDigest?: unknown
+    actualDigest?: unknown
+  }
+  if (typeof detail.path !== "string" || detail.path === "") return null
+  return {
+    path: detail.path,
+    expectedDigest: typeof detail.expectedDigest === "string" ? detail.expectedDigest : "",
+    actualDigest: typeof detail.actualDigest === "string" ? detail.actualDigest : "",
+  }
+}
+
+/**
  * Persisted chat metadata returned by `list_chats`. Mirror of Rust
  * `commands::chats::ChatSummary` after the snake_case→camelCase mapping in
  * the `listChats` wrapper. `createdAt`/`updatedAt` are Unix-epoch values
@@ -199,8 +280,16 @@ export const ipc = {
     invoke<TreeNode>("list_directory", { path, options: options ?? null }),
   listMarkdownNotes: (root: string, options?: TreeOptions) =>
     invoke<VaultNoteRecord[]>("list_markdown_notes", { root, options: options ?? null }),
-  readFile: (path: string) => invoke<string>("read_file", { path }),
-  writeFile: (path: string, text: string) => invoke<void>("write_file", { path, text }),
+  readFile: (path: string) => invoke<FileSnapshot>("read_file", { path }),
+  /**
+   * Save a document. `expectedDigest` is the digest this window last saw for
+   * the file: pass it and Rust refuses the write with `SaveConflict` when disk
+   * has changed underneath (S2.3); pass `null` to overwrite unconditionally,
+   * which is only correct when the user has explicitly chosen to. Resolves with
+   * the digest of the bytes just written — the precondition for the next save.
+   */
+  writeFile: (path: string, text: string, expectedDigest: string | null = null) =>
+    invoke<string>("write_file", { path, text, expectedDigest }),
   createFile: (path: string) => invoke<void>("create_file", { path }),
   createDir: (path: string) => invoke<void>("create_dir", { path }),
   renamePath: (from: string, to: string) => invoke<void>("rename_path", { from, to }),
@@ -248,6 +337,24 @@ export const ipc = {
   stopWatcher: () => invoke<void>("stop_watcher"),
   ensureVaultAgentsMd: (vaultPath: string) =>
     invoke<boolean>("ensure_vault_agents_md", { vaultPath }),
+  /** Open another editor window. Resolves with the new window's label. */
+  openNewWindow: () => invoke<string>("open_new_window"),
+  /**
+   * Label of a *different* window that already has `path` open as its vault,
+   * or `null`. Side-effect free on purpose: the caller decides whether to hand
+   * focus over (a user-driven open) or to just skip opening (a window restoring
+   * its session must not yank focus to another window).
+   */
+  findVaultWindow: (path: string) => invoke<string | null>("find_vault_window", { path }),
+  /** Bring one window to the front. */
+  focusWindow: (label: string) => invoke<void>("focus_window", { label }),
+  /**
+   * Finish closing *this* window, once the frontend has flushed its pending
+   * write. Rust owns the hide-or-destroy decision: destroying is what releases
+   * the window's watcher and vault claim, and hiding is only correct for the
+   * last window on macOS — which the webview cannot know.
+   */
+  closeWindow: () => invoke<void>("close_window"),
   getRecentFolders: () => invoke<string[]>("get_recent_folders"),
   pushRecentFolder: (folder: string) => invoke<void>("push_recent_folder", { folder }),
   detectAgents: (): Promise<AgentAvailability[]> =>

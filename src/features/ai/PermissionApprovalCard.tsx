@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { ShieldCheck, ShieldWarning, X } from "@phosphor-icons/react"
-import { ipc } from "../../lib/ipc"
+import { agentBusyDetail, ipc } from "../../lib/ipc"
 import { useStore, type PendingPermission } from "../../lib/store"
 import { getToolPath, pathPrefixForAllowlist, stringField, truncate } from "./toolInput"
 
@@ -42,7 +42,14 @@ export function PermissionApprovalCard({ pending }: { pending: PendingPermission
       // would strand the turn forever.
       resolve(pending.id)
     } catch (e) {
-      setError(String(e))
+      // Both commands are owner-gated in Rust. A card can only reach a
+      // non-owning window if something has gone wrong with the addressed
+      // `ai-permission` emit, so say so rather than rendering [object Object].
+      setError(
+        agentBusyDetail(e)
+          ? "This agent session belongs to another window."
+          : String(e),
+      )
       setBusy(false)
     }
   }

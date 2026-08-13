@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect } from "react"
 import { PANEL_DIMS } from "./constants"
+import { LAYOUT_WIDTHS_KEY, loadLayoutEntry, saveLayoutEntry } from "./panelStorage"
 
-const STORAGE_KEY = "mdwriter:layout-widths-v1"
+// Per-window: dragging window B's panel must not resize window A's.
+const STORAGE_KEY = LAYOUT_WIDTHS_KEY
 
 type Persisted = { left: number; right: number }
 
@@ -15,32 +17,22 @@ function clamp(w: number, min: number, max: number): number {
 }
 
 function load(): Persisted {
-  if (typeof window === "undefined") return DEFAULTS
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULTS
-    const p = JSON.parse(raw)
-    return {
-      left:
-        typeof p?.left === "number"
-          ? clamp(p.left, PANEL_DIMS.LEFT_MIN, PANEL_DIMS.LEFT_MAX)
-          : DEFAULTS.left,
-      right:
-        typeof p?.right === "number"
-          ? clamp(p.right, PANEL_DIMS.RIGHT_MIN, PANEL_DIMS.RIGHT_MAX)
-          : DEFAULTS.right,
-    }
-  } catch {
-    return DEFAULTS
+  const p = loadLayoutEntry(STORAGE_KEY) as Partial<Persisted> | null
+  if (!p) return DEFAULTS
+  return {
+    left:
+      typeof p?.left === "number"
+        ? clamp(p.left, PANEL_DIMS.LEFT_MIN, PANEL_DIMS.LEFT_MAX)
+        : DEFAULTS.left,
+    right:
+      typeof p?.right === "number"
+        ? clamp(p.right, PANEL_DIMS.RIGHT_MIN, PANEL_DIMS.RIGHT_MAX)
+        : DEFAULTS.right,
   }
 }
 
 function save(state: Persisted) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    // ignore
-  }
+  saveLayoutEntry(STORAGE_KEY, state)
 }
 
 export function usePanelWidths() {

@@ -21,6 +21,7 @@ function makeDoc(path: string) {
     ...analyzeDocument(path, text),
     saveStatus: "clean" as const,
     saveError: null,
+    diskDigest: null,
   }
 }
 

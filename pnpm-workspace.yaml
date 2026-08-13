@@ -1,0 +1,7 @@
+# pnpm 11 refuses to run a dependency's build script until it is listed here, and
+# its deps-status check exits 1 on the unresolved warning — which breaks
+# `pnpm tauri dev` and `pnpm test` before either one starts.
+allowBuilds:
+  # Vite's bundler. `install.js` verifies the platform binary that the
+  # `@esbuild/<platform>` optional dependency already ships.
+  esbuild: true

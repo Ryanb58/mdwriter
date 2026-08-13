@@ -7,11 +7,13 @@ import {
   type PanelSide,
   type PanelState,
 } from "./constants"
+import { LAYOUT_PANELS_KEY, loadLayoutEntry, saveLayoutEntry } from "./panelStorage"
 
 type FamilyState = { left: PanelState; right: PanelState }
 type PersistedState = { docked: FamilyState; overlay: FamilyState }
 
-const STORAGE_KEY = "mdwriter:layout-panels-v1"
+// Per-window: window B collapsing its sidebar must not collapse window A's.
+const STORAGE_KEY = LAYOUT_PANELS_KEY
 
 const DEFAULTS: PersistedState = {
   docked: { left: "open", right: "open" },
@@ -26,32 +28,24 @@ function isValidOverlay(s: unknown): s is "open" | "closed" {
 }
 
 function loadState(): PersistedState {
-  if (typeof window === "undefined") return DEFAULTS
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULTS
-    const p = JSON.parse(raw)
-    return {
-      docked: {
-        left: isValidDocked(p?.docked?.left) ? p.docked.left : DEFAULTS.docked.left,
-        right: isValidDocked(p?.docked?.right) ? p.docked.right : DEFAULTS.docked.right,
-      },
-      overlay: {
-        left: isValidOverlay(p?.overlay?.left) ? p.overlay.left : DEFAULTS.overlay.left,
-        right: isValidOverlay(p?.overlay?.right) ? p.overlay.right : DEFAULTS.overlay.right,
-      },
-    }
-  } catch {
-    return DEFAULTS
+  const p = loadLayoutEntry(STORAGE_KEY) as
+    | { docked?: Partial<FamilyState>; overlay?: Partial<FamilyState> }
+    | null
+  if (!p) return DEFAULTS
+  return {
+    docked: {
+      left: isValidDocked(p?.docked?.left) ? p.docked.left : DEFAULTS.docked.left,
+      right: isValidDocked(p?.docked?.right) ? p.docked.right : DEFAULTS.docked.right,
+    },
+    overlay: {
+      left: isValidOverlay(p?.overlay?.left) ? p.overlay.left : DEFAULTS.overlay.left,
+      right: isValidOverlay(p?.overlay?.right) ? p.overlay.right : DEFAULTS.overlay.right,
+    },
   }
 }
 
 function saveState(state: PersistedState) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    // ignore quota / private mode
-  }
+  saveLayoutEntry(STORAGE_KEY, state)
 }
 
 /**

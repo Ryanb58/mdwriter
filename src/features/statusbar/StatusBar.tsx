@@ -2,7 +2,7 @@ import { useStore } from "../../lib/store"
 import { CircleNotch, Check, Gear } from "@phosphor-icons/react"
 import { VaultPicker } from "../vaults/VaultPicker"
 import { AgentPicker } from "../ai/AgentPicker"
-import { retryOpenDocSave } from "../../lib/writeDoc"
+import { reopenConflictDialog, retryOpenDocSave } from "../../lib/writeDoc"
 
 function formatTime(ts: number | null): string {
   if (!ts) return ""
@@ -39,6 +39,22 @@ export function StatusBar() {
               className="rounded border border-danger/30 px-1.5 py-0.5 font-medium hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger"
             >
               Retry
+            </button>
+          </span>
+        )}
+        {/* A conflict is not retryable — the same bytes against the same disk
+            fail the same way — so this reopens the decision instead. It is the
+            only way back to the dialog once "Keep editing" set it aside. */}
+        {doc?.saveStatus === "conflict" && (
+          <span className="flex items-center gap-1.5 text-danger" title={doc.saveError ?? undefined}>
+            <span>Changed on disk</span>
+            <button
+              type="button"
+              aria-label="Resolve save conflict"
+              onClick={() => reopenConflictDialog()}
+              className="rounded border border-danger/30 px-1.5 py-0.5 font-medium hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-danger"
+            >
+              Resolve
             </button>
           </span>
         )}

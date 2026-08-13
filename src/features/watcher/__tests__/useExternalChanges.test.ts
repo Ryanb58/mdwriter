@@ -20,7 +20,9 @@ vi.mock("../../../lib/ipc", () => {
       readFile: vi.fn(async (path: string) => {
         const f = fs.files.get(path)
         if (f === undefined) throw new Error(`missing ${path}`)
-        return f
+        // Stand-in for Rust's content digest: any pure function of the bytes
+        // will do, and this one is trivially discriminating.
+        return { text: f, digest: `digest:${f}` }
       }),
       listTree: vi.fn(async () => {
         fs.listTreeCalls++
@@ -49,6 +51,11 @@ import { handleVaultChange, noteSelfWrite } from "../useExternalChanges"
 import { useStore } from "../../../lib/store"
 import * as ipcMod from "../../../lib/ipc"
 import { analyzeDocument } from "../../../lib/documentAnalysis"
+
+/** Mirrors the digest the mocked `readFile` above hands back. */
+function digestOf(text: string): string {
+  return `digest:${text}`
+}
 
 function fs(): { files: Map<string, string>; listTreeCalls: number; listDirectoryCalls: string[] } {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -91,6 +98,7 @@ function openClean(path: string, body: string, frontmatter: Record<string, unkno
       ...analyzeDocument(path, text),
       saveStatus: "clean",
       saveError: null,
+      diskDigest: digestOf(text),
     },
     docRev: 0,
   })
@@ -186,13 +194,13 @@ describe("handleVaultChange — open-doc reload", () => {
 
   it("does not overwrite edits made while an external re-read is in flight", async () => {
     openClean("/vault/a.md", "buffer content")
-    const read = deferred<string>()
+    const read = deferred<{ text: string; digest: string }>()
     vi.mocked(ipcMod.ipc.readFile).mockImplementationOnce(() => read.promise)
 
     const reload = handleVaultChange(["/vault/a.md"])
     await vi.waitFor(() => expect(ipcMod.ipc.readFile).toHaveBeenCalledWith("/vault/a.md"))
     useStore.getState().editOpenDoc("typed while reading")
-    read.resolve("external write")
+    read.resolve({ text: "external write", digest: digestOf("external write") })
     await reload
 
     expect(useStore.getState().openDoc?.text).toBe("typed while reading")

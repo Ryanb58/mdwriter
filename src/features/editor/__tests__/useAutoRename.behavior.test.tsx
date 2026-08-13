@@ -35,6 +35,7 @@ function setDoc(d: Partial<OpenDoc> & { path: string }) {
       ...analyzeDocument(d.path, text),
       saveStatus: "clean",
       saveError: null,
+      diskDigest: null,
       ...d,
     },
     selectedPath: d.path,

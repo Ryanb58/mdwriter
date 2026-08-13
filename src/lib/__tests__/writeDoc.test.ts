@@ -2,13 +2,21 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest"
 
 const harness = vi.hoisted(() => ({
   writeFile: vi.fn(),
+  readFile: vi.fn(),
   noteSelfWrite: vi.fn(),
   showToast: vi.fn(),
 }))
 
-vi.mock("../ipc", () => ({
-  ipc: { writeFile: harness.writeFile },
-}))
+// Only `ipc` itself is stubbed. `saveConflictDetail` is the real recognizer:
+// the shape it decodes is the Rust `AppError` wire format, and a hand-rolled
+// double here would let the two drift apart silently.
+vi.mock("../ipc", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ipc")>()
+  return {
+    ...actual,
+    ipc: { writeFile: harness.writeFile, readFile: harness.readFile },
+  }
+})
 vi.mock("../../features/watcher/useExternalChanges", () => ({
   noteSelfWrite: harness.noteSelfWrite,
 }))
@@ -18,7 +26,11 @@ import { useStore } from "../store"
 import {
   beginOpenDocPathMutation,
   cancelQueuedOpenDocSave,
+  dismissConflictDialog,
   flushOpenDocSave,
+  overwriteWithLocalVersion,
+  reloadDiscardingLocalChanges,
+  reopenConflictDialog,
   resetSaveCoordinatorForTests,
   retryOpenDocSave,
   scheduleOpenDocSave,
@@ -40,8 +52,17 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject }
 }
 
-function open(path = "/vault/note.md", text = "initial") {
-  useStore.getState().openAnalyzedDocument(path, text, "disk")
+function open(path = "/vault/note.md", text = "initial", digest: string | null = null) {
+  useStore.getState().openAnalyzedDocument(path, text, "disk", digest)
+}
+
+/** The rejection Tauri delivers for Rust's `AppError::SaveConflict`. */
+function conflictError(
+  path = "/vault/note.md",
+  expectedDigest = "disk-v1",
+  actualDigest = "disk-v2",
+) {
+  return { kind: "SaveConflict", message: { path, expectedDigest, actualDigest } }
 }
 
 function edit(text: string, path = "/vault/note.md") {
@@ -78,7 +99,7 @@ describe("open-document save coordinator", () => {
     expect(useStore.getState().openDoc?.saveStatus).toBe("queued")
 
     await vi.advanceTimersByTimeAsync(500)
-    expect(harness.writeFile).toHaveBeenCalledWith("/vault/note.md", "first edit")
+    expect(harness.writeFile).toHaveBeenCalledWith("/vault/note.md", "first edit", null)
     expect(useStore.getState().openDoc?.saveStatus).toBe("saving")
 
     write.resolve()
@@ -109,7 +130,7 @@ describe("open-document save coordinator", () => {
     first.resolve()
     await tick()
     expect(harness.writeFile).toHaveBeenCalledTimes(2)
-    expect(harness.writeFile).toHaveBeenLastCalledWith("/vault/note.md", "three")
+    expect(harness.writeFile).toHaveBeenLastCalledWith("/vault/note.md", "three", null)
 
     second.resolve()
     await tick()
@@ -162,6 +183,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenLastCalledWith(
       "/vault/note.md",
       "latest snapshot",
+      null,
     )
     retry.resolve()
     await retrying
@@ -204,6 +226,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenLastCalledWith(
       "/vault/note.md",
       "newer unscheduled bytes",
+      null,
     )
     expect(useStore.getState().openDoc?.saveStatus).toBe("clean")
   })
@@ -217,7 +240,7 @@ describe("open-document save coordinator", () => {
     let settled = false
     const flushing = flushOpenDocSave().then(() => { settled = true })
     await tick()
-    expect(harness.writeFile).toHaveBeenCalledWith("/vault/note.md", "flush me")
+    expect(harness.writeFile).toHaveBeenCalledWith("/vault/note.md", "flush me", null)
     expect(settled).toBe(false)
 
     write.resolve()
@@ -235,6 +258,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenCalledWith(
       "/vault/note.md",
       "latest unscheduled edit",
+      null,
     )
     expect(useStore.getState().openDoc?.saveStatus).toBe("clean")
   })
@@ -311,6 +335,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenCalledWith(
       "/vault/old.md",
       "flush before rename",
+      null,
     )
     initial.resolve()
     const guard = await guardPromise
@@ -327,6 +352,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenLastCalledWith(
       "/vault/new.md",
       "typed during rename",
+      null,
     )
     afterRename.resolve()
     await tick()
@@ -366,6 +392,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenCalledWith(
       "/vault/old.md",
       "typed during failed rename",
+      null,
     )
   })
 
@@ -391,6 +418,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenCalledWith(
       "/vault/new.md",
       "typed during rename",
+      null,
     )
     expect(settled).toBe(true)
   })
@@ -421,6 +449,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenCalledWith(
       "/vault/new.md",
       "typed during rename",
+      null,
     )
     expect(harness.writeFile).not.toHaveBeenCalledWith(
       "/vault/old.md",
@@ -440,6 +469,7 @@ describe("open-document save coordinator", () => {
     expect(harness.writeFile).toHaveBeenCalledWith(
       "/vault/old.md",
       "final old-vault bytes",
+      null,
     )
     guard.release()
   })
@@ -464,7 +494,7 @@ describe("open-document save coordinator", () => {
     await tick()
 
     expect(harness.writeFile).toHaveBeenCalledTimes(2)
-    expect(harness.writeFile).toHaveBeenLastCalledWith("/vault/b.md", "save b")
+    expect(harness.writeFile).toHaveBeenLastCalledWith("/vault/b.md", "save b", null)
     await expect(flushingB).resolves.toBeUndefined()
     await expect(flushOpenDocSave()).resolves.toBeUndefined()
   })
@@ -500,7 +530,7 @@ describe("open-document save coordinator", () => {
 
     const guard = await beginOpenDocPathMutation(["/vault/a.md"])
 
-    expect(harness.writeFile).toHaveBeenCalledWith("/vault/a.md", "queued a")
+    expect(harness.writeFile).toHaveBeenCalledWith("/vault/a.md", "queued a", null)
     guard.release()
   })
 
@@ -511,7 +541,221 @@ describe("open-document save coordinator", () => {
 
     const guard = await beginOpenDocPathMutation(["/"])
 
-    expect(harness.writeFile).toHaveBeenCalledWith("/note.md", "root edit")
+    expect(harness.writeFile).toHaveBeenCalledWith("/note.md", "root edit", null)
     guard.release()
+  })
+
+  // --- Cross-window conflict (reference behavior S2.3 / S2.4 / S2.5) -------
+
+  it("sends the digest it last read as the save precondition", async () => {
+    harness.writeFile.mockResolvedValue("disk-v2")
+    open("/vault/note.md", "initial", "disk-v1")
+
+    edit("first edit")
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(harness.writeFile).toHaveBeenCalledWith("/vault/note.md", "first edit", "disk-v1")
+  })
+
+  it("carries the digest a save returned into the next save", async () => {
+    // Otherwise the second save asserts a precondition this window itself
+    // invalidated, and every window would conflict with its own last write.
+    harness.writeFile.mockResolvedValueOnce("disk-v2").mockResolvedValueOnce("disk-v3")
+    open("/vault/note.md", "initial", "disk-v1")
+
+    edit("first edit")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+    expect(useStore.getState().openDoc?.diskDigest).toBe("disk-v2")
+
+    edit("second edit")
+    await vi.advanceTimersByTimeAsync(500)
+    expect(harness.writeFile).toHaveBeenLastCalledWith(
+      "/vault/note.md",
+      "second edit",
+      "disk-v2",
+    )
+  })
+
+  it("blocks a save that lost the race and keeps the user's buffer", async () => {
+    // S2.3: another window wrote the file after this one read it. The refusal
+    // must not read as a generic failure, and it must not cost the user a byte.
+    harness.writeFile.mockRejectedValue(conflictError())
+    open("/vault/note.md", "initial", "disk-v1")
+
+    edit("my unsaved work")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+
+    expect(useStore.getState().openDoc).toMatchObject({
+      text: "my unsaved work",
+      dirty: true,
+      saveStatus: "conflict",
+    })
+    expect(useStore.getState().saveConflict).toEqual({
+      path: "/vault/note.md",
+      expectedDigest: "disk-v1",
+      actualDigest: "disk-v2",
+      dismissed: false,
+    })
+    // A conflict is its own surface, not a toast that scrolls away.
+    expect(harness.showToast).not.toHaveBeenCalled()
+  })
+
+  it("does not spin retrying a blocked save while the user keeps typing", async () => {
+    // Autosave fires on every debounce. Re-attempting the same precondition
+    // against the same disk fails identically, so it must stay parked.
+    harness.writeFile.mockRejectedValue(conflictError())
+    open("/vault/note.md", "initial", "disk-v1")
+    edit("my unsaved work")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+    expect(harness.writeFile).toHaveBeenCalledTimes(1)
+
+    edit("more typing")
+    await vi.advanceTimersByTimeAsync(2000)
+    await tick()
+    edit("even more typing")
+    await vi.advanceTimersByTimeAsync(2000)
+    await tick()
+
+    expect(harness.writeFile).toHaveBeenCalledTimes(1)
+    expect(useStore.getState().openDoc).toMatchObject({
+      text: "even more typing",
+      dirty: true,
+      saveStatus: "conflict",
+    })
+  })
+
+  it("never marks a blocked document clean", async () => {
+    harness.writeFile.mockRejectedValue(conflictError())
+    open("/vault/note.md", "initial", "disk-v1")
+    edit("my unsaved work")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+
+    await expect(flushOpenDocSave()).rejects.toMatchObject({ kind: "SaveConflict" })
+    expect(useStore.getState().openDoc?.dirty).toBe(true)
+    expect(useStore.getState().openDoc?.savedAt).toBeNull()
+  })
+
+  it("resolves a conflict by overwriting with the local version", async () => {
+    // S2.4 "Overwrite": the user has seen the conflict and chosen. The write
+    // goes out with no precondition and re-establishes a fresh digest.
+    harness.writeFile.mockRejectedValueOnce(conflictError()).mockResolvedValueOnce("disk-v3")
+    open("/vault/note.md", "initial", "disk-v1")
+    edit("my unsaved work")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+
+    await overwriteWithLocalVersion()
+
+    expect(harness.writeFile).toHaveBeenLastCalledWith(
+      "/vault/note.md",
+      "my unsaved work",
+      null,
+    )
+    expect(useStore.getState().saveConflict).toBeNull()
+    expect(useStore.getState().openDoc).toMatchObject({
+      text: "my unsaved work",
+      dirty: false,
+      saveStatus: "clean",
+      diskDigest: "disk-v3",
+    })
+  })
+
+  it("overwrites the newest bytes, not the ones that were refused", async () => {
+    harness.writeFile.mockRejectedValueOnce(conflictError()).mockResolvedValueOnce("disk-v3")
+    open("/vault/note.md", "initial", "disk-v1")
+    edit("refused bytes")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+
+    edit("bytes typed while deciding")
+    await overwriteWithLocalVersion()
+
+    expect(harness.writeFile).toHaveBeenLastCalledWith(
+      "/vault/note.md",
+      "bytes typed while deciding",
+      null,
+    )
+  })
+
+  it("resolves a conflict by discarding the local version and reloading", async () => {
+    harness.writeFile.mockRejectedValue(conflictError())
+    harness.readFile.mockResolvedValue({ text: "the other window's work", digest: "disk-v2" })
+    open("/vault/note.md", "initial", "disk-v1")
+    edit("my unsaved work")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+
+    await reloadDiscardingLocalChanges()
+
+    expect(useStore.getState().saveConflict).toBeNull()
+    expect(useStore.getState().openDoc).toMatchObject({
+      text: "the other window's work",
+      dirty: false,
+      saveStatus: "clean",
+      diskDigest: "disk-v2",
+    })
+    // Resolving one way must not smuggle the discarded bytes out the other.
+    expect(harness.writeFile).toHaveBeenCalledTimes(1)
+  })
+
+  it("leaves the conflict standing when the reload itself fails", async () => {
+    harness.writeFile.mockRejectedValue(conflictError())
+    harness.readFile.mockRejectedValue(new Error("permission denied"))
+    open("/vault/note.md", "initial", "disk-v1")
+    edit("my unsaved work")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+
+    await expect(reloadDiscardingLocalChanges()).rejects.toThrow("permission denied")
+
+    expect(useStore.getState().saveConflict?.path).toBe("/vault/note.md")
+    expect(useStore.getState().openDoc).toMatchObject({
+      text: "my unsaved work",
+      dirty: true,
+      saveStatus: "conflict",
+    })
+  })
+
+  it("keeps saving parked while the dialog is only dismissed", async () => {
+    harness.writeFile.mockRejectedValue(conflictError())
+    open("/vault/note.md", "initial", "disk-v1")
+    edit("my unsaved work")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+
+    dismissConflictDialog()
+    expect(useStore.getState().saveConflict?.dismissed).toBe(true)
+
+    edit("still typing")
+    await vi.advanceTimersByTimeAsync(2000)
+    await tick()
+    expect(harness.writeFile).toHaveBeenCalledTimes(1)
+    expect(useStore.getState().openDoc?.saveStatus).toBe("conflict")
+
+    reopenConflictDialog()
+    expect(useStore.getState().saveConflict?.dismissed).toBe(false)
+  })
+
+  it("clears a conflict when the document is reloaded from disk by anything else", async () => {
+    // The watcher reloading a now-clean buffer (S2.1) is itself a resolution:
+    // buffer and disk agree again, so a stale prompt would be a lie.
+    harness.writeFile.mockRejectedValue(conflictError())
+    open("/vault/note.md", "initial", "disk-v1")
+    edit("my unsaved work")
+    await vi.advanceTimersByTimeAsync(500)
+    await tick()
+    expect(useStore.getState().saveConflict).not.toBeNull()
+
+    useStore.getState().openAnalyzedDocument(
+      "/vault/note.md",
+      "reloaded from disk",
+      "external",
+      "disk-v2",
+    )
+    expect(useStore.getState().saveConflict).toBeNull()
   })
 })

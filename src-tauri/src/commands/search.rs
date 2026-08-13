@@ -3,7 +3,7 @@ use crate::state::AppState;
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::State;
 
 #[derive(Serialize, Debug)]
@@ -41,17 +41,22 @@ const SNIPPET_WINDOW: usize = 160;
 const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
 
 #[tauri::command]
-pub fn search_vault(
+pub fn search_vault<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
     state: State<'_, AppState>,
     root: PathBuf,
     query: String,
     options: Option<SearchOptions>,
 ) -> Result<SearchResult> {
-    // The frontend only ever searches the open vault; reject anything else
-    // so a compromised webview can't use this command to read arbitrary
-    // directories. The impl stays directly unit-testable.
-    state.ensure_within_active_vault(&root)?;
+    ensure_search_scope(state.inner(), window.label(), &root)?;
     search_vault_impl(root, query, options)
+}
+
+/// A window only ever searches the vault *it* has open; reject anything else so
+/// a compromised webview can't use this command to read arbitrary directories —
+/// including another window's vault. The impl stays directly unit-testable.
+fn ensure_search_scope(state: &AppState, label: &str, root: &Path) -> Result<PathBuf> {
+    state.get_or_create(label).ensure_within_active_vault(root)
 }
 
 pub fn search_vault_impl(
@@ -348,5 +353,32 @@ mod tests {
         assert_eq!(r.hits.len(), 1);
         let h = &r.hits[0];
         assert_eq!(&h.snippet[h.col_start as usize..h.col_end as usize], "needle");
+    }
+
+    #[test]
+    fn search_scope_is_per_window() {
+        // S1.3: each window searches only its own vault. The guard used to
+        // validate against a single process-wide vault, so whichever window
+        // opened a folder last decided what *every* window could search.
+        let vault_a = tempdir().unwrap();
+        let vault_b = tempdir().unwrap();
+        let state = AppState::default();
+        state
+            .get_or_create("a")
+            .set_active_vault(Some(vault_a.path().canonicalize().unwrap()));
+        state
+            .get_or_create("b")
+            .set_active_vault(Some(vault_b.path().canonicalize().unwrap()));
+
+        assert!(ensure_search_scope(&state, "a", vault_a.path()).is_ok());
+        assert!(ensure_search_scope(&state, "b", vault_b.path()).is_ok());
+        assert!(matches!(
+            ensure_search_scope(&state, "b", vault_a.path()),
+            Err(AppError::InvalidPath(_))
+        ));
+        assert!(matches!(
+            ensure_search_scope(&state, "a", vault_b.path()),
+            Err(AppError::InvalidPath(_))
+        ));
     }
 }

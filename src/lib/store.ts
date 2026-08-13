@@ -1,11 +1,30 @@
 import { create } from "zustand"
-import { persist, createJSONStorage } from "zustand/middleware"
-import type { TreeNode, AgentId, AgentAvailability, PermissionMode, AiPermissionRequest } from "./ipc"
+import { persist } from "zustand/middleware"
+import {
+  createScopedPersistStorage,
+  mergeRecencyLists,
+  mergeRecords,
+  mergeRecordsWith,
+  mergeStringSets,
+  type NormalizerMap,
+  type ResolverMap,
+  type ScopeMap,
+} from "./persistStorage"
+import { LAYOUT_WINDOW_KEYS } from "../layout/panelStorage"
+import { PERSIST_WINDOW_LABEL, emitToAllWindows } from "./windowEvents"
+import type {
+  TreeNode,
+  AgentId,
+  AgentAvailability,
+  PermissionMode,
+  AiPermissionRequest,
+  AgentBusyDetail,
+} from "./ipc"
 import { analyzeDocument, type DocumentRisk } from "./documentAnalysis"
 
 export type EditorMode = "block" | "raw"
 
-export type SaveStatus = "clean" | "queued" | "saving" | "error"
+export type SaveStatus = "clean" | "queued" | "saving" | "error" | "conflict"
 
 export type LoadError = { path: string; message: string }
 
@@ -28,11 +47,42 @@ export type OpenDoc = {
   contentFingerprint: string
   saveStatus: SaveStatus
   saveError: string | null
+  /**
+   * Digest of the bytes this window last saw on disk for `path` — set when the
+   * document is read and re-set from every successful save. It is the save
+   * precondition handed to `ipc.writeFile`: if disk no longer hashes to this,
+   * another window (or another program) wrote the file and our save is refused
+   * instead of clobbering it (reference behavior S2.3).
+   *
+   * `null` means "no precondition" — either the digest was never established
+   * or the user explicitly chose to overwrite — and the next save is
+   * unconditional.
+   */
+  diskDigest: string | null
 }
 
 export type OpenDocLifecyclePatch = Partial<
-  Pick<OpenDoc, "path" | "dirty" | "savedAt" | "saveStatus" | "saveError">
+  Pick<OpenDoc, "path" | "dirty" | "savedAt" | "saveStatus" | "saveError" | "diskDigest">
 >
+
+/**
+ * A save that was refused because the file changed on disk underneath this
+ * window. The user's buffer is untouched (S2.2/S2.5) and automatic saving for
+ * this path stays parked until they pick a resolution — this is what the
+ * conflict dialog renders from.
+ */
+export type SaveConflict = {
+  path: string
+  /** Digest this window believed the file had. */
+  expectedDigest: string
+  /** Digest of the bytes now on disk. */
+  actualDigest: string
+  /**
+   * The user closed the dialog without resolving. The conflict is still live
+   * (saving stays blocked); the status bar offers a way back in.
+   */
+  dismissed: boolean
+}
 
 export type Theme = "light" | "dark" | "system"
 
@@ -142,6 +192,11 @@ export type AppStore = {
   preferredEditorMode: EditorMode
   editorMode: EditorMode
   loadError: LoadError | null
+  /**
+   * A refused save waiting on the user. Window-scoped and never persisted —
+   * it describes an in-memory buffer that only exists in this session.
+   */
+  saveConflict: SaveConflict | null
   blockModeOverrides: Record<string, string>
   /**
    * Which tab the right sidebar shows — frontmatter Properties for the open
@@ -197,12 +252,23 @@ export type AppStore = {
   setOpenDoc(doc: OpenDoc | null): void
   /** Lifecycle metadata and path remaps only; content must use editOpenDoc. */
   patchOpenDoc(patch: OpenDocLifecyclePatch): void
-  openAnalyzedDocument(path: string, text: string, source: "disk" | "external"): void
+  /**
+   * Replace the open buffer with bytes read from disk. `diskDigest` is the
+   * digest those bytes hashed to, and becomes the save precondition; omit it
+   * only for callers that have no read to base one on.
+   */
+  openAnalyzedDocument(
+    path: string,
+    text: string,
+    source: "disk" | "external",
+    diskDigest?: string | null,
+  ): void
   editOpenDoc(nextText: string): void
   requestEditorMode(mode: EditorMode): "changed" | "blocked"
   overrideBlockModeForCurrentDoc(): void
   remapBlockModeOverride(from: string, to: string): void
   setLoadError(error: LoadError | null): void
+  setSaveConflict(conflict: SaveConflict | null): void
   setRightPaneTab(tab: RightPaneTab): void
   setSettingsOpen(open: boolean): void
   setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void
@@ -238,6 +304,15 @@ export type AppStore = {
   clearAiMessages(): void
   aiRunning: boolean
   setAiRunning(v: boolean): void
+  /**
+   * Set when this window asked for an agent and was told another window owns
+   * the one subprocess. Session-scoped and deliberately not persisted: it is a
+   * fact about the app's current windows, and a stale one would disable the
+   * composer on the next launch. Cleared by a successful send or by the user
+   * dismissing the notice.
+   */
+  aiBusy: AgentBusyDetail | null
+  setAiBusy(v: AgentBusyDetail | null): void
   /**
    * In-flight permission requests, keyed by request id. The card UI reads
    * this map; `respondPermission` (or session shutdown) clears entries.
@@ -365,7 +440,7 @@ export function addUsage(prev: ChatUsage, turn: Partial<ChatUsage>): ChatUsage {
 }
 
 /** Per-vault cap on the recently-opened list (Recent shows the top 5). */
-const MAX_RECENT_FILES = 8
+export const MAX_RECENT_FILES = 8
 
 const TITLE_FROM_MESSAGE_LEN = 60
 
@@ -467,6 +542,271 @@ function withActiveChat(
   }
 }
 
+/** Exactly what `partialize` writes — the shape the storage layer splits by scope. */
+export type PersistedSlice = {
+  settings: Settings
+  rightPaneTab: RightPaneTab
+  aiAgent: AgentId
+  aiPermissionMode: PermissionMode
+  pinnedPaths: string[]
+  recentFilesByVault: Record<string, string[]>
+}
+
+/**
+ * Scope of each persisted key across windows. Every mdwriter window shares one
+ * `localStorage`, so this classification is what decides whether a change in
+ * window A reaches window B — see `persistStorage.ts` for the mechanics.
+ *
+ * - `settings`, `aiAgent`, `aiPermissionMode` are preferences: app-global, the
+ *   way an editor's settings are. A change in A must show up in B.
+ * - `pinnedPaths` and `recentFilesByVault` are keyed by vault, so they are
+ *   global too — and `recentFilesByVault` is what session restore reads, which
+ *   makes losing it the most expensive failure here.
+ * - `rightPaneTab` is per-window chrome. Window B choosing the AI tab must not
+ *   yank window A's sidebar over to it.
+ */
+export const PERSIST_SCOPES: ScopeMap<PersistedSlice> = {
+  settings: "shared",
+  aiAgent: "shared",
+  aiPermissionMode: "shared",
+  pinnedPaths: "shared",
+  recentFilesByVault: "shared",
+  rightPaneTab: "window",
+}
+
+/**
+ * How to reconcile a shared key another window changed since we last read it.
+ * Without these, two windows changing *different* fields of the same entry in
+ * the same instant would still clobber each other; with them, only a genuine
+ * edit of the same field by both windows is last-writer-wins.
+ */
+export const PERSIST_RESOLVERS: ResolverMap<PersistedSlice> = {
+  // Per-field: A flips the theme while B flips `showPdfs` → both survive.
+  settings: (mine, disk, base) => mergeRecords(mine, disk, base),
+  // Two levels, because two windows can be on the *same* vault (S1.5's
+  // focus-instead-of-duplicate is best-effort — `vaultWindow` returns null on
+  // any lookup failure). The outer level keeps a window from touching a vault
+  // it never opened; the inner one merges that vault's list entry-by-entry, so
+  // a document A just opened survives B saving its own copy of the same list.
+  // Resolving per vault key alone loses one of the two opens permanently, and
+  // since restore reads index 0, the window that lost it reopens the *other*
+  // window's document.
+  recentFilesByVault: (mine, disk, base) =>
+    mergeRecordsWith(mine, disk, base, (mineList, diskList, baseList) =>
+      mergeRecencyLists(mineList, diskList, baseList, MAX_RECENT_FILES),
+    ),
+  // Membership: our pins/unpins apply on top of whatever the other window did.
+  pinnedPaths: (mine, disk, base) => mergeStringSets(mine, disk, base),
+}
+
+/**
+ * Canonical form of each persisted entry: exactly what this window holds in
+ * memory after loading it.
+ *
+ * These are the *same* functions the store's `merge` and cross-window adoption
+ * run, and that is the point. A stored entry is routinely not in canonical form
+ * — settings written before a field existed lack it, a recents list written
+ * when the cap was higher is too long — and the store fills those in on load.
+ * Without normalizing at the storage layer too, the merge ancestor would be the
+ * raw text while memory held the filled-in value, so every field the store
+ * defaulted would look like a local edit and get pushed over another window's
+ * real choice on the next keystroke. Entries are rewritten in canonical form
+ * when they are read, so disk, ancestor and memory stay one value.
+ */
+export const PERSIST_NORMALIZERS: NormalizerMap<PersistedSlice> = {
+  settings: normalizeSettings,
+  pinnedPaths: normalizePinnedPaths,
+  recentFilesByVault: normalizeRecentFilesByVault,
+  rightPaneTab: normalizeRightPaneTab,
+}
+
+/** Broadcast so other windows re-read the shared entries we just wrote. */
+export const SHARED_PERSIST_EVENT = "mdwriter:shared-persist-changed"
+
+export type SharedPersistPayload = { origin: string }
+
+/** Re-exported: window identity lives with the window helpers. */
+export { PERSIST_WINDOW_LABEL }
+
+const persistedStorage = createScopedPersistStorage<PersistedSlice>({
+  scopes: PERSIST_SCOPES,
+  resolvers: PERSIST_RESOLVERS,
+  normalizers: PERSIST_NORMALIZERS,
+  windowLabel: PERSIST_WINDOW_LABEL,
+  storage: localStorage,
+  extraWindowKeys: LAYOUT_WINDOW_KEYS,
+  migrateLegacy: legacyPersistedSlice,
+  onSharedWrite: () => {
+    try {
+      void emitToAllWindows(SHARED_PERSIST_EVENT, {
+        origin: PERSIST_WINDOW_LABEL,
+      } satisfies SharedPersistPayload).catch(() => {})
+    } catch {
+      // No Tauri runtime (browser dev / tests): the DOM `storage` event that
+      // `useSharedPersistSync` also listens for covers same-origin tabs.
+    }
+  },
+  // A write that had to merge in another window's changes wrote more to disk
+  // than this window holds in memory. Adopt the merged result so the UI matches
+  // disk and the next merge base is honest. Deferred: we are inside `setState`.
+  onMergedWrite: () => queueMicrotask(syncSharedPersistedState),
+})
+
+/** Test seam: the scoped storage backing `useStore.persist`. */
+export const persistedStorageForTests = persistedStorage
+
+/**
+ * Re-read the app-global persisted entries and adopt them.
+ *
+ * This is what makes a preference changed in window A visible in window B
+ * without a relaunch, and — just as important — it re-bases this window's
+ * write cache, so B's next write no longer carries a stale copy of A's value.
+ * Applying it is cheap and idempotent: values that already match produce no
+ * further writes.
+ */
+export function syncSharedPersistedState(): void {
+  const disk = persistedStorage.readShared()
+  useStore.setState((current) => normalizeSharedPersisted(disk, current))
+}
+
+function normalizeSettings(raw: unknown): Settings {
+  // Re-merge against DEFAULT_SETTINGS so any field added in a later release
+  // picks up its default for users who persisted earlier.
+  const settings: Settings = {
+    ...DEFAULT_SETTINGS,
+    ...(raw && typeof raw === "object" ? (raw as Partial<Settings>) : {}),
+  }
+  const validLocations: ImagesLocation[] = ["vault-assets", "same-folder"]
+  if (!validLocations.includes(settings.imagesLocation)) {
+    settings.imagesLocation = DEFAULT_SETTINGS.imagesLocation
+  }
+  if (typeof settings.imageFilenameTemplate !== "string") {
+    settings.imageFilenameTemplate = DEFAULT_SETTINGS.imageFilenameTemplate
+  }
+  return settings
+}
+
+function normalizePinnedPaths(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((path): path is string => typeof path === "string")
+}
+
+function normalizeRecentFilesByVault(raw: unknown): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  if (!raw || typeof raw !== "object") return out
+  for (const [vault, files] of Object.entries(raw as Record<string, unknown>)) {
+    if (Array.isArray(files)) {
+      out[vault] = files.filter((f): f is string => typeof f === "string").slice(0, MAX_RECENT_FILES)
+    }
+  }
+  return out
+}
+
+function normalizeRightPaneTab(raw: unknown): RightPaneTab {
+  return raw === "ai" || raw === "properties" ? raw : "properties"
+}
+
+type SharedPersistedState = Pick<
+  AppStore,
+  "settings" | "pinnedPaths" | "recentFilesByVault" | "aiAgent" | "aiPermissionMode"
+>
+
+/**
+ * Validate the app-global entries against the state they would replace.
+ *
+ * Two deliberate omissions: keys absent from storage are left alone rather than
+ * reset to defaults (a partial read can never wipe live state), and values that
+ * already match are dropped rather than re-set, so re-reading after every
+ * cross-window notification costs no re-renders.
+ */
+function normalizeSharedPersisted(
+  p: Partial<PersistedSlice>,
+  current: SharedPersistedState,
+): Partial<AppStore> {
+  const out: Partial<AppStore> = {}
+  if (p.settings !== undefined) {
+    const settings = normalizeSettings(p.settings)
+    if (!sameJson(settings, current.settings)) out.settings = settings
+  }
+  // Each branch runs the same normalizer the storage layer canonicalizes with,
+  // so what lands in memory is byte-identical to what backs the merge ancestor.
+  if (p.pinnedPaths !== undefined) {
+    const pinnedPaths = normalizePinnedPaths(p.pinnedPaths)
+    if (!sameJson(pinnedPaths, current.pinnedPaths)) out.pinnedPaths = pinnedPaths
+  }
+  if (p.recentFilesByVault !== undefined) {
+    const recentFilesByVault = normalizeRecentFilesByVault(p.recentFilesByVault)
+    if (!sameJson(recentFilesByVault, current.recentFilesByVault)) {
+      out.recentFilesByVault = recentFilesByVault
+    }
+  }
+  // The agent shown in the picker follows the last explicit choice in any
+  // window. The per-chat `agent` stamp is only rewritten by an explicit pick in
+  // the window that owns the chat, so an adopted value never rewrites history.
+  if (p.aiAgent !== undefined && p.aiAgent !== current.aiAgent) out.aiAgent = p.aiAgent
+  if (p.aiPermissionMode !== undefined && p.aiPermissionMode !== current.aiPermissionMode) {
+    out.aiPermissionMode = p.aiPermissionMode
+  }
+  return out
+}
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b)
+}
+
+/** Validate the per-window entries. */
+function normalizeWindowPersisted(p: Partial<PersistedSlice>): Partial<AppStore> {
+  if (p.rightPaneTab === undefined) return {}
+  return { rightPaneTab: normalizeRightPaneTab(p.rightPaneTab) }
+}
+
+/**
+ * Translate the pre-split `mdwriter:store` blob into the current slice, keeping
+ * the key renames earlier releases went through. Runs once, when the scoped
+ * storage migrates that blob into per-key entries; values are validated later
+ * by the normalizers, same as any other read.
+ */
+export function legacyPersistedSlice(legacy: Record<string, unknown>): Partial<PersistedSlice> {
+  const out: Partial<PersistedSlice> = {}
+  if (legacy.settings && typeof legacy.settings === "object") {
+    out.settings = legacy.settings as Settings
+  }
+  if (typeof legacy.aiAgent === "string") out.aiAgent = legacy.aiAgent as AgentId
+  if (typeof legacy.aiPermissionMode === "string") {
+    out.aiPermissionMode = legacy.aiPermissionMode as PermissionMode
+  }
+  if (Array.isArray(legacy.pinnedPaths)) out.pinnedPaths = legacy.pinnedPaths as string[]
+
+  const recentFilesByVault: Record<string, string[]> = {}
+  if (legacy.recentFilesByVault && typeof legacy.recentFilesByVault === "object") {
+    for (const [vault, files] of Object.entries(legacy.recentFilesByVault)) {
+      if (Array.isArray(files)) recentFilesByVault[vault] = files as string[]
+    }
+  }
+  // The short-lived lastFileByVault shape (single path per vault) becomes a
+  // one-element recency list.
+  if (legacy.lastFileByVault && typeof legacy.lastFileByVault === "object") {
+    for (const [vault, file] of Object.entries(legacy.lastFileByVault)) {
+      if (typeof file === "string" && !recentFilesByVault[vault]) {
+        recentFilesByVault[vault] = [file]
+      }
+    }
+  }
+  if (Object.keys(recentFilesByVault).length > 0) out.recentFilesByVault = recentFilesByVault
+
+  // Recover the right-pane tab choice, migrating from the older visibility
+  // flags. Layout open/closed state is owned by the layout module — only which
+  // *tab* the pane shows is restored here.
+  if (legacy.rightPaneTab === "properties" || legacy.rightPaneTab === "ai") {
+    out.rightPaneTab = legacy.rightPaneTab
+  } else if (legacy.rightPane === "ai" || legacy.aiPanelVisible) {
+    out.rightPaneTab = "ai"
+  } else if (legacy.rightPane === "properties" || legacy.propertiesVisible) {
+    out.rightPaneTab = "properties"
+  }
+  return out
+}
+
 export const useStore = create<AppStore>()(
   persist(
     (set) => ({
@@ -486,6 +826,7 @@ export const useStore = create<AppStore>()(
       preferredEditorMode: "block",
       editorMode: "block",
       loadError: null,
+      saveConflict: null,
       blockModeOverrides: {},
       rightPaneTab: "properties",
       focusMode: false,
@@ -502,6 +843,7 @@ export const useStore = create<AppStore>()(
       aiAvailable: [],
       aiMessages: [],
       aiRunning: false,
+      aiBusy: null,
       pendingPermissions: {},
       pendingPermissionOrder: [],
       aiDraftRequest: null,
@@ -602,7 +944,7 @@ export const useStore = create<AppStore>()(
         }),
       patchOpenDoc: (patch) =>
         set((s) => (s.openDoc ? { openDoc: { ...s.openDoc, ...patch } } : {})),
-      openAnalyzedDocument: (path, text, _source) => {
+      openAnalyzedDocument: (path, text, _source, diskDigest = null) => {
         const analysis = analyzeDocument(path, text)
         set((s) => {
           const existingOverride = s.blockModeOverrides[path]
@@ -626,12 +968,16 @@ export const useStore = create<AppStore>()(
             ...analysis,
             saveStatus: "clean",
             saveError: null,
+            diskDigest,
           }
           const next: Partial<AppStore> = {
             openDoc: doc,
             docRev: s.docRev + 1,
             editorMode,
             loadError: null,
+            // Reading the file is itself a resolution: whatever the buffer and
+            // disk disagreed about, this buffer *is* disk now.
+            saveConflict: s.saveConflict?.path === path ? null : s.saveConflict,
             blockModeOverrides,
             blockTextIndex: null,
             pendingScroll:
@@ -668,14 +1014,19 @@ export const useStore = create<AppStore>()(
             void _stale
             blockModeOverrides = rest
           }
+          // A conflict is not a transient failure a keystroke can retry (see
+          // writeDoc.ts's conflictPath park) — it stays on screen with its
+          // message until the user resolves it, instead of flickering back to
+          // "Unsaved" the moment they keep typing.
+          const preserveStatus = doc.saveStatus === "saving" || doc.saveStatus === "conflict"
           return {
             openDoc: {
               ...doc,
               text: nextText,
               dirty: true,
               ...analysis,
-              saveStatus: doc.saveStatus === "saving" ? "saving" : "queued",
-              saveError: null,
+              saveStatus: preserveStatus ? doc.saveStatus : "queued",
+              saveError: preserveStatus ? doc.saveError : null,
             },
             blockModeOverrides,
           }
@@ -723,6 +1074,7 @@ export const useStore = create<AppStore>()(
           return changed ? { blockModeOverrides: next } : {}
         }),
       setLoadError: (loadError) => set({ loadError }),
+      setSaveConflict: (saveConflict) => set({ saveConflict }),
       bumpDocRev: () => set((s) => ({ docRev: s.docRev + 1 })),
       setRightPaneTab: (tab) => set({ rightPaneTab: tab }),
       setFocusMode: (v) => set({ focusMode: v }),
@@ -771,6 +1123,7 @@ export const useStore = create<AppStore>()(
       clearAiMessages: () =>
         set((s) => withActiveChat(s, () => ({ messages: [] }))),
       setAiRunning: (v) => set({ aiRunning: v }),
+      setAiBusy: (v) => set({ aiBusy: v }),
       addPendingPermission: (req) =>
         set((s) => {
           // Idempotent: a re-emit (e.g. devtools hot-reload) shouldn't
@@ -917,11 +1270,13 @@ export const useStore = create<AppStore>()(
         set((s) => (s.editorSelection ? { editorSelection: { ...s.editorSelection, attached: false } } : {})),
     }),
     {
-      name: "mdwriter:store",
-      storage: createJSONStorage(() => localStorage),
+      // The scoped storage below derives its own keys per persisted field and
+      // ignores this name; it is kept only because `persist` requires one.
+      name: "mdwriter",
+      storage: persistedStorage,
       // Only persist installation-local UI state — the vault, tree, and open
       // document are session-scoped and reload from disk on launch.
-      partialize: (s) => ({
+      partialize: (s): PersistedSlice => ({
         settings: s.settings,
         rightPaneTab: s.rightPaneTab,
         aiAgent: s.aiAgent,
@@ -929,70 +1284,16 @@ export const useStore = create<AppStore>()(
         pinnedPaths: s.pinnedPaths,
         recentFilesByVault: s.recentFilesByVault,
       }),
+      // Restore only the exact keys written by `partialize`. Older builds
+      // briefly persisted broader state shapes, so spreading `p` here would
+      // revive stale documents, load errors, or compatibility overrides.
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<AppStore> & {
-          propertiesVisible?: boolean
-          aiPanelVisible?: boolean
-          rightPane?: string | null
-          propertiesExpanded?: boolean
-        }
-        // Re-merge settings against DEFAULT_SETTINGS so any field added in a
-        // later release picks up its default for users who persisted earlier.
-        const settings = { ...DEFAULT_SETTINGS, ...(p.settings ?? {}) }
-        const validLocations: ImagesLocation[] = ["vault-assets", "same-folder"]
-        if (!validLocations.includes(settings.imagesLocation)) {
-          settings.imagesLocation = DEFAULT_SETTINGS.imagesLocation
-        }
-        if (typeof settings.imageFilenameTemplate !== "string") {
-          settings.imageFilenameTemplate = DEFAULT_SETTINGS.imageFilenameTemplate
-        }
-        const pinnedPaths = Array.isArray(p.pinnedPaths)
-          ? p.pinnedPaths.filter((path): path is string => typeof path === "string")
-          : current.pinnedPaths
-        const recentFilesByVault: Record<string, string[]> = {}
-        if (p.recentFilesByVault && typeof p.recentFilesByVault === "object") {
-          for (const [vault, files] of Object.entries(p.recentFilesByVault)) {
-            if (Array.isArray(files)) {
-              recentFilesByVault[vault] = files
-                .filter((f): f is string => typeof f === "string")
-                .slice(0, MAX_RECENT_FILES)
-            }
-          }
-        }
-        // Migrate the short-lived lastFileByVault shape (single path per
-        // vault) into a one-element recency list.
-        const legacyLast = (p as { lastFileByVault?: Record<string, unknown> }).lastFileByVault
-        if (legacyLast && typeof legacyLast === "object") {
-          for (const [vault, file] of Object.entries(legacyLast)) {
-            if (typeof file === "string" && !recentFilesByVault[vault]) {
-              recentFilesByVault[vault] = [file]
-            }
-          }
-        }
-        // Recover the right-pane tab choice, migrating from the older
-        // visibility flags (and from the short-lived propertiesExpanded key
-        // that briefly replaced this when properties lived in the editor).
-        // Layout open/closed state is owned by the layout module — we only
-        // restore which *tab* the pane shows.
-        let rightPaneTab: RightPaneTab = current.rightPaneTab
-        if (p.rightPaneTab === "properties" || p.rightPaneTab === "ai") {
-          rightPaneTab = p.rightPaneTab
-        } else if (p.rightPane === "ai" || p.aiPanelVisible) {
-          rightPaneTab = "ai"
-        } else if (p.rightPane === "properties" || p.propertiesVisible) {
-          rightPaneTab = "properties"
-        }
-        // Restore only the exact keys written by `partialize`. Older builds
-        // briefly persisted broader state shapes, so spreading `p` here would
-        // revive stale documents, load errors, or compatibility overrides.
+        const p = (persisted ?? {}) as Partial<PersistedSlice>
         return {
           ...current,
-          settings,
-          rightPaneTab,
-          pinnedPaths,
-          recentFilesByVault,
-          aiAgent: p.aiAgent ?? current.aiAgent,
-          aiPermissionMode: p.aiPermissionMode ?? current.aiPermissionMode,
+          settings: normalizeSettings(p.settings),
+          ...normalizeSharedPersisted(p, current),
+          ...normalizeWindowPersisted(p),
         }
       },
     },

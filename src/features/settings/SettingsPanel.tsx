@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { listen, emit } from "@tauri-apps/api/event"
+import { emitToThisWindow, listenForThisWindow } from "../../lib/windowEvents"
 import { getVersion } from "@tauri-apps/api/app"
 import { X, Sun, Moon, Monitor, ArrowClockwise } from "@phosphor-icons/react"
 import { useStore, type Theme, type ImagesLocation } from "../../lib/store"
@@ -36,7 +36,7 @@ export function SettingsPanel() {
 
   // Native menu bridge — opens Settings when the user clicks the menu item.
   useEffect(() => {
-    const unlistenP = listen("menu:settings", () => setOpen(true))
+    const unlistenP = listenForThisWindow("menu:settings", () => setOpen(true))
     return () => { unlistenP.then((u) => u()) }
   }, [setOpen])
 
@@ -169,7 +169,7 @@ export function SettingsPanel() {
                 </div>
               </div>
               <button
-                onClick={() => emit("menu:check-updates").catch(() => {})}
+                onClick={() => emitToThisWindow("menu:check-updates").catch(() => {})}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-surface text-[12px] text-text hover:bg-elevated transition-colors"
               >
                 <ArrowClockwise size={12} weight="bold" />

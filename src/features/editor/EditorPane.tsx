@@ -7,7 +7,7 @@ import { useAutoRename } from "./useAutoRename"
 import { renameOpenDoc } from "./renameOpenDoc"
 import { buildBreadcrumbTrail, type BreadcrumbFolder } from "./breadcrumbTrail"
 import { getBody, setBody } from "../../lib/doc"
-import { TextAa, Code, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
+import { TextAa, Code, Eye, NotePencil, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react"
 import { openPalette } from "../palette/openPalette"
 import { createNewFile } from "../tree/useTreeActions"
 import { targetParentDir } from "../tree/targetDir"
@@ -15,6 +15,10 @@ import { FindBar } from "./FindBar"
 import { MarkdownCompatibilityBanner } from "./MarkdownCompatibilityBanner"
 import { DocumentLoadState } from "./DocumentLoadState"
 import { documentRenderKey } from "./documentRenderKey"
+import { ReadingView } from "./ReadingView"
+import { ipc } from "../../lib/ipc"
+import { noteSelfWrite } from "../watcher/useExternalChanges"
+import { errorText, showToast } from "../../lib/toast"
 
 // The block editor pulls the multi-megabyte editor-vendor chunk (BlockNote +
 // ProseMirror + Shiki grammars). Loading it lazily keeps that chunk out of
@@ -46,6 +50,8 @@ export function EditorPane() {
   const loadError = useStore((s) => s.loadError)
   const rootPath = useStore((s) => s.rootPath)
   const focusMode = useStore((s) => s.focusMode)
+  const [styleRevision, setStyleRevision] = useState(0)
+  const [creatingStyle, setCreatingStyle] = useState(false)
 
   if (loadError) {
     return (
@@ -60,12 +66,35 @@ export function EditorPane() {
   // Breadcrumb: vault name → ...subdirs → filename. Subdir segments are
   // clickable — they reveal the folder in the tree sidebar.
   const { vaultName, folders, fileName } = buildBreadcrumbTrail(rootPath, doc.path)
+  const documentPath = doc.path
 
   // Switch to a target mode without toggling. Both modes are pure views
   // over the same `doc.text` — toggling is just a renderer swap, no
   // parse/serialize round-trip happens here.
   function setBlock() { requestMode("block") }
   function setRaw() { requestMode("raw") }
+  function setReading() { requestMode("reading") }
+
+  async function createDocumentStylesheet() {
+    if (creatingStyle) return
+    const path = `${documentPath}.css`
+    setCreatingStyle(true)
+    try {
+      // createFile is no-clobber. Once it succeeds, the file is ours to seed;
+      // this avoids an existence check followed by an accidental overwrite.
+      noteSelfWrite(path)
+      await ipc.createFile(path)
+      const snapshot = await ipc.readFile(path)
+      noteSelfWrite(path)
+      await ipc.writeFile(path, DOCUMENT_STYLESHEET_STARTER, snapshot.digest)
+      setStyleRevision((revision) => revision + 1)
+      showToast("Created document stylesheet", { kind: "info" })
+    } catch (error) {
+      showToast(`Couldn't create document stylesheet: ${errorText(error)}`, { kind: "error" })
+    } finally {
+      setCreatingStyle(false)
+    }
+  }
 
   return (
     <div className="flex flex-col h-full bg-bg">
@@ -76,7 +105,18 @@ export function EditorPane() {
         </div>
         <div className="flex items-center gap-3 flex-none">
           <span className="text-[11px] text-text-subtle">{wordCount(getBody(doc.text))} words</span>
-          <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
+          {editorView === "reading" && (
+            <button
+              type="button"
+              onClick={() => void createDocumentStylesheet()}
+              disabled={creatingStyle}
+              title="Create a stylesheet for this document"
+              className="text-[11px] text-text-subtle hover:text-text disabled:opacity-50"
+            >
+              {creatingStyle ? "Creating…" : "New CSS"}
+            </button>
+          )}
+          <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} onReading={setReading} />
         </div>
       </div>
       <MarkdownCompatibilityBanner />
@@ -90,7 +130,9 @@ export function EditorPane() {
         ].join(" ")}
       >
         <FindBar />
-        {editorView === "block" ? (
+        {editorView === "reading" ? (
+          <ReadingView key={`${doc.path}:${styleRevision}`} text={doc.text} documentPath={doc.path} vaultRoot={rootPath} />
+        ) : editorView === "block" ? (
           // Empty fallback (not a spinner): the chunk is usually warm by the
           // time a doc opens, so any flash would just be visual noise.
           <Suspense fallback={<div className="h-full" />}>
@@ -128,6 +170,16 @@ export function EditorPane() {
     </div>
   )
 }
+
+const DOCUMENT_STYLESHEET_STARTER = `/* Styles for this document's Reading view. */
+.mdwriter-document {
+  max-width: 46rem;
+}
+
+.mdwriter-document h1 {
+  letter-spacing: -0.025em;
+}
+`
 
 function EmptyEditorState() {
   const tree = useStore((s) => s.tree)
@@ -296,8 +348,8 @@ function EditableFileName({ fileName }: { fileName: string }) {
 }
 
 function ModeSegmented({
-  mode, onBlock, onRaw,
-}: { mode: "block" | "raw"; onBlock: () => void; onRaw: () => void }) {
+  mode, onBlock, onRaw, onReading,
+}: { mode: "block" | "raw" | "reading"; onBlock: () => void; onRaw: () => void; onReading: () => void }) {
   return (
     <div className="inline-flex rounded-md border border-border bg-surface p-0.5" role="tablist">
       <SegBtn
@@ -315,6 +367,14 @@ function ModeSegmented({
         ariaLabel="Raw markdown"
       >
         <Code size={13} weight="bold" />
+      </SegBtn>
+      <SegBtn
+        active={mode === "reading"}
+        onClick={onReading}
+        title="Styled reading view"
+        ariaLabel="Styled reading view"
+      >
+        <Eye size={13} weight="bold" />
       </SegBtn>
     </div>
   )

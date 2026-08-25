@@ -22,7 +22,8 @@ import type {
 } from "./ipc"
 import { analyzeDocument, type DocumentRisk } from "./documentAnalysis"
 
-export type EditorMode = "block" | "raw"
+export type EditorMode = "block" | "raw" | "reading"
+export type EditingMode = Exclude<EditorMode, "reading">
 
 export type SaveStatus = "clean" | "queued" | "saving" | "error" | "conflict"
 
@@ -189,7 +190,7 @@ export type AppStore = {
    */
   docRev: number
   bumpDocRev(): void
-  preferredEditorMode: EditorMode
+  preferredEditorMode: EditingMode
   editorMode: EditorMode
   loadError: LoadError | null
   /**
@@ -1034,6 +1035,7 @@ export const useStore = create<AppStore>()(
       requestEditorMode: (mode) => {
         let result: "changed" | "blocked" = "changed"
         set((s) => {
+          if (mode === "reading") return { editorMode: "reading" }
           if (mode === "raw") {
             return { preferredEditorMode: "raw", editorMode: "raw" }
           }

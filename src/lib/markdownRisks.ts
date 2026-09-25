@@ -195,7 +195,9 @@ export function inspectMarkdownRisks(body: string): MarkdownRiskMatch[] {
 
 function reportMatches(text: string, pattern: RegExp, code: MarkdownRiskCode, report: ReportRisk) {
   for (const match of text.matchAll(pattern)) {
-    report(code, match.index, match.index + match[0].length)
+    const index = match.index
+    if (index === undefined) continue
+    report(code, index, index + match[0].length)
   }
 }
 

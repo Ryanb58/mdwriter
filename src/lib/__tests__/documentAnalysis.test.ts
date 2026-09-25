@@ -179,4 +179,41 @@ describe("analyzeDocument", () => {
     expect(issue.snippet.endsWith("…")).toBe(true)
     expect(issue.snippet.length).toBeLessThanOrEqual(162)
   })
+
+  it.each(["\n", "\r\n", "\r"])("retains a %j line break at offset zero when narrowing its index", (newline) => {
+    const text = `${newline}[^a]`
+    expect(analyzeDocument("/vault/note.md", text).markdownIssues).toEqual([
+      {
+        code: "footnote", from: newline.length, to: text.length,
+        line: 2, column: 1, endLine: 2, snippet: "[^a]",
+      },
+    ])
+  })
+
+  it("tracks Unicode columns across a dense long line and resets them on the next line", () => {
+    const count = 2000
+    const fragment = "😀[^a] "
+    const text = fragment.repeat(count) + "\r\n😀[^b]"
+    const issues = analyzeDocument("/vault/note.md", text).markdownIssues
+    expect(issues).toHaveLength(count + 1)
+    for (let index = 0; index < count; index += 1) {
+      expect(issues[index]).toMatchObject({
+        from: index * fragment.length + 2,
+        to: index * fragment.length + 6,
+        line: 1, column: index * 6 + 2, endLine: 1,
+      })
+      expect(issues[index].snippet).toContain("[^a]")
+      expect(issues[index].snippet.length).toBeLessThanOrEqual(162)
+    }
+    expect(issues[count]).toMatchObject({ line: 2, column: 2, endLine: 2, snippet: "😀[^b]" })
+  })
+
+  it("does not double-count columns for overlapping issues with the same start", () => {
+    const text = '```math title="equation"\nx^2\n```\n\n😀[^a]'
+    expect(analyzeDocument("/vault/note.md", text).markdownIssues).toMatchObject([
+      { code: "math", from: 0, line: 1, column: 1 },
+      { code: "code-fence-metadata", from: 0, line: 1, column: 1 },
+      { code: "footnote", line: 5, column: 2 },
+    ])
+  })
 })

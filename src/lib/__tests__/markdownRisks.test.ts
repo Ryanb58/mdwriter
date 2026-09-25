@@ -377,6 +377,13 @@ describe("detectMarkdownRisks", () => {
     expect(detectMarkdownRisks(text)).toEqual([{ code: "footnote", label: "footnotes" }])
   })
 
+  it("retains a regex match at offset zero when narrowing its index", () => {
+    expect(inspectMarkdownRisks("[^a] [^b]")).toEqual([
+      { code: "footnote", from: 0, to: 4 },
+      { code: "footnote", from: 5, to: 9 },
+    ])
+  })
+
   it("keeps exact original offsets after emoji and mixed line endings", () => {
     const text = "😀 first\r\n\rNote[^a].\n😀 <!-- keep -->"
     expect(inspectMarkdownRisks(text)).toEqual([

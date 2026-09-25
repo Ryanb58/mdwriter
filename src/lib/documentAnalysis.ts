@@ -105,9 +105,14 @@ function locateIssues(
   ranges: Array<Pick<DocumentIssue, "code" | "from" | "to">>,
 ): DocumentIssue[] {
   const lineStarts = [0]
+  const lineEnds: number[] = []
   for (const match of text.matchAll(/\r\n?|\n/g)) {
-    lineStarts.push(match.index + match[0].length)
+    const index = match.index
+    if (index === undefined) continue
+    lineEnds.push(index)
+    lineStarts.push(index + match[0].length)
   }
+  lineEnds.push(text.length)
   const lineAt = (offset: number) => {
     let low = 0
     let high = lineStarts.length
@@ -118,19 +123,32 @@ function locateIssues(
     }
     return low
   }
+  let previousLine = -1
+  let columnCursor = 0
+  let column = 1
   return ranges.sort((a, b) => a.from - b.from || a.to - b.to).map((range) => {
     const lineIndex = lineAt(range.from)
+    // Ranges are ordered by start, including overlapping ranges. Count each
+    // line prefix once rather than rescanning it for every issue on the line.
+    if (lineIndex !== previousLine) {
+      columnCursor = lineStarts[lineIndex]
+      column = 1
+      previousLine = lineIndex
+    }
+    for (const character of text.slice(columnCursor, range.from)) {
+      columnCursor += character.length
+      column += 1
+    }
     // Include nearby prose, but center long-line previews on the risky token.
     const previewStart = Math.max(lineStarts[lineIndex], range.from - 32)
-    const lineEnd = text.slice(range.from).search(/[\r\n]/)
-    const contentEnd = lineEnd < 0 ? text.length : range.from + lineEnd
+    const contentEnd = lineEnds[lineIndex]
     const previewEnd = Math.min(contentEnd, previewStart + 160)
     const endLine = lineAt(Math.max(range.from, range.to - 1)) + 1
     const truncated = previewEnd < contentEnd || endLine > lineIndex + 1
     return {
       ...range,
       line: lineIndex + 1,
-      column: [...text.slice(lineStarts[lineIndex], range.from)].length + 1,
+      column,
       endLine,
       snippet: (previewStart > lineStarts[lineIndex] ? "…" : "") +
         text.slice(previewStart, previewEnd) +

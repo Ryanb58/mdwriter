@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { EditorState } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
-import { markdown } from "@codemirror/lang-markdown"
+import { rawMarkdownExtensions } from "./rawMarkdownExtensions"
 import { useRawImagePaste } from "./useRawImagePaste"
 import { useLinkActivation } from "./useLinkActivation"
 import { useLoadedVaultNotes, useOnDemandVaultNotes } from "../../lib/vaultNotes"
@@ -55,9 +55,9 @@ export function RawEditor({
         doc: value,
         extensions: [
           history(),
+          rawMarkdownExtensions(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           lineNumbers(),
-          markdown(),
           EditorView.lineWrapping,
           decorateLinks(() => notesRef.current),
           completion.extension,

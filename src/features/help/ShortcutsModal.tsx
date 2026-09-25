@@ -30,6 +30,8 @@ const GROUPS: Group[] = [
     shortcuts: [
       { keys: ["⌘", "E"], label: "Toggle block / raw markdown" },
       { keys: ["⌘", "F"], label: "Find in note" },
+      { keys: ["Tab", "⇧Tab"], label: "Indent / outdent (raw)" },
+      { keys: ["Esc", "Tab"], label: "Leave raw editor (in sequence)" },
     ],
   },
   {

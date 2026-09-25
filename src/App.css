@@ -295,6 +295,28 @@ body {
 .cm-activeLine, .cm-activeLineGutter { background: var(--color-surface) !important; }
 .cm-content { padding: 24px 16px !important; }
 
+/* Raw Markdown semantics use the app's live light/dark tokens, not a separate
+   editor theme. Keep sizes unchanged so source lines and gutters stay aligned. */
+.cm-editor .cm-syntax-heading { color: var(--color-accent); font-weight: 700; }
+.cm-editor .cm-syntax-strong { font-weight: 700; }
+.cm-editor .cm-syntax-emphasis { font-style: italic; }
+.cm-editor .cm-syntax-strikethrough { text-decoration: line-through; }
+.cm-editor .cm-syntax-link { color: var(--color-accent); }
+.cm-editor .cm-syntax-code { color: var(--color-warning); }
+.cm-editor .cm-syntax-muted { color: var(--color-text-muted); }
+.cm-editor .cm-syntax-keyword { color: var(--color-accent); }
+.cm-editor .cm-syntax-literal { color: var(--color-warning); }
+.cm-editor .cm-syntax-property { color: var(--color-text); }
+.cm-editor.cm-focused .cm-content .cm-matchingBracket {
+  background: var(--color-accent-soft);
+  outline: 1px solid var(--color-accent);
+  border-radius: 2px;
+}
+.cm-editor.cm-focused .cm-content .cm-nonmatchingBracket {
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  text-decoration: underline wavy var(--color-danger);
+}
+
 /* CodeMirror lays out the line-number gutter beside the content with flexbox,
    injecting these rules at runtime via style-mod. In production WebKit builds
    (Tauri's WKWebView) that injection doesn't win the cascade, so .cm-scroller

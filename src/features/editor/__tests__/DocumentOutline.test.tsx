@@ -91,14 +91,46 @@ it("raw adapter navigates with a selection-only transaction, reports scroll and 
   head = markdown.indexOf("# Same")
   fireEvent.click(screen.getByRole("button", { name: "Report edit" }))
   await waitFor(() => expect(screen.getByRole("button", { name: "Heading level 1: Same" })).toHaveAttribute("aria-current", "location"))
+  const remove = vi.spyOn(scrollDOM, "removeEventListener")
   fireEvent.click(second)
   expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ selection: { anchor: secondOffset } }))
   expect(dispatch.mock.calls[0][0]).not.toHaveProperty("changes")
   expect(focus).toHaveBeenCalledOnce()
   expect(doc.toString()).toBe(markdown)
-  const remove = vi.spyOn(scrollDOM, "removeEventListener")
+  // Closed outlines stop watching the editor; reopening must sample its
+  // current viewport rather than leaving the old active section selected.
+  viewport = markdown.indexOf("# Same")
+  await openOutline()
+  await waitFor(() => expect(screen.getByRole("button", { name: "Heading level 1: Same" })).toHaveAttribute("aria-current", "location"))
   rendered.unmount()
   expect(remove).toHaveBeenCalledWith("scroll", expect.any(Function))
+})
+
+it("raw navigation waits for the debounced outline and uses refreshed source positions", async () => {
+  let state = EditorState.create({ doc: markdown })
+  const dispatch = vi.fn()
+  const view = {
+    scrollDOM: document.createElement("div"),
+    contentDOM: document.createElement("div"),
+    get state() { return state },
+    hasFocus: false,
+    posAtCoords: () => 0,
+    dispatch,
+    focus: vi.fn(),
+  } as unknown as EditorView
+  const rendered = render(<DocumentOutlineProvider text={markdown}><RawHarness view={view} /></DocumentOutlineProvider>)
+  const second = await openOutline()
+  const changed = markdown.replace("# Hidden YAML", "# Hidden YAML\nextra: field")
+  state = EditorState.create({ doc: changed })
+  rendered.rerender(<DocumentOutlineProvider text={changed}><RawHarness view={view} /></DocumentOutlineProvider>)
+  expect(second).toBeDisabled()
+  fireEvent.click(second)
+  expect(dispatch).not.toHaveBeenCalled()
+  await waitFor(() => expect(screen.getByRole("button", { name: "Heading level 3: Same" })).toBeEnabled())
+  fireEvent.click(screen.getByRole("button", { name: "Heading level 3: Same" }))
+  expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+    selection: { anchor: changed.indexOf("### Same") },
+  }))
 })
 
 it("block adapter uses BlockNote selection APIs and keeps active section in sync without replacing blocks", async () => {
@@ -137,6 +169,9 @@ it("block adapter uses BlockNote selection APIs and keeps active section in sync
   expect(editor.setTextCursorPosition).toHaveBeenCalledWith("b", "start")
   expect(editor.focus).toHaveBeenCalledOnce()
   expect(host.scrollTop).toBe(284)
+  cursor = "a"
+  await openOutline()
+  await waitFor(() => expect(screen.getByRole("button", { name: "Heading level 1: Same" })).toHaveAttribute("aria-current", "location"))
   rendered.unmount()
   expect(unsubscribe).toHaveBeenCalled()
 })

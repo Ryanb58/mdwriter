@@ -3,6 +3,10 @@ import { ListBullets } from "@phosphor-icons/react"
 import type { OutlineHeading } from "./documentOutline"
 
 type OutlineContextValue = {
+  open: boolean
+  setOpen: (open: boolean) => void
+  /** Retained headings may be displayed while refreshing, but not navigated. */
+  ready: boolean
   headings: OutlineHeading[]
   active: number
   setActive: (index: number) => void
@@ -12,22 +16,41 @@ const OutlineContext = createContext<OutlineContextValue | null>(null)
 export const useDocumentOutline = () => useContext(OutlineContext)
 
 const EMPTY_HEADINGS: OutlineHeading[] = []
+export const OUTLINE_DEBOUNCE_MS = 200
 
 export function DocumentOutlineProvider({ text, children }: { text: string; children: React.ReactNode }) {
   // The Markdown parser shares the lazy editor-vendor chunk. Do not make it a
   // static dependency of EditorPane: the empty app shell must still load fast.
+  const [open, setOpen] = useState(false)
+  const wasOpen = useRef(false)
   const [parsed, setParsed] = useState<{ text: string; headings: OutlineHeading[] } | null>(null)
   useEffect(() => {
+    const justOpened = open && !wasOpen.current
+    wasOpen.current = open
+    if (!open || parsed?.text === text) return
+
+    // A dynamic import only defers loading: parsing itself is synchronous.
+    // Do no parsing while closed; on opening schedule the latest snapshot for
+    // the next task, and coalesce subsequent edits while retaining the list.
     let disposed = false
-    import("./documentOutline").then(({ parseOutline }) => {
-      if (!disposed) setParsed({ text, headings: parseOutline(text) })
-    })
-    return () => { disposed = true }
-  }, [text])
-  const headings = parsed?.text === text ? parsed.headings : EMPTY_HEADINGS
+    const timer = window.setTimeout(() => {
+      import("./documentOutline").then(({ parseOutline }) => {
+        if (!disposed) setParsed({ text, headings: parseOutline(text) })
+      })
+    }, justOpened ? 0 : OUTLINE_DEBOUNCE_MS)
+    return () => {
+      disposed = true
+      window.clearTimeout(timer)
+    }
+  }, [open, text, parsed])
+  const headings = parsed?.headings ?? EMPTY_HEADINGS
+  const ready = parsed?.text === text
   const [active, setActive] = useState(-1)
   const navigate = useRef<((index: number) => boolean) | null>(null)
-  const value = useMemo(() => ({ headings, active, setActive, navigate }), [headings, active])
+  const value = useMemo(
+    () => ({ open, setOpen, ready, headings, active, setActive, navigate }),
+    [open, ready, headings, active],
+  )
   return <OutlineContext.Provider value={value}>{children}</OutlineContext.Provider>
 }
 
@@ -35,7 +58,7 @@ export function DocumentOutlineProvider({ text, children }: { text: string; chil
  * stays intact in focus mode and on small windows. */
 export function DocumentOutline() {
   const outline = useDocumentOutline()!
-  const [open, setOpen] = useState(false)
+  const { open, setOpen } = outline
   const host = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const id = useId()
@@ -56,7 +79,7 @@ export function DocumentOutline() {
       document.removeEventListener("pointerdown", outside)
       document.removeEventListener("keydown", escape)
     }
-  }, [open])
+  }, [open, setOpen])
 
   return (
     <div ref={host} className="relative" data-document-outline>
@@ -66,15 +89,18 @@ export function DocumentOutline() {
         <ListBullets size={17} />
       </button>
       {open && (
-        <nav id={id} aria-label="Document outline" className="absolute right-0 top-full mt-2 z-40 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-surface shadow-lg">
+        <nav id={id} aria-label="Document outline" aria-busy={!outline.ready} className="absolute right-0 top-full mt-2 z-40 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-surface shadow-lg">
           <div className="px-3 py-2 text-xs font-medium text-text-subtle border-b border-border">On this page</div>
           {outline.headings.length === 0 ? (
-            <p className="p-3 text-xs text-text-subtle">No headings yet. Add a heading to navigate this document.</p>
+            <p className="p-3 text-xs text-text-subtle">
+              {outline.ready ? "No headings yet. Add a heading to navigate this document." : "Loading outline…"}
+            </p>
           ) : (
             <ol className="max-h-[min(60vh,28rem)] overflow-y-auto py-1">
               {outline.headings.map((heading, index) => (
                 <li key={heading.from}>
-                  <button type="button" aria-current={outline.active === index ? "location" : undefined}
+                  <button type="button" disabled={!outline.ready}
+                    aria-current={outline.ready && outline.active === index ? "location" : undefined}
                     aria-label={`Heading level ${heading.level}: ${heading.title}`}
                     title={heading.title}
                     onClick={() => {
@@ -83,7 +109,7 @@ export function DocumentOutline() {
                         setOpen(false)
                       }
                     }}
-                    className={`block w-full py-1.5 pr-3 text-left text-xs truncate hover:bg-elevated focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${outline.active === index ? "text-accent bg-elevated font-medium" : "text-text"}`}
+                    className={`block w-full py-1.5 pr-3 text-left text-xs truncate hover:bg-elevated disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent ${outline.ready && outline.active === index ? "text-accent bg-elevated font-medium" : "text-text"}`}
                     style={{ paddingLeft: 12 + heading.indent * 14 }}>
                     {heading.title}
                   </button>

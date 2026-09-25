@@ -16,9 +16,10 @@ export function useBlockOutline(editor: OutlineEditor, hostRef: React.RefObject<
   const headings = outline?.headings
   const navigate = outline?.navigate
   const setActive = outline?.setActive
+  const enabled = outline?.open && outline.ready
   useEffect(() => {
     const host = hostRef.current
-    if (!host || !headings || !navigate || !setActive) return
+    if (!enabled || !host || !headings || !navigate || !setActive) return
     let frame: number | null = null
     const nodeFor = (id: string) => host.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`)
     const report = (selection = false) => {
@@ -73,5 +74,5 @@ export function useBlockOutline(editor: OutlineEditor, hostRef: React.RefObject<
       window.removeEventListener("resize", scroll)
       if (frame !== null) cancelAnimationFrame(frame)
     }
-  }, [editor, hostRef, headings, navigate, setActive])
+  }, [editor, hostRef, enabled, headings, navigate, setActive])
 }

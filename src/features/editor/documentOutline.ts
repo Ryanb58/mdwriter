@@ -24,14 +24,39 @@ function textContent(node: Nodes): string {
   return ""
 }
 
+function lineBreakLengthAt(text: string, index: number): number {
+  if (text.startsWith("\r\n", index)) return 2
+  return text[index] === "\r" || text[index] === "\n" ? 1 : 0
+}
+
+/** Like documentAnalysis's envelope scanner, recognize CR, LF and CRLF at
+ * each boundary independently. Do not normalize the source: both UTF-16
+ * offsets and Markdown/CodeMirror line numbers must survive mixed endings. */
+function frontmatterEnd(text: string): number {
+  const start = text.charCodeAt(0) === 0xfeff ? 1 : 0
+  if (text.slice(start, start + 3) !== "---") return 0
+  const openerEnd = start + 3
+  const openerBreak = lineBreakLengthAt(text, openerEnd)
+  if (!openerBreak) return 0
+
+  let cursor = openerEnd + openerBreak
+  while (cursor < text.length) {
+    let lineEnd = cursor
+    while (lineEnd < text.length && !lineBreakLengthAt(text, lineEnd)) lineEnd++
+    if (/^(?:---|\.\.\.)[ \t]*$/.test(text.slice(cursor, lineEnd))) {
+      return lineEnd + lineBreakLengthAt(text, lineEnd)
+    }
+    cursor = lineEnd + lineBreakLengthAt(text, lineEnd)
+  }
+  // Preserve the existing treatment of an unclosed envelope as Markdown.
+  return 0
+}
+
 /** Parse, never rewrite, the canonical Markdown. Mask YAML so positions stay
- * exact, including CRLF, Unicode, and heading-like YAML comments/scalars. */
+ * exact, including mixed line endings, Unicode, and heading-like YAML. */
 export function parseOutline(text: string): OutlineHeading[] {
-  const frontmatter = text.match(/^\uFEFF?---\r?\n[\s\S]*?^(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/m)
-  // `m` is needed for the closing fence, but only a fence at byte zero opens YAML.
-  const source = frontmatter?.index === 0
-    ? frontmatter[0].replace(/[^\r\n]/g, " ") + text.slice(frontmatter[0].length)
-    : text
+  const end = frontmatterEnd(text)
+  const source = end ? text.slice(0, end).replace(/[^\r\n]/g, " ") + text.slice(end) : text
   const headings: OutlineHeading[] = []
   const ancestors: number[] = []
   function visit(node: Nodes) {

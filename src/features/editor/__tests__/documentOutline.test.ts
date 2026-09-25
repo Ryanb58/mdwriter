@@ -20,7 +20,7 @@ describe("canonical Markdown outline", () => {
     expect(parseOutline(text).map((h) => h.title)).toEqual(["Actual"])
   })
 
-  it.each(["\n", "\r\n"])("excludes YAML, preserving exact source coordinates with %j", (eol) => {
+  it.each(["\n", "\r\n", "\r"])("excludes YAML, preserving exact source coordinates with %j", (eol) => {
     const text = ["---", "# YAML comment", "title: 🪴", "description: |", "  # Not a heading", "---", "", "# Real", "", "## Again"].join(eol)
     const headings = parseOutline(text)
     expect(headings.map((h) => [h.title, h.line, h.from])).toEqual([
@@ -28,6 +28,41 @@ describe("canonical Markdown outline", () => {
     ])
     const doc = EditorState.create({ doc: text }).doc
     expect(rawHeadingPosition(headings[1], doc)).toBe(doc.line(10).from)
+  })
+
+  it.each(["---", "..."])("masks mixed-ending YAML with a %s closer without shifting navigation", (closer) => {
+    const text = `\uFEFF---\r# YAML heading\nvalue: 🪴\r\n${closer} \t\r# Real heading\r\n\r## Next\n`
+    const headings = parseOutline(text)
+    expect(headings.map((h) => [h.title, h.line, h.column, h.from])).toEqual([
+      ["Real heading", 5, 0, text.indexOf("# Real heading")],
+      ["Next", 7, 0, text.indexOf("## Next")],
+    ])
+    const doc = EditorState.create({ doc: text }).doc
+    for (const heading of headings) {
+      expect(rawHeadingPosition(heading, doc)).toBe(doc.line(heading.line).from)
+    }
+  })
+
+  it("handles every opener/closer line-ending combination and a closer at EOF", () => {
+    for (const openerBreak of ["\r", "\n", "\r\n"]) {
+      for (const closerBreak of ["\r", "\n", "\r\n", ""]) {
+        const text = `---${openerBreak}# YAML heading\r\n---${closerBreak}`
+        expect(parseOutline(text)).toEqual([])
+        if (closerBreak) {
+          const body = "# Real heading"
+          expect(parseOutline(text + body)).toEqual([
+            expect.objectContaining({ title: "Real heading", line: 4, from: text.length }),
+          ])
+        }
+      }
+    }
+  })
+
+  it("requires exact envelope lines at the file start, not YAML scalar or prose fences", () => {
+    expect(parseOutline("---\rvalue: |\n  ---\r  # Hidden\r---\n# Visible").map((h) => h.title)).toEqual(["Visible"])
+    expect(parseOutline("---\r# Unclosed").map((h) => h.title)).toEqual(["Unclosed"])
+    expect(parseOutline("Intro\r\r---\r# Visible\r---").map((h) => h.title)).toEqual(["Visible"])
+    expect(parseOutline("---not YAML\r# Visible").map((h) => h.title)).toEqual(["Visible"])
   })
 
   it("handles empty YAML and BOM/CRLF YAML, but not later thematic breaks as YAML", () => {

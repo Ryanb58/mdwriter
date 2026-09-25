@@ -9,13 +9,13 @@ export function useRawOutline(viewRef: React.RefObject<EditorView | null>) {
   current.current = outline
   const frame = useRef<number | null>(null)
   const report = useCallback((selection = false) => {
-    if (!current.current) return
+    if (!current.current?.open || !current.current.ready) return
     if (frame.current !== null) cancelAnimationFrame(frame.current)
     frame.current = requestAnimationFrame(() => {
       frame.current = null
       const view = viewRef.current
       const state = current.current
-      if (!view || !state) return
+      if (!view || !state?.open || !state.ready) return
       const rect = view.scrollDOM.getBoundingClientRect()
       const pos = selection ? view.state.selection.main.head : view.posAtCoords({
         x: view.contentDOM.getBoundingClientRect().left + 4,
@@ -29,9 +29,10 @@ export function useRawOutline(viewRef: React.RefObject<EditorView | null>) {
   }, [viewRef])
   const headings = outline?.headings
   const navigate = outline?.navigate
+  const enabled = outline?.open && outline.ready
   useEffect(() => {
     const view = viewRef.current
-    if (!view || !headings || !navigate) return
+    if (!enabled || !view || !headings || !navigate) return
     navigate.current = (index) => {
       const heading = headings[index]
       if (!heading) return false
@@ -54,6 +55,6 @@ export function useRawOutline(viewRef: React.RefObject<EditorView | null>) {
       view.scrollDOM.removeEventListener("scroll", scroll)
       if (frame.current !== null) cancelAnimationFrame(frame.current)
     }
-  }, [headings, navigate, report, viewRef])
+  }, [enabled, headings, navigate, report, viewRef])
   return report
 }

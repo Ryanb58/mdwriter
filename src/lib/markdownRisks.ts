@@ -15,6 +15,10 @@ export type MarkdownRiskCode =
 
 export type MarkdownRisk = { code: MarkdownRiskCode; label: string }
 
+/** UTF-16 source offsets, [from, to), in the original (not normalized) body. */
+export type MarkdownRiskMatch = { code: MarkdownRiskCode; from: number; to: number }
+type ReportRisk = (code: MarkdownRiskCode, from: number, to: number) => void
+
 const RISK_LABELS: Record<MarkdownRiskCode, string> = {
   "html-comment": "HTML comments",
   footnote: "footnotes",
@@ -130,41 +134,71 @@ const VOID_RAW_BLOCK_TAGS = new Set([
  * newlines so the remaining line-oriented checks keep their shape.
  */
 export function detectMarkdownRisks(body: string): MarkdownRisk[] {
-  const source = body.replace(/\r\n?/g, "\n")
-  const found = new Set<MarkdownRiskCode>()
-  const chars = [...source]
+  return summarizeMarkdownRisks(inspectMarkdownRisks(body))
+}
 
-  maskFencedCode(source, chars, found)
-  maskIndentedCode(source, chars)
-  maskEscapes(chars)
-  maskInlineCode(chars)
-  const visible = chars.join("")
-  detectAmbiguousFrontmatter(visible, found)
-
-  // Raw HTML is masked only for the two HTML/MDX classifiers. Other named
-  // constructs still deserve their own labels when they occur inside a raw
-  // block, and all of them already operate on code/escape-protected text.
-  const outsideRawHtmlChars = [...visible]
-  maskRawHtmlBlocks(outsideRawHtmlChars, found)
-  const outsideRawHtml = outsideRawHtmlChars.join("")
-
-  if (/<!--/.test(visible)) found.add("html-comment")
-  if (/\[\^[^\]\n]+\]/.test(visible)) found.add("footnote")
-  if (/^ {0,3}\[(?!\^)[^\]\n]+\]:\s*\S+/m.test(visible)) {
-    found.add("reference-definition")
-  }
-  if (hasInlineLinkTitle(visible)) found.add("link-title")
-  if (hasMdx(outsideRawHtml)) found.add("mdx")
-  if (hasInlineHtml(outsideRawHtml)) found.add("inline-html")
-  if (hasDisplayMath(visible)) found.add("math")
-  if (/^ {0,3}:{3,}(?:[^:]|$)/m.test(visible)) found.add("directive")
-  if (hasAlignedTableDelimiter(visible)) found.add("table-alignment")
-  if (hasMultiParagraphQuote(visible)) found.add("multi-paragraph-quote")
-
+/** Keep the existing deduplicated labels/order contract separate from occurrences. */
+export function summarizeMarkdownRisks(matches: MarkdownRiskMatch[]): MarkdownRisk[] {
+  const found = new Set(matches.map((match) => match.code))
   return RISK_ORDER.filter((code) => found.has(code)).map((code) => ({
     code,
     label: RISK_LABELS[code],
   }))
+}
+
+export function inspectMarkdownRisks(body: string): MarkdownRiskMatch[] {
+  // Preserve a map back to original offsets across CRLF/CR normalization.
+  // split("") below is deliberate: regex indices and editor ranges use UTF-16,
+  // not code-point indices (which diverge after emoji/non-BMP characters).
+  const offsets: number[] = []
+  let source = ""
+  for (let index = 0; index < body.length; index += 1) {
+    offsets.push(index)
+    source += body[index] === "\r" ? "\n" : body[index]
+    if (body[index] === "\r" && body[index + 1] === "\n") index += 1
+  }
+  offsets.push(body.length)
+  const matches: MarkdownRiskMatch[] = []
+  const report: ReportRisk = (code, from, to) => {
+    matches.push({ code, from: offsets[from], to: offsets[to] })
+  }
+  const chars = source.split("")
+
+  maskFencedCode(source, chars, report)
+  maskIndentedCode(source, chars)
+  maskEscapes(chars)
+  maskInlineCode(chars)
+  const visible = chars.join("")
+  detectAmbiguousFrontmatter(visible, report)
+
+  // Raw HTML is masked only for the two HTML/MDX classifiers. Other named
+  // constructs still deserve their own labels when they occur inside a raw
+  // block, and all of them already operate on code/escape-protected text.
+  const outsideRawHtmlChars = visible.split("")
+  maskRawHtmlBlocks(outsideRawHtmlChars, report)
+  const outsideRawHtml = outsideRawHtmlChars.join("")
+
+  reportMatches(visible, /<!--/g, "html-comment", report)
+  reportMatches(visible, /\[\^[^\]\n]+\]/g, "footnote", report)
+  reportMatches(visible, /^ {0,3}\[(?!\^)[^\]\n]+\]:\s*\S+/gm, "reference-definition", report)
+  detectInlineLinkTitles(visible, report)
+  detectMdx(outsideRawHtml, report)
+  reportMatches(outsideRawHtml, /<\/?([a-z][\w-]*)(?:\s[^<>\n]*?)?\s*\/?>/g, "inline-html", report)
+  reportMatches(visible, /(?<!\$)\$\$(?!\$)/g, "math", report)
+  reportMatches(visible, /^ {0,3}\\\[(?:\s.*)?$/gm, "math", report)
+  reportMatches(visible, /^ {0,3}:{3,}(?:[^:]|$)/gm, "directive", report)
+  detectAlignedTableDelimiters(visible, report)
+  detectMultiParagraphQuotes(visible, report)
+
+  return matches.sort((a, b) => a.from - b.from || a.to - b.to)
+}
+
+function reportMatches(text: string, pattern: RegExp, code: MarkdownRiskCode, report: ReportRisk) {
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index
+    if (index === undefined) continue
+    report(code, index, index + match[0].length)
+  }
 }
 
 function linesOf(text: string): Line[] {
@@ -186,19 +220,19 @@ function maskRange(chars: string[], start: number, end: number): void {
 
 function detectAmbiguousFrontmatter(
   source: string,
-  found: Set<MarkdownRiskCode>,
+  report: ReportRisk,
 ): void {
   const lines = source.split("\n")
   if (lines[0] !== "---") return
   if (!lines.slice(1).some((line) => line === "---")) {
-    found.add("ambiguous-frontmatter")
+    report("ambiguous-frontmatter", 0, 3)
   }
 }
 
 function maskFencedCode(
   source: string,
   chars: string[],
-  found: Set<MarkdownRiskCode>,
+  report: ReportRisk,
 ): void {
   const lines = linesOf(source)
 
@@ -217,12 +251,12 @@ function maskFencedCode(
 
     const tokens = info ? info.split(/\s+/) : []
     const language = tokens[0]?.toLowerCase() ?? ""
-    if (["math", "latex", "katex"].includes(language)) found.add("math")
+    if (["math", "latex", "katex"].includes(language)) report("math", line.start, line.end)
     if (
       tokens.length > 1 ||
       (tokens.length === 1 && (/^[{[]/.test(tokens[0]) || tokens[0].includes("=")))
     ) {
-      found.add("code-fence-metadata")
+      report("code-fence-metadata", line.start, line.end)
     }
 
     let lastLine = lines.length - 1
@@ -385,7 +419,7 @@ function maskInlineCode(chars: string[]): void {
 
 function maskRawHtmlBlocks(
   chars: string[],
-  found: Set<MarkdownRiskCode>,
+  report: ReportRisk,
 ): void {
   const current = chars.join("")
   const lines = linesOf(current)
@@ -394,14 +428,14 @@ function maskRawHtmlBlocks(
     const line = lines[lineIndex]
     const special = /^ {0,3}(?:<\?|<![A-Z]|<!\[CDATA\[)/i.test(line.text)
     if (special) {
-      found.add("raw-html")
+      report("raw-html", line.start, line.end)
       maskRange(chars, line.start, line.end)
       continue
     }
 
     const closingOnly = /^ {0,3}<\/([a-z][\w-]*)\s*>\s*$/i.exec(line.text)
     if (closingOnly && RAW_BLOCK_TAGS.has(closingOnly[1].toLowerCase())) {
-      found.add("raw-html")
+      report("raw-html", line.start, line.end)
       maskRange(chars, line.start, line.end)
       continue
     }
@@ -413,7 +447,6 @@ function maskRawHtmlBlocks(
     const tag = opener?.[1].toLowerCase()
     if (!tag || !RAW_BLOCK_TAGS.has(tag)) continue
 
-    found.add("raw-html")
     let lastLine = lineIndex
     const closePattern = new RegExp(`</${tag}\\s*>`, "i")
     if (
@@ -432,13 +465,14 @@ function maskRawHtmlBlocks(
       }
     }
 
+    report("raw-html", line.start, lines[lastLine].end)
     const end = lastLine + 1 < lines.length ? lines[lastLine + 1].start : chars.length
     maskRange(chars, line.start, end)
     lineIndex = lastLine
   }
 }
 
-function hasInlineLinkTitle(text: string): boolean {
+function detectInlineLinkTitles(text: string, report: ReportRisk): void {
   for (let labelStart = 0; labelStart < text.length; labelStart += 1) {
     if (text[labelStart] !== "[") continue
 
@@ -472,10 +506,10 @@ function hasInlineLinkTitle(text: string): boolean {
     if (close < 0) continue
     const inside = text.slice(start, close)
     if (/(?:^|\s)(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\))\s*$/.test(inside)) {
-      return true
+      report("link-title", labelStart > 0 && text[labelStart - 1] === "!" ? labelStart - 1 : labelStart, close + 1)
+      labelStart = close
     }
   }
-  return false
 }
 
 function matchingLabelEnd(text: string, start: number): number {
@@ -489,21 +523,11 @@ function matchingLabelEnd(text: string, start: number): number {
   return -1
 }
 
-function hasMdx(text: string): boolean {
-  // A tag start is sufficient: BlockNote can discard an incomplete or
-  // multiline custom component before a same-line `>` ever appears.
-  const jsxTag = /<\/?[A-Z][\w.-]*(?=[\s/>])/
-  const jsxFragment = /<\/?>/
-  const esm = /^(?:import\s+(?:[^\n]+\s+from\s+|["'])|export\s+(?:default\b|const\b|let\b|var\b|function\b|class\b|\{))/m
-  return (
-    jsxTag.test(text) ||
-    jsxFragment.test(text) ||
-    esm.test(text) ||
-    hasBalancedMdxExpression(text)
-  )
-}
-
-function hasBalancedMdxExpression(text: string): boolean {
+function detectMdx(text: string, report: ReportRisk): void {
+  // A tag start is sufficient, including incomplete and multiline components.
+  reportMatches(text, /<\/?[A-Z][\w.-]*(?=[\s/>])/g, "mdx", report)
+  reportMatches(text, /<\/?>/g, "mdx", report)
+  reportMatches(text, /^(?:import\s+(?:[^\n]+\s+from\s+|["'])|export\s+(?:default\b|const\b|let\b|var\b|function\b|class\b|\{))/gm, "mdx", report)
   for (let start = 0; start < text.length; start += 1) {
     if (text[start] !== "{") continue
     let depth = 1
@@ -513,12 +537,14 @@ function hasBalancedMdxExpression(text: string): boolean {
       depth -= 1
       if (depth === 0) {
         const expression = text.slice(start + 1, index).trim()
-        if (looksLikeMdxExpression(expression)) return true
+        if (looksLikeMdxExpression(expression)) {
+          report("mdx", start, index + 1)
+          start = index
+        }
         break
       }
     }
   }
-  return false
 }
 
 function looksLikeMdxExpression(expression: string): boolean {
@@ -527,51 +553,41 @@ function looksLikeMdxExpression(expression: string): boolean {
   return /\/\*|=>|&&|\|\||[+*/%?:=]/.test(expression)
 }
 
-function hasInlineHtml(text: string): boolean {
-  const tag = /<\/?([a-z][\w-]*)(?:\s[^<>\n]*?)?\s*\/?>/g
-  // Canonical block HTML has already been masked. Any tag still visible is
-  // inline HTML, including block-tag names used in the middle of prose.
-  return tag.test(text)
-}
-
-function hasDisplayMath(text: string): boolean {
-  return /(^|[^$])\$\$(?!\$)/.test(text) || /^ {0,3}\\\[(?:\s.*)?$/m.test(text)
-}
-
-function hasAlignedTableDelimiter(text: string): boolean {
-  return text.split("\n").some((line) => {
-    const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "")
+function detectAlignedTableDelimiters(text: string, report: ReportRisk): void {
+  for (const line of linesOf(text)) {
+    const trimmed = line.text.trim().replace(/^\|/, "").replace(/\|$/, "")
     const cells = trimmed.split("|").map((cell) => cell.trim())
-    return (
+    if (
       cells.length >= 2 &&
       cells.every((cell) => /^:?-{3,}:?$/.test(cell)) &&
       cells.some((cell) => cell.startsWith(":") || cell.endsWith(":"))
-    )
-  })
+    ) report("table-alignment", line.start, line.end)
+  }
 }
 
-function hasMultiParagraphQuote(text: string): boolean {
-  let insideQuote = false
+function detectMultiParagraphQuotes(text: string, report: ReportRisk): void {
+  let start = 0
+  let end = 0
   let sawContent = false
   let sawQuotedBlank = false
-
-  for (const line of text.split("\n")) {
-    const quote = /^ {0,3}>[ \t]?(.*)$/.exec(line)
+  let multipleParagraphs = false
+  // Sentinel flushes a quote at EOF as well as those ended by ordinary prose.
+  for (const line of [...linesOf(text), { text: "", start: text.length, end: text.length }]) {
+    const quote = /^ {0,3}>[ \t]?(.*)$/.exec(line.text)
     if (!quote) {
-      insideQuote = false
+      if (multipleParagraphs) report("multi-paragraph-quote", start, end)
       sawContent = false
       sawQuotedBlank = false
+      multipleParagraphs = false
       continue
     }
-
-    if (!insideQuote) insideQuote = true
+    end = line.end
     if (quote[1].trim() === "") {
       if (sawContent) sawQuotedBlank = true
     } else {
-      if (sawContent && sawQuotedBlank) return true
+      if (!sawContent) start = line.start
+      if (sawContent && sawQuotedBlank) multipleParagraphs = true
       sawContent = true
     }
   }
-
-  return false
 }

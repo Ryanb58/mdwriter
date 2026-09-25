@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { detectMarkdownRisks, type MarkdownRiskCode } from "../markdownRisks"
+import { detectMarkdownRisks, inspectMarkdownRisks, type MarkdownRiskCode } from "../markdownRisks"
 
 function codes(markdown: string): MarkdownRiskCode[] {
   return detectMarkdownRisks(markdown).map((risk) => risk.code)
@@ -91,6 +91,13 @@ describe("detectMarkdownRisks", () => {
   for (const { name, markdown, expected } of positiveCases) {
     it(`detects ${name}`, () => {
       expect(codes(markdown)).toEqual(expected)
+      const matches = inspectMarkdownRisks(markdown)
+      expect(new Set(matches.map((match) => match.code))).toEqual(new Set(expected))
+      for (const match of matches) {
+        expect(match.from).toBeGreaterThanOrEqual(0)
+        expect(match.to).toBeLessThanOrEqual(markdown.length)
+        expect(markdown.slice(match.from, match.to).trim().length).toBeGreaterThan(0)
+      }
     })
   }
 
@@ -361,5 +368,50 @@ describe("detectMarkdownRisks", () => {
 
   it("detects a link title after a nested-bracket label", () => {
     expect(codes('[outer [inner]](/docs "Title")')).toEqual(["link-title"])
+  })
+
+  it("reports repeated locations without duplicating the existing risk summaries", () => {
+    const text = "One[^a], two[^b].\n\n[^a]: source\n[^b]: another"
+    expect(inspectMarkdownRisks(text).map((match) => text.slice(match.from, match.to)))
+      .toEqual(["[^a]", "[^b]", "[^a]", "[^b]"])
+    expect(detectMarkdownRisks(text)).toEqual([{ code: "footnote", label: "footnotes" }])
+  })
+
+  it("keeps exact original offsets after emoji and mixed line endings", () => {
+    const text = "😀 first\r\n\rNote[^a].\n😀 <!-- keep -->"
+    expect(inspectMarkdownRisks(text)).toEqual([
+      { code: "footnote", from: text.indexOf("[^a]"), to: text.indexOf("[^a]") + 4 },
+      { code: "html-comment", from: text.indexOf("<!--"), to: text.indexOf("<!--") + 4 },
+    ])
+  })
+
+  it("does not locate protected lookalikes instead of the real match", () => {
+    const text = "😀 `[^a]`\n\n```md\n[^a]\n```\n\n    [^a]\n\n\\[^a]\n\nreal[^a]"
+    expect(inspectMarkdownRisks(text)).toEqual([
+      { code: "footnote", from: text.lastIndexOf("[^a]"), to: text.length },
+    ])
+  })
+
+  it.each([
+    ["link-title", '[outer [inner]](/docs\n  "Title")'],
+    ["mdx", "{\n  value + 1\n}"],
+    ["raw-html", '<div\n class="note">\nText\n</div>'],
+    ["multi-paragraph-quote", "> First.\n>\n> Second.\n>\n> Third."],
+    ["code-fence-metadata", '```ts title="example.ts"'],
+    ["table-alignment", "| :--- | ---: |"],
+  ] as const)("locates the complete %s source range", (code, construct) => {
+    const text = `Before\n\n${construct}\n\nAfter`
+    expect(inspectMarkdownRisks(text).filter((match) => match.code === code)).toEqual([
+      { code, from: 8, to: 8 + construct.length },
+    ])
+  })
+
+  it("locates separate multi-paragraph quotes independently", () => {
+    const quote = "> One\n>\n> Two"
+    const text = `${quote}\n\nBreak\n\n${quote}`
+    expect(inspectMarkdownRisks(text)).toEqual([
+      { code: "multi-paragraph-quote", from: 0, to: quote.length },
+      { code: "multi-paragraph-quote", from: text.lastIndexOf("> One"), to: text.length },
+    ])
   })
 })

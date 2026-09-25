@@ -20,7 +20,7 @@ import type {
   AiPermissionRequest,
   AgentBusyDetail,
 } from "./ipc"
-import { analyzeDocument, type DocumentRisk } from "./documentAnalysis"
+import { analyzeDocument, type DocumentRisk, type DocumentIssue } from "./documentAnalysis"
 
 export type EditorMode = "block" | "raw"
 
@@ -44,6 +44,7 @@ export type OpenDoc = {
   savedAt: number | null
   parseError: string | null
   markdownRisks: DocumentRisk[]
+  markdownIssues: DocumentIssue[]
   contentFingerprint: string
   saveStatus: SaveStatus
   saveError: string | null

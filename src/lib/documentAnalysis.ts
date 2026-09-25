@@ -1,6 +1,7 @@
 import { parseDoc } from "./doc"
 import {
-  detectMarkdownRisks,
+  inspectMarkdownRisks,
+  summarizeMarkdownRisks,
   type MarkdownRisk,
   type MarkdownRiskCode,
 } from "./markdownRisks"
@@ -11,9 +12,23 @@ export type DocumentRisk =
   | MarkdownRisk
   | { code: "frontmatter-error"; label: string }
 
+export type DocumentIssue = {
+  code: DocumentRiskCode
+  /** UTF-16 offsets in the complete, original file; end is exclusive. */
+  from: number
+  to: number
+  /** One-based source coordinates (columns count Unicode code points). */
+  line: number
+  column: number
+  endLine: number
+  /** Bounded, plain-text source context, never rendered as Markdown/HTML. */
+  snippet: string
+}
+
 export type DocumentAnalysis = {
   parseError: string | null
   markdownRisks: DocumentRisk[]
+  markdownIssues: DocumentIssue[]
   contentFingerprint: string
 }
 
@@ -39,7 +54,13 @@ export function analyzeDocument(path: string, text: string): DocumentAnalysis {
     ? null
     : unparsedFrontmatterBody(text)
   const needsEnvelopeRisk = protectedBody !== null
-  const markdownRisks: DocumentRisk[] = detectMarkdownRisks(protectedBody ?? parsed.body)
+  const body = protectedBody ?? parsed.body
+  const bodyStart = text.length - body.length
+  const matches = inspectMarkdownRisks(body)
+  const markdownRisks: DocumentRisk[] = summarizeMarkdownRisks(matches)
+  const ranges: Array<Pick<DocumentIssue, "code" | "from" | "to">> = matches.map(
+    (match) => ({ ...match, from: match.from + bodyStart, to: match.to + bodyStart }),
+  )
 
   // The current byte-preserving frontmatter helpers intentionally recognize
   // LF envelopes without a BOM only. Treat any other valid-looking envelope
@@ -53,19 +74,69 @@ export function analyzeDocument(path: string, text: string): DocumentAnalysis {
       label: "frontmatter that needs raw editing",
     })
   }
+  if (needsEnvelopeRisk) {
+    // The envelope itself is a location even when its body has the same risk.
+    const from = text.charCodeAt(0) === 0xfeff ? 1 : 0
+    ranges.push({ code: "ambiguous-frontmatter", from, to: from + 3 })
+  }
 
   if (parsed.parseError) {
     markdownRisks.push({
       code: "frontmatter-error",
       label: "frontmatter that could not be parsed",
     })
+    ranges.push({
+      code: "frontmatter-error",
+      from: 0,
+      to: (parsed.frontmatterRange?.end ?? text.length),
+    })
   }
 
   return {
     parseError: parsed.parseError,
     markdownRisks,
+    markdownIssues: locateIssues(text, ranges),
     contentFingerprint: fingerprintDocument(text),
   }
+}
+
+function locateIssues(
+  text: string,
+  ranges: Array<Pick<DocumentIssue, "code" | "from" | "to">>,
+): DocumentIssue[] {
+  const lineStarts = [0]
+  for (const match of text.matchAll(/\r\n?|\n/g)) {
+    lineStarts.push(match.index + match[0].length)
+  }
+  const lineAt = (offset: number) => {
+    let low = 0
+    let high = lineStarts.length
+    while (low + 1 < high) {
+      const mid = (low + high) >>> 1
+      if (lineStarts[mid] <= offset) low = mid
+      else high = mid
+    }
+    return low
+  }
+  return ranges.sort((a, b) => a.from - b.from || a.to - b.to).map((range) => {
+    const lineIndex = lineAt(range.from)
+    // Include nearby prose, but center long-line previews on the risky token.
+    const previewStart = Math.max(lineStarts[lineIndex], range.from - 32)
+    const lineEnd = text.slice(range.from).search(/[\r\n]/)
+    const contentEnd = lineEnd < 0 ? text.length : range.from + lineEnd
+    const previewEnd = Math.min(contentEnd, previewStart + 160)
+    const endLine = lineAt(Math.max(range.from, range.to - 1)) + 1
+    const truncated = previewEnd < contentEnd || endLine > lineIndex + 1
+    return {
+      ...range,
+      line: lineIndex + 1,
+      column: [...text.slice(lineStarts[lineIndex], range.from)].length + 1,
+      endLine,
+      snippet: (previewStart > lineStarts[lineIndex] ? "…" : "") +
+        text.slice(previewStart, previewEnd) +
+        (truncated ? "…" : ""),
+    }
+  })
 }
 
 /**

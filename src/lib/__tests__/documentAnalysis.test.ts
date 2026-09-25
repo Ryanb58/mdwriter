@@ -130,4 +130,53 @@ describe("analyzeDocument", () => {
     expect(analysis.markdownRisks.filter((risk) => risk.code === "ambiguous-frontmatter"))
       .toHaveLength(1)
   })
+
+  it.each(["\n", "\r\n", "\r"])("uses full-file coordinates with %j frontmatter", (newline) => {
+    const text = ["---", "template: <Panel />", "---", "", "😀 A claim[^source]."].join(newline)
+    const analysis = analyzeDocument("/vault/note.md", text)
+    const issue = analysis.markdownIssues.find((item) => item.code === "footnote")!
+    expect(issue).toMatchObject({
+      line: 5, column: 10, endLine: 5, snippet: "😀 A claim[^source].",
+    })
+    expect(text.slice(issue.from, issue.to)).toBe("[^source]")
+    expect(analysis.markdownIssues.some((item) => item.code === "mdx")).toBe(false)
+  })
+
+  it("locates both a BOM/mixed-ending envelope and an ambiguous body", () => {
+    const text = "\uFEFF---\r\ntitle: Note\n---\r\n\r\n---\nunclosed"
+    const analysis = analyzeDocument("/vault/note.md", text)
+    expect(analysis.markdownRisks).toHaveLength(1)
+    expect(analysis.markdownIssues).toMatchObject([
+      { code: "ambiguous-frontmatter", from: 1, to: 4, line: 1, column: 2 },
+      { code: "ambiguous-frontmatter", line: 5, column: 1 },
+    ])
+  })
+
+  it("locates invalid YAML in its envelope, not in the body", () => {
+    const text = '---\ntitle: "bad\\q"\n---\n\nA note[^a]'
+    const analysis = analyzeDocument("/vault/note.md", text)
+    expect(analysis.markdownIssues).toMatchObject([
+      { code: "frontmatter-error", from: 0, line: 1 },
+      { code: "footnote", line: 5, column: 7, snippet: "A note[^a]" },
+    ])
+    expect(analysis.parseError).toMatch(/escape/i)
+  })
+
+  it("includes source context and accurate line spans for multiline constructs", () => {
+    const text = 'Intro\n\n[Docs](/docs\n  "Reference")\n\n> First\n>\n> Second'
+    expect(analyzeDocument("/vault/note.md", text).markdownIssues).toMatchObject([
+      { code: "link-title", line: 3, endLine: 4, column: 1, snippet: "[Docs](/docs…" },
+      { code: "multi-paragraph-quote", line: 6, endLine: 8, column: 1, snippet: "> First…" },
+    ])
+  })
+
+  it("bounds long snippets around the match instead of hiding it", () => {
+    const text = "A".repeat(500) + "[^note]" + "B".repeat(500)
+    const [issue] = analyzeDocument("/vault/note.md", text).markdownIssues
+    expect(issue.column).toBe(501)
+    expect(issue.snippet).toContain("[^note]")
+    expect(issue.snippet.startsWith("…")).toBe(true)
+    expect(issue.snippet.endsWith("…")).toBe(true)
+    expect(issue.snippet.length).toBeLessThanOrEqual(162)
+  })
 })

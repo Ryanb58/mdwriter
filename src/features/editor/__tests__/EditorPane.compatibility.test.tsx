@@ -64,6 +64,37 @@ describe("EditorPane compatibility wiring", () => {
     })
   })
 
+  it("keeps one canonical outline across modes, edits and focus mode without remounting the editor", async () => {
+    useStore.getState().openAnalyzedDocument(
+      "/vault/outline.md",
+      "---\n# YAML comment\n---\n\n# Title\n\n## Child",
+      "disk",
+    )
+    useStore.setState({ focusMode: true })
+    const { container } = render(<EditorPane />)
+    await screen.findByTestId("block-editor")
+    const blockInstance = screen.getByTestId("block-editor").textContent
+    fireEvent.click(screen.getByRole("button", { name: "Document outline" }))
+    expect(await screen.findByRole("button", { name: "Heading level 2: Child" })).toBeInTheDocument()
+    expect(screen.queryByText("YAML comment")).not.toBeInTheDocument()
+    expect(screen.getByTestId("block-editor").textContent).toBe(blockInstance)
+    expect(container.querySelector(".max-w-\\[44rem\\]")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTitle("Raw markdown (⌘E)"))
+    await screen.findByTestId("raw-editor")
+    const rawInstance = screen.getByTestId("raw-editor").textContent
+    expect(screen.getByRole("button", { name: "Heading level 2: Child" })).toBeInTheDocument()
+    act(() => useStore.getState().editOpenDoc("# Renamed\n\n### New section"))
+    expect(await screen.findByRole("button", { name: "Heading level 3: New section" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Heading level 2: Child" })).not.toBeInTheDocument()
+    expect(screen.getByTestId("raw-editor").textContent).toBe(rawInstance)
+
+    act(() => useStore.getState().openAnalyzedDocument("/vault/other.md", "# Other", "disk"))
+    expect(screen.queryByRole("navigation", { name: "Document outline" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Document outline" }))
+    expect(await screen.findByRole("button", { name: "Heading level 1: Other" })).toBeInTheDocument()
+  })
+
   it("keeps a risky note raw when the segmented Block button is pressed", async () => {
     useStore.getState().openAnalyzedDocument(
       "/vault/risky.md",

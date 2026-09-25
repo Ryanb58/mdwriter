@@ -9,6 +9,7 @@ Write in a clean block editor, save plain `.md` files to any folder on your mach
 - **Plain Markdown on disk.** Every note is a `.md` file in a folder you chose. Open them in any other editor. Sync them with iCloud, Dropbox, git — whatever you already use.
 - **A block editor that respects the format.** Blocks, slash commands, drag-to-reorder. Saves back to clean Markdown you'd be happy to read by hand.
 - **Frontmatter without writing YAML.** A Properties pane edits your frontmatter as real form fields. Toggle to raw mode (`Cmd/Ctrl+E`) when you want to see the source.
+- **Navigate long notes.** The document outline beside the editor mode switch shows heading hierarchy and your current section. Jump to any heading in block or raw mode; the outline stays out of the way in focus mode.
 - **Find files instantly.** `Cmd/Ctrl+P` fuzzy palette across your whole folder.
 - **Built-in AI assistant.** Chat with Claude Code about the file you're editing, ask it to draft, rewrite, or summarize — it can read and write notes in your folder when you ask.
 - **External changes welcome.** Edit a file in another app and mdwriter picks it up automatically.

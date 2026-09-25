@@ -27,6 +27,7 @@ import { showToast, errorText } from "../../lib/toast"
 import { buildBlockTextIndex, findRenderedBlockMatches } from "./blockTextSearch"
 import { flashHighlight } from "./flashHighlight"
 import { highlightBlockFindTarget } from "./blockFindHighlight"
+import { useBlockOutline } from "./useBlockOutline"
 import { headingCommitted } from "./headingCommit"
 import { filterMarkdownSlashMenuItems } from "./markdownSlashMenu"
 import { MarkdownTableHandles } from "./markdownTables"
@@ -437,6 +438,7 @@ export function BlockEditor({
   }, [editor])
 
   useLinkActivation(hostRef)
+  useBlockOutline(editor, hostRef)
 
   // Publish the auto-rename "title is done" signal: the first H1 is committed
   // once the cursor has left the heading block (Enter pressed / clicked away).

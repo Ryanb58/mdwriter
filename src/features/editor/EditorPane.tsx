@@ -14,6 +14,7 @@ import { targetParentDir } from "../tree/targetDir"
 import { FindBar } from "./FindBar"
 import { MarkdownCompatibilityBanner } from "./MarkdownCompatibilityBanner"
 import { DocumentLoadState } from "./DocumentLoadState"
+import { DocumentOutline, DocumentOutlineProvider } from "./DocumentOutline"
 import { documentRenderKey } from "./documentRenderKey"
 
 // The block editor pulls the multi-megabyte editor-vendor chunk (BlockNote +
@@ -68,6 +69,7 @@ export function EditorPane() {
   function setRaw() { requestMode("raw") }
 
   return (
+    <DocumentOutlineProvider key={docRev} text={doc.text}>
     <div className="flex flex-col h-full bg-bg">
       <div className="flex items-center justify-between border-b border-border px-5 py-2.5">
         <div className="flex items-baseline gap-2 min-w-0">
@@ -76,6 +78,7 @@ export function EditorPane() {
         </div>
         <div className="flex items-center gap-3 flex-none">
           <span className="text-[11px] text-text-subtle">{wordCount(getBody(doc.text))} words</span>
+          <DocumentOutline />
           <ModeSegmented mode={editorView} onBlock={setBlock} onRaw={setRaw} />
         </div>
       </div>
@@ -126,6 +129,7 @@ export function EditorPane() {
         )}
       </div>
     </div>
+    </DocumentOutlineProvider>
   )
 }
 

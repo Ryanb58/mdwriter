@@ -20,6 +20,7 @@ import {
   wikilinkCompletion,
   type WikilinkCompletionState,
 } from "./wikilinkCM"
+import { useRawOutline } from "./useRawOutline"
 import { RawWikilinkPopup } from "./RawWikilinkPopup"
 
 export function RawEditor({
@@ -67,6 +68,9 @@ export function RawEditor({
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChange(u.state.doc.toString())
             if (u.selectionSet || u.docChanged) reportSelection(u.view)
+            if (u.selectionSet || u.docChanged || u.viewportChanged || u.geometryChanged) {
+              reportOutline(u.selectionSet || u.docChanged)
+            }
           }),
         ],
       }),
@@ -101,6 +105,7 @@ export function RawEditor({
     v.dispatch({ effects: rebuildLinkDecorations.of() })
   }, [loadedNotes])
 
+  const reportOutline = useRawOutline(viewRef)
   useRawImagePaste(viewRef)
   useLinkActivation(hostRef)
   usePendingScroll(viewRef)

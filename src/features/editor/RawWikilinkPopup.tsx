@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { FileText } from "@phosphor-icons/react"
+import { temporarilySetTabFocusMode } from "@codemirror/commands"
 import type { EditorView } from "@codemirror/view"
 import type { VaultNote } from "../../lib/vaultNotes"
 import { applyWikilinkInsertion, filterNotes, type WikilinkCompletionState } from "./wikilinkCM"
@@ -56,6 +57,11 @@ export function RawWikilinkPopup({ state, notes, status, viewRef, onDismiss }: P
         // suppresses the popup until the trigger snapshot changes (next
         // keypress).
         e.preventDefault()
+        // Our capture handler prevents CodeMirror's normal Escape handler
+        // from running. Preserve its temporary Tab/Shift+Tab focus escape,
+        // rather than trapping keyboard users after dismissing completion.
+        const view = viewRef.current
+        if (view) temporarilySetTabFocusMode(view)
         onDismiss()
       }
     }

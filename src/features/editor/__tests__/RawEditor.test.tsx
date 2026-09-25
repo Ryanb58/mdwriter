@@ -8,7 +8,7 @@ const harness = vi.hoisted(() => ({
   history: { name: "history" },
   keymap: { name: "keymap" },
   lineNumbers: { name: "line-numbers" },
-  markdown: { name: "markdown" },
+  markdown: { name: "raw-markdown-extensions" },
   links: { name: "links" },
   completion: { name: "completion" },
   theme: { name: "theme" },
@@ -86,8 +86,8 @@ vi.mock("@codemirror/commands", () => ({
   historyKeymap: [],
 }))
 
-vi.mock("@codemirror/lang-markdown", () => ({
-  markdown: vi.fn(() => harness.markdown),
+vi.mock("../rawMarkdownExtensions", () => ({
+  rawMarkdownExtensions: vi.fn(() => harness.markdown),
 }))
 
 vi.mock("../useRawImagePaste", () => ({
@@ -178,6 +178,8 @@ describe("RawEditor", () => {
     ]))
     expect(harness.useRawImagePaste).toHaveBeenCalledTimes(1)
     expect(harness.useLinkActivation).toHaveBeenCalledTimes(1)
+    expect(harness.extensions.indexOf(harness.markdown))
+      .toBeLessThan(harness.extensions.indexOf(harness.keymap))
   })
 
   it("restores focus on the next animation frame after mounting", () => {
